@@ -17,20 +17,9 @@ Nothing open.
 
 ## Features
 
-### F-M-4 · list and read homelab files through MCP
-
-`wip` `large` `filed 2026-11-06`
-
-Agents cannot see the files kept on the Pi. The app is installed with the
-author's two folders, and Whoopy serves it at `/mcp/docs_<user>` to granted
-keys. Claude Code, with a key of its own, used it on 2026-11-09.
-
-**Do:** have one local-model client (Open WebUI or Hermes Agent) with a
-granted key find and read a document.
-
 ### F-M-5 · search homelab documents by meaning
 
-`todo` `large` `filed 2026-11-07` `needs: F-M-4`
+`todo` `large` `filed 2026-11-07`
 
 Agents can find a document only by its name. A question such as "the letter
 about the rent increase" needs a search by meaning, with the index and the
@@ -54,6 +43,7 @@ Nothing open.
 
 ## Closed
 
+- `F-M-4` done `large` 2026-11-09 · list, find and read the author's folders through Whoopy; Claude Code and Hermes Agent each found and read a document with a key of their own
 - `T-P-2` done `playtest` 2026-11-09 at `ee3c119` · backup, remove, restore: the same token came back and answers; no log holds it
 - `T-P-1` done `playtest` 2026-11-09 at `ee3c119` · 401 without the token; a file that was mode 600 reads; config.php, Syncthing's config, PHP sessions, the rest of Nextcloud and Syncthing, the author's home and the photo disk are absent in the unit; the folders are read-only; no capabilities; the token is in no install log
 - `T-M-1` done `spec` 2026-11-07 at `3e6f8cc` · `tests/check_server.py`: 21 of 21 pass on the locked wheels
