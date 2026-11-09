@@ -40,8 +40,8 @@ page.
 
 **State 2026-11-09:** 0.2.0 installed; the first index run took 31 min:
 288 files indexed (1,660 passages), 90 waiting for OCR, 1 password-protected
-PDF failed; healthchecks.io pinged start and success. Left: upgrade with the
-two fixes after `bb9fd44` (one passage per page, start ping), T-P-2, then the
+PDF failed; healthchecks.io pinged start and success. The two fixes
+(one passage per page, start ping) are installed at `315b90c`. Left: the
 Whoopy registration, asked separately.
 
 ### F-M-6 · read scans and images into the search index
@@ -59,16 +59,11 @@ embedding model does not redo it.
 
 ## Tests
 
-### T-P-2 · backup and restore keep the tokens
-
-`todo` `playtest` `reopened 2026-11-09`
-
-Reopened by F-M-5: restore now builds llama-server and fetches the model,
-and clears the index for the timer to rebuild. Last result: done 2026-11-09
-at `ee3c119`.
+Nothing open.
 
 ## Closed
 
+- `T-P-2` done `playtest` 2026-11-09 at `315b90c` · backup, remove, restore: same token (by fingerprint), answers, ping settings back, index cleared and rebuilt by the timer; the shared operation logs hold no token, but yunohost-cli.log (root-only) has held it since the first install, from the `secret_token=` trace line
 - `T-M-2` done `playtest` 2026-11-09 at `bb9fd44` · 10 of 10 real documents found in the top 5 by queries in other words, French and English, 7 at rank 1; 0.12 to 0.18 s a search
 - `T-P-1` done `playtest` 2026-11-09 at `bb9fd44` · 401 without the token; tool server and indexer see the folders, the index and their code only (Nextcloud data only as the empty path to Notes); the embedding unit sees its binary and model only; the server cannot write the index, the indexer cannot write its code or the folders; `/slots` gives 501; no capabilities
 - `F-M-4` done `large` 2026-11-09 · list, find and read the author's folders through Whoopy; Claude Code and Hermes Agent each found and read a document with a key of their own
