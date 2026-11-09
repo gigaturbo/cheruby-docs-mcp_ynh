@@ -3,6 +3,8 @@
 source _common.sh
 source /usr/share/yunohost/helpers
 
+docs_default_settings
+
 ynh_script_progression "Installing the tool server from the locked wheels..."
 docs_build_venv
 

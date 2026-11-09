@@ -1,7 +1,11 @@
 [Unit]
 Description=Cheruby Docs: refresh the search index (__APP__)
-Wants=__APP__-embed.service
-After=__APP__-embed.service
+Wants=__APP__-embed.service __APP__-ping@start.service
+After=__APP__-embed.service __APP__-ping@start.service
+# healthchecks.io, when turned on in the config panel. The indexer itself
+# reaches loopback only.
+OnSuccess=__APP__-ping@0.service
+OnFailure=__APP__-ping@fail.service
 
 [Service]
 Type=oneshot

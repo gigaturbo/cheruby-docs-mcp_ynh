@@ -3,6 +3,8 @@
 source _common.sh
 source /usr/share/yunohost/helpers
 
+docs_default_settings
+
 # Each part is rebuilt only when what it depends on changed.
 rebuild_venv=1
 if [ -x "$install_dir/venv/bin/python" ] \

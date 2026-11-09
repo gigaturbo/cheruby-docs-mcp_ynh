@@ -3,6 +3,8 @@
 source ../settings/scripts/_common.sh
 source /usr/share/yunohost/helpers
 
+docs_default_settings
+
 # Needs the network: the code is rebuilt from the lock file and the pinned
 # sources, not restored. The search index is rebuilt by the timer.
 ynh_script_progression "Reinstalling the tool server from the locked wheels..."

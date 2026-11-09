@@ -4,6 +4,25 @@
 
 model_file="embeddinggemma-300M-Q8_0.gguf"
 
+# Settings with no install question. Defaults only: an upgrade keeps whatever
+# the config panel has since set.
+docs_default_settings() {
+    ynh_app_setting_set_default --key=healthcheck_enabled --value=0
+    ynh_app_setting_set_default --key=healthcheck_url --value=""
+}
+
+# ping.env for the ping unit: the check's URL, or nothing when the feature is
+# off. Root 600: anyone holding the URL can ping the check.
+docs_write_ping() {
+    if [ "$healthcheck_enabled" = "1" ]; then
+        echo "HC_URL=$healthcheck_url" > "$install_dir/ping.env"
+    else
+        echo "HC_URL=" > "$install_dir/ping.env"
+    fi
+    chown root:root "$install_dir/ping.env"
+    chmod 600 "$install_dir/ping.env"
+}
+
 # uv is told not to look for configuration files: Yunohost runs scripts from a
 # directory under /var/cache/yunohost, and uv would walk up from it.
 docs_uv() {
@@ -145,12 +164,14 @@ docs_configure() {
     chown root:root "$install_dir/docs.env" "$install_dir/index.env"
     chmod 600 "$install_dir/docs.env" "$install_dir/index.env"
     chown -R "$app:$app" "$data_dir"
+    docs_write_ping
 
     ynh_config_add_systemd
     ynh_config_add_systemd --service="$app-embed" --template="embed.service"
     # Started by its timer only, so written, not enabled.
     ynh_config_add --template="index.service" --destination="/etc/systemd/system/$app-index.service"
     ynh_config_add --template="index.timer" --destination="/etc/systemd/system/$app-index.timer"
+    ynh_config_add --template="ping@.service" --destination="/etc/systemd/system/$app-ping@.service"
     systemctl daemon-reload
     yunohost service add "$app" --description="Cheruby Docs, read-only MCP tools on users' folders"
     yunohost service add "$app-embed" --description="Cheruby Docs, embedding model for the search index"

@@ -1,0 +1,23 @@
+version = "1.0"
+
+[main]
+name = "Cheruby Docs"
+
+    [main.monitoring]
+    name = "Index monitoring"
+    help = "Pings a healthchecks.io check when each hourly index run starts, succeeds or fails, so a run that fails or never comes raises an alert. Suggested check: period 1 hour, grace 2 hours."
+
+        [main.monitoring.healthcheck_enabled]
+        ask = "Ping healthchecks.io on each index run"
+        type = "boolean"
+        bind = "settings"
+
+        [main.monitoring.healthcheck_url]
+        ask = "Ping URL of the check"
+        type = "string"
+        optional = true
+        example = "https://hc-ping.com/<uuid>"
+        help = "From the check's page on healthchecks.io, without /start or /fail."
+        pattern.regexp = '^$|^https://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9/_.-]+[A-Za-z0-9]$'
+        pattern.error = "An https address such as https://hc-ping.com/<uuid>, without a trailing /"
+        bind = "settings"

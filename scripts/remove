@@ -9,6 +9,7 @@ if [ -e "/etc/systemd/system/$app-index.timer" ]; then
 fi
 systemctl stop "$app-index.service" --quiet 2>/dev/null || true
 ynh_config_remove_systemd "$app-index"
+ynh_safe_rm "/etc/systemd/system/$app-ping@.service"
 
 for service in "$app" "$app-embed"; do
     if ynh_hide_warnings yunohost service status "$service" >/dev/null; then

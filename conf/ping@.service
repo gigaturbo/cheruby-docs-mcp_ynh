@@ -1,0 +1,36 @@
+[Unit]
+Description=Cheruby Docs: tell healthchecks.io about the index run (%i) (__APP__)
+
+[Service]
+Type=oneshot
+# HC_URL, empty when the feature is off. Root 600, read before privileges drop.
+EnvironmentFile=__INSTALL_DIR__/ping.env
+# %i is start, 0 (success) or fail: healthchecks.io's own endpoints.
+ExecStart=/bin/sh -c '[ -z "$$HC_URL" ] || exec /usr/bin/curl --silent --show-error --fail --max-time 10 --retry 3 --output /dev/null "$$HC_URL/$$1"' sh %i
+
+# The only unit of the app that reaches the internet, so it sees none of the
+# app's files and runs as a throwaway user.
+DynamicUser=true
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/www:ro
+InaccessiblePaths=-/mnt -/media -/srv -/snapshots
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+UMask=077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
