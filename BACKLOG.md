@@ -21,12 +21,12 @@ Nothing open.
 
 `wip` `large` `filed 2026-11-06`
 
-Agents cannot see the files kept on the Pi. The tool server is written and
-is installed on the server with the author's two folders and passes T-P-1;
-no agent reaches it until Whoopy registers it.
+Agents cannot see the files kept on the Pi. The app is installed with the
+author's two folders, and Whoopy serves it at `/mcp/docs_<user>` to granted keys
+since 2026-11-09; no agent has used it for real yet.
 
-**Do:** register `docs_<user>` in Whoopy (its F-M-6), then have an agent list,
-find and read through it.
+**Do:** give Claude Code and one local-model client (Open WebUI or Hermes
+Agent) each a granted key, and have them find and read a document.
 
 ### F-M-5 · search homelab documents by meaning
 
