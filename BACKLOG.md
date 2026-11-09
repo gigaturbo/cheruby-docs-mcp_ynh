@@ -17,33 +17,6 @@ Nothing open.
 
 ## Features
 
-### F-M-5 · search homelab documents by meaning
-
-`wip` `large` `filed 2026-11-07`
-
-Agents can find a document only by its name. A question such as "the letter
-about the rent increase" needs a search by meaning, with the index and the
-embedding model on the Pi, no wake: 16 GB of RAM, about 10 GB available on
-2026-11-07, and a 300M model takes about 0.5 GB.
-
-**Do:** `llama-server --embedding` on loopback, its own service, with
-EmbeddingGemma 300M as a Q8 GGUF (Qwen3-Embedding 0.6B if results disappoint),
-also registered in Whoopy as an embedding model. A background timer indexes
-the text layer (248 of the 298 PDFs have one) and marks scans and images as
-waiting for F-M-6; passages of 300 to 500 tokens with overlap, never across a
-PDF page; text, vector, path, page, date and file fingerprint in one SQLite
-file per user, with full-text search, the vectors stored as arrays and scored
-with numpy (about 3,000 passages: no need for sqlite-vec); a rescan redoes
-changed files and drops deleted ones. `search_documents(query, filters)`
-merges meaning and keyword search and returns 5 to 10 passages with path and
-page.
-
-**State 2026-11-09:** 0.2.0 installed; the first index run took 31 min:
-288 files indexed (1,660 passages), 90 waiting for OCR, 1 password-protected
-PDF failed; healthchecks.io pinged start and success. The two fixes
-(one passage per page, start ping) are installed at `315b90c`. Left: the
-Whoopy registration, asked separately.
-
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -63,6 +36,7 @@ Nothing open.
 
 ## Closed
 
+- `F-M-5` done `large` 2026-11-09 · `search_documents` by meaning and keywords on an hourly index (llama-server built on the Pi, EmbeddingGemma 300M, numpy, FTS5): 288 files indexed in 31 min, 10 of 10 test documents in the top 5; healthchecks.io pinged; the model offered through Whoopy as `embeddinggemma` (Whoopy F-P-2)
 - `T-P-2` done `playtest` 2026-11-09 at `315b90c` · backup, remove, restore: same token (by fingerprint), answers, ping settings back, index cleared and rebuilt by the timer; the shared operation logs hold no token, but yunohost-cli.log (root-only) has held it since the first install, from the `secret_token=` trace line
 - `T-M-2` done `playtest` 2026-11-09 at `bb9fd44` · 10 of 10 real documents found in the top 5 by queries in other words, French and English, 7 at rank 1; 0.12 to 0.18 s a search
 - `T-P-1` done `playtest` 2026-11-09 at `bb9fd44` · 401 without the token; tool server and indexer see the folders, the index and their code only (Nextcloud data only as the empty path to Notes); the embedding unit sees its binary and model only; the server cannot write the index, the indexer cannot write its code or the folders; `/slots` gives 501; no capabilities
