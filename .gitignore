@@ -1,2 +1,4 @@
+.reports/
+.claude/
 .venv/
 __pycache__/
