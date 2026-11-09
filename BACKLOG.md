@@ -28,14 +28,28 @@ embedding model on the Pi, no wake: 16 GB of RAM, about 10 GB available on
 
 **Do:** `llama-server --embedding` on loopback, its own service, with
 EmbeddingGemma 300M as a Q8 GGUF (Qwen3-Embedding 0.6B if results disappoint),
-also registered in Whoopy as an embedding model. A background timer indexes:
-text layer first (248 of the 298 PDFs have one), scans and images queued for
-OCR by qwen3-vl on the desktop through Whoopy, one wake a night when the
-queue is not empty; passages of 300 to 500 tokens with overlap; text, vector,
-path, page, date and file fingerprint in one SQLite file per user, with
-sqlite-vec and full-text search; a rescan redoes changed files and drops
-deleted ones. `search_documents(query, filters)` merges meaning and keyword
-search and returns 5 to 10 passages with path and page.
+also registered in Whoopy as an embedding model. A background timer indexes
+the text layer (248 of the 298 PDFs have one) and marks scans and images as
+waiting for F-M-6; passages of 300 to 500 tokens with overlap, never across a
+PDF page; text, vector, path, page, date and file fingerprint in one SQLite
+file per user, with full-text search, the vectors stored as arrays and scored
+with numpy (about 3,000 passages: no need for sqlite-vec); a rescan redoes
+changed files and drops deleted ones. `search_documents(query, filters)`
+merges meaning and keyword search and returns 5 to 10 passages with path and
+page.
+
+### F-M-6 · read scans and images into the search index
+
+`todo` `medium` `filed 2026-11-09`
+
+After F-M-5, the 50 PDFs without a text layer and the images are listed as
+waiting but cannot be found by meaning.
+
+**Do:** a nightly timer sends the waiting pages to qwen3-vl on the desktop
+through Whoopy on loopback, with a key of its own allowed that model only;
+one wake a night, none when nothing waits. Pages rendered with `pypdfium2`
+from the locked wheels. The read text is kept by file fingerprint, so a new
+embedding model does not redo it.
 
 ## Tests
 
