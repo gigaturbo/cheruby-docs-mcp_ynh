@@ -322,12 +322,19 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
         # Built for other folders: it may hold text this user no longer reaches.
         if meta.get("folders") != folders_key(folders_of(ctx)):
             raise ToolError("the search index is being rebuilt after a change of folders; use find_files meanwhile.")
-        ids = ranked(db, query, vector, where, args)[:max(1, min(limit, MAX_RESULTS))]
+        ids = ranked(db, query, vector, where, args)[:50]
         rows = {r[0]: r[1:] for r in db.execute(
             f"SELECT p.id, f.path, p.page, f.mtime_ns, p.text FROM passages p JOIN files f ON f.id = p.file "
             f"WHERE p.id IN ({','.join('?' * len(ids))})", ids)}
     finally:
         db.close()
+    # Overlapping passages of one page would crowd out other documents: the best one stands for it.
+    seen, best = set(), []
+    for pid in ids:
+        if rows[pid][:2] not in seen:
+            seen.add(rows[pid][:2])
+            best.append(pid)
+    ids = best[:max(1, min(limit, MAX_RESULTS))]
     head = f"[index updated {meta.get('updated', '?')}]\n"
     if vector is None:
         head += "[search by meaning is unavailable; keyword matches only]\n"
