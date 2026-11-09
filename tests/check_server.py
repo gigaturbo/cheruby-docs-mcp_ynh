@@ -1,25 +1,36 @@
-"""Offline check of the tool server. Run from the project root:
+"""Offline check of the tool server and the indexer. Run from the project root:
 
     .venv/bin/python tests/check_server.py
 
-Builds two users' folders in a temporary directory, starts the server on a
-loopback port, then calls each tool. Needs the package's dependencies only.
+Builds two users' folders in a temporary directory, indexes them against a
+stand-in embedding server, starts the tool server on a loopback port, then
+calls each tool and re-runs the indexer after a move, an edit and a deletion.
+The stand-in hashes words into vectors: it checks the wiring, not the quality
+of the search. Needs the package's dependencies only.
 Prints one line per check and exits 1 if any fails.
 """
 
 import base64
+import hashlib
+import json
 import os
+import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import zipfile
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 
 ALICE, BOB = "b" * 40, "j" * 40
 PORT = 18770
+EMBED_PORT = 18771
 URL = f"http://127.0.0.1:{PORT}/mcp"
+PYTHON = [sys.executable, "-E", "-s", "-B"]
+EMBEDDED = []
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 
@@ -45,6 +56,39 @@ def tiny_pdf(text):
     return out
 
 
+class FakeEmbedder(BaseHTTPRequestHandler):
+    """/health, and /v1/embeddings giving each text the normalised sum of its words' hashes.
+
+    A text containing "panne" gets a 500, to see the server fall back on keywords.
+    """
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def do_POST(self):
+        texts = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"]
+        EMBEDDED.extend(texts)
+        if any("panne" in t for t in texts):
+            self.send_response(500)
+            self.end_headers()
+            return
+        data = []
+        for i, text in enumerate(texts):
+            vector = [0.0] * 64
+            for word in text.lower().split():
+                vector[hashlib.sha256(word.encode()).digest()[0] % 64] += 1.0
+            data.append({"index": i, "embedding": vector})
+        body = json.dumps({"data": data}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
 def build(base):
     """alice: Documents and Notes. bob: Papiers. Returns the env for the server."""
     docs, notes, papiers = (os.path.join(base, d) for d in ("docs", "notes", "papiers"))
@@ -57,6 +101,7 @@ def build(base):
         f"{docs}/.stversions/old.md": "hidden",
         f"{docs}/.hidden.md": "hidden",
         f"{notes}/courses.md": "pain, lait",
+        f"{notes}/long.md": " ".join(f"Phrase {n} sur le jardin et les tomates." for n in range(300)),
         f"{papiers}/bob.md": "bob only",
         f"{base}/secret.md": "outside every folder",
     }
@@ -73,9 +118,15 @@ def build(base):
                    "<w:body><w:p><w:r><w:t>Madame, </w:t></w:r><w:r><w:t>Monsieur</w:t></w:r></w:p>"
                    "<w:p><w:r><w:t>Objet : préavis</w:t></w:r></w:p></w:body></w:document>")
     os.symlink(f"{base}/secret.md", f"{docs}/escape.md")
+    os.symlink(".stversions/old.md", f"{docs}/vieux.md")
+    os.utime(f"{notes}/courses.md", (946_000_000, 946_000_000))  # 1999-12-24
+    os.makedirs(f"{base}/index")
     return {
         "PATH": os.environ.get("PATH", ""),
         "DOCS_PORT": str(PORT),
+        "DOCS_INDEX_DIR": f"{base}/index",
+        "DOCS_EMBED_URL": f"http://127.0.0.1:{EMBED_PORT}",
+        "DOCS_EMBED_MODEL": "fake-64",
         "DOCS_TOKEN_alice": ALICE,
         "DOCS_FOLDERS_alice": f"Documents={docs}:Notes={notes}",
         "DOCS_TOKEN_ju": BOB,
@@ -114,7 +165,7 @@ def error_with(needle):
 CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
-    ("three tools listed", lambda: call("tools/list"), lambda r: r[1] == "list_folder find_files read_file"),
+    ("four tools listed", lambda: call("tools/list"), lambda r: r[1] == "list_folder find_files read_file search_documents"),
     ("alice sees her two folders", lambda: tool("list_folder"), lambda r: r == ("ok", "dir  Documents/\ndir  Notes/")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
     ("bob cannot reach alice's", lambda: tool("read_file", token=BOB, path="Notes/courses.md"), error_with("no folder named")),
@@ -124,6 +175,7 @@ CHECKS = [
     (".. refused", lambda: tool("read_file", path="Documents/../secret.md"), error_with("not allowed")),
     ("hidden refused", lambda: tool("read_file", path="Documents/.stversions/old.md"), error_with("not allowed")),
     ("link out refused", lambda: tool("read_file", path="Documents/escape.md"), error_with("leads out")),
+    ("link into hidden refused", lambda: tool("read_file", path="Documents/vieux.md"), error_with("hidden folder")),
     ("find ignores accents and case", lambda: tool("find_files", query="factures energie"), ok_with("Documents/Factures/Énergie_2024.md")),
     ("find within a folder", lambda: tool("find_files", query="courses", path="Notes"), ok_with("Notes/courses.md")),
     ("find leaves hidden out", lambda: tool("find_files", query="old"), lambda r: r[0] == "ok" and ".stversions" not in r[1]),
@@ -136,13 +188,87 @@ CHECKS = [
     ("docx paragraphs", lambda: tool("read_file", path="Documents/lettre.docx"), ok_with("Madame, Monsieur\nObjet : préavis")),
     ("image comes back as a picture", lambda: tool("read_file", path="Documents/scan.png"), lambda r: r == ("ok", "image/png")),
     ("folder is not a file", lambda: tool("read_file", path="Documents/Factures"), error_with("is a folder")),
+    ("search finds a PDF page", lambda: tool("search_documents", query="loyer augmente"),
+     ok_with("[index updated 20", "--- Documents/bail.pdf, page 1 (", "Loyer augmente de 3 pourcent")),
+    ("search ignores accents", lambda: tool("search_documents", query="preavis"), ok_with("Documents/lettre.docx")),
+    ("search within a folder", lambda: tool("search_documents", query="loyer tomates", path="Notes"),
+     lambda r: r[0] == "ok" and "Notes/long.md" in r[1] and "Documents/" not in r[1]),
+    ("search before a date", lambda: tool("search_documents", query="pain lait tomates", before="2000-01-01"),
+     lambda r: r[0] == "ok" and "Notes/courses.md" in r[1] and "long.md" not in r[1]),
+    ("search limit kept", lambda: tool("search_documents", query="jardin", limit=2), lambda r: r[1].count("--- ") == 2),
+    ("search leaves hidden out", lambda: tool("search_documents", query="hidden", limit=10),
+     lambda r: r[0] == "ok" and ".st" not in r[1] and ".hidden" not in r[1]),
+    ("search refuses ..", lambda: tool("search_documents", query="x", path="Notes/.."), error_with("not allowed")),
+    ("search bad date refused", lambda: tool("search_documents", query="x", after="hier"), error_with("not a date")),
+    ("bob's search sees only his", lambda: tool("search_documents", token=BOB, query="loyer bob"),
+     lambda r: r[0] == "ok" and "Papiers/bob.md" in r[1] and "Documents" not in r[1]),
+    ("search falls back on keywords", lambda: tool("search_documents", query="panne loyer"),
+     ok_with("keyword matches only", "Documents/bail.pdf")),
 ]
 
 
+def run_indexer(env):
+    out = subprocess.run([*PYTHON, "conf/docs_index.py"], env=env, capture_output=True, text=True, timeout=120)
+    return out.stdout + out.stderr
+
+
+def statuses(base):
+    db = sqlite3.connect(f"{base}/index/alice.sqlite")
+    rows = dict(db.execute("SELECT path, status FROM files"))
+    db.close()
+    return rows
+
+
+def index_checks(base, env, first):
+    """Checks on the indexer's first run, then on a re-run after changes."""
+    docs, notes = f"{base}/docs", f"{base}/notes"
+    files = statuses(base)
+    yield "first run indexes both users", first, "alice:" in first and "ju: 1 indexed" in first
+    yield "scan waits for OCR", files.get("Documents/scan.png"), files.get("Documents/scan.png") == "needs_ocr"
+    yield "hidden and links left out of the index", sorted(files), \
+        not any(".st" in p or ".hidden" in p or "escape" in p or "vieux" in p for p in files)
+    yield "prompts sent", EMBEDDED[:1], EMBEDDED and EMBEDDED[0].startswith("title: ") \
+        and any(t.startswith("task: search result | query: ") for t in EMBEDDED)
+    second = run_indexer(env)
+    yield "re-run redoes nothing", second, "alice: 6 unchanged" in second
+    os.rename(f"{notes}/courses.md", f"{notes}/liste.md")
+    os.remove(f"{docs}/lettre.docx")
+    with open(f"{docs}/Factures/Énergie_2024.md", "a") as f:
+        f.write("\nrelance")
+    with open(f"{docs}/verrou.md", "w") as f:
+        f.write("illisible")
+    os.chmod(f"{docs}/verrou.md", 0)
+    third = run_indexer(env)
+    yield "move, delete and edit seen", third, "1 dropped" in third and "1 indexed" in third and "1 moved" in third
+    yield "an unreadable file fails alone", third, "1 failed" in third and "ju: 1 unchanged" in third
+    os.chmod(f"{docs}/verrou.md", 0o644)
+    fourth = run_indexer(env)
+    yield "a failed file is retried once fixed", fourth, "1 indexed" in fourth
+    files = statuses(base)
+    yield "index follows the folders", sorted(files), "Notes/liste.md" in files and "Notes/courses.md" not in files \
+        and "Documents/lettre.docx" not in files
+    run_indexer({**env, "DOCS_FOLDERS_alice": env["DOCS_FOLDERS_alice"].split(":")[0]})
+    result = tool("search_documents", query="tomates")
+    yield "index of other folders refused", result, error_with("change of folders")(result)
+    yield "a folder taken away leaves the index", sorted(statuses(base)), not any(p.startswith("Notes/") for p in statuses(base))
+    run_indexer(env)
+    result = tool("search_documents", query="tomates", path="Notes")
+    yield "a folder given back is indexed", result, ok_with("Notes/long.md")(result)
+    for name in ("gone.sqlite", "gone.work.sqlite"):
+        with open(f"{base}/index/{name}", "w"):
+            pass
+    run_indexer(env)
+    left = sorted(os.listdir(f"{base}/index"))
+    yield "a removed user's index goes", left, left == ["alice.sqlite", "alice.work.sqlite", "ju.sqlite", "ju.work.sqlite"]
+
+
 def main():
+    embedder = ThreadingHTTPServer(("127.0.0.1", EMBED_PORT), FakeEmbedder)
+    threading.Thread(target=embedder.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:
         env = build(base)
-        server = subprocess.Popen([sys.executable, "-I", "conf/cheruby_docs_mcp.py"], env=env,
+        first = run_indexer(env)
+        server = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], env=env,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             for _ in range(50):
@@ -151,18 +277,18 @@ def main():
                     break
                 except httpx.TransportError:
                     time.sleep(0.2)
-            failed = 0
-            for name, run, passes in CHECKS:
-                result = run()
-                good = passes(result)
-                failed += not good
-                print(f"{'PASS' if good else 'FAIL'}  {name}" + ("" if good else f"\n      got {result!r:.300}"))
+            results = [(name, *(lambda r: (r, passes(r)))(run())) for name, run, passes in CHECKS]
+            results += list(index_checks(base, env, first))
         finally:
             server.terminate()
             err = server.communicate()[1].decode()
+        failed = 0
+        for name, result, good in results:
+            failed += not good
+            print(f"{'PASS' if good else 'FAIL'}  {name}" + ("" if good else f"\n      got {result!r:.300}"))
         if failed:
             print(err[-2000:])
-        print(f"{len(CHECKS) - failed}/{len(CHECKS)} passed")
+        print(f"{len(results) - failed}/{len(results)} passed")
         sys.exit(1 if failed else 0)
 
 
