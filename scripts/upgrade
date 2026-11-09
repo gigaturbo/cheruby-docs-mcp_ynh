@@ -1,0 +1,29 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+# Rebuilt only when the lock file or uv changed.
+rebuild=1
+if [ -x "$install_dir/venv/bin/python" ] \
+    && [ "$(docs_build_fingerprint)" = "${build_fingerprint:-}" ]; then
+    rebuild=0
+else
+    docs_check_downloads
+fi
+
+ynh_script_progression "Stopping the tool server..."
+ynh_systemctl --service="$app" --action="stop"
+
+if [ "$rebuild" = 1 ]; then
+    ynh_script_progression "Reinstalling the tool server from the locked wheels..."
+    docs_build_venv
+fi
+
+ynh_script_progression "Updating configuration files..."
+docs_configure
+
+ynh_script_progression "Starting the tool server..."
+docs_start
+
+ynh_script_progression "Upgrade of $app completed"

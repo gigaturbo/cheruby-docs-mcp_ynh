@@ -1,0 +1,11 @@
+#!/bin/bash
+
+source ../settings/scripts/_common.sh
+source /usr/share/yunohost/helpers
+
+# Nothing here holds state: the folders and tokens are app settings, which
+# every Yunohost backup carries. The code and venv are rebuilt on restore.
+
+ynh_backup "/etc/systemd/system/$app.service"
+
+ynh_print_info "Backup script completed for $app."

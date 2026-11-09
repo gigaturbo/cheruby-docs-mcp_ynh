@@ -1,0 +1,58 @@
+[Unit]
+Description=Cheruby Docs: read-only MCP tools on users' folders (__APP__)
+After=network.target
+
+[Service]
+Type=simple
+User=__APP__
+Group=__APP__
+# Each folder's group, so its group-readable files can be read. Everything
+# else those groups could read is hidden below.
+SupplementaryGroups=__GROUPS__
+
+# Tokens and folders. Root 600, read before privileges drop.
+EnvironmentFile=__INSTALL_DIR__/docs.env
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=__INSTALL_DIR__/venv/bin/python -I __INSTALL_DIR__/cheruby_docs_mcp.py
+
+MemoryMax=512M
+
+# Loopback only: the AI gateway is on this machine, and the tools need nothing else.
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictAddressFamilies=AF_INET AF_INET6
+
+# The process sees the configured folders and its own code, read-only, and
+# none of what the joined groups could otherwise read: Nextcloud's and
+# Syncthing's code and config under /var/www, PHP sessions under /var/lib,
+# their logs and caches.
+ProtectSystem=strict
+ProtectHome=tmpfs
+TemporaryFileSystem=/var/www:ro
+BindReadOnlyPaths=__INSTALL_DIR__ __BIND_PATHS__
+InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
+
+UMask=077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

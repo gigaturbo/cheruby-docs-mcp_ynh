@@ -1,0 +1,16 @@
+#!/bin/bash
+
+source ../settings/scripts/_common.sh
+source /usr/share/yunohost/helpers
+
+# Needs the network: the code is rebuilt from the lock file, not restored.
+ynh_script_progression "Reinstalling the tool server from the locked wheels..."
+docs_build_venv
+
+ynh_script_progression "Restoring configuration files..."
+docs_configure
+
+ynh_script_progression "Starting the tool server..."
+docs_start
+
+ynh_script_progression "Restoration completed for $app"

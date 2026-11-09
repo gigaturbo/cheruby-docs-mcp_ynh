@@ -1,0 +1,15 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+ynh_script_progression "Installing the tool server from the locked wheels..."
+docs_build_venv
+
+ynh_script_progression "Adding configuration files..."
+docs_configure
+
+ynh_script_progression "Starting the tool server..."
+docs_start
+
+ynh_script_progression "Installation of $app completed"

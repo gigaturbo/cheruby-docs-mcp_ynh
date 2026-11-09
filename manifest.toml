@@ -1,0 +1,60 @@
+#:schema https://raw.githubusercontent.com/YunoHost/apps/main/schemas/manifest.v2.schema.json
+
+packaging_format = 2
+
+id = "cheruby-docs-mcp"
+name = "Cheruby Docs"
+description.en = "Read-only MCP tools that let each user's AI agents list, find and read that user's folders"
+description.fr = "Outils MCP en lecture seule : les agents IA de chaque utilisateur listent, cherchent et lisent ses dossiers"
+
+version = "0.1.0~ynh1"
+
+maintainers = ["gigaturbo"]
+
+[upstream]
+license = "MIT"
+
+[integration]
+yunohost = ">= 12.1"
+helpers_version = "2.1"
+# The lock file holds aarch64 wheels only.
+architectures = ["arm64"]
+multi_instance = false
+ldap = false
+sso = false
+disk = "200M"
+ram.build = "300M"
+ram.runtime = "200M"
+
+[install]
+    [install.folders]
+    ask.en = "Folders, one per line: <user> <Label>=<path>"
+    ask.fr = "Dossiers, un par ligne : <utilisateur> <Nom>=<chemin>"
+    help.en = "Each user's agents see only that user's folders, under their label. The service joins each folder's group to read it, so the files must be group-readable."
+    type = "text"
+    example = "alice Documents=/home/yunohost.app/syncthing/Documents"
+
+[resources]
+
+    # uv installs the locked wheels and checks every hash.
+    [resources.sources.uv]
+    arm64.url = "https://github.com/astral-sh/uv/releases/download/0.12.12/uv-aarch64-unknown-linux-gnu.tar.gz"
+    arm64.sha256 = "fe08db50cc1b56cd1da7801065ed1103d27ed3f9571cd122386cfc7faf1b8df5"
+    in_subdir = true
+    autoupdate.strategy = "latest_github_release"
+    autoupdate.upstream = "https://github.com/astral-sh/uv"
+    autoupdate.asset.arm64 = "^uv-aarch64-unknown-linux-gnu.tar.gz$"
+
+    [resources.system_user]
+
+    [resources.install_dir]
+    # Code and secrets: root-owned, read by the app user through its group.
+    owner = "root:rwx"
+    group = "__APP__:rx"
+
+    [resources.ports]
+    main.default = 8770
+
+    # No web page: the AI gateway reaches the server on loopback.
+    [resources.permissions]
+    main.show_tile = false
