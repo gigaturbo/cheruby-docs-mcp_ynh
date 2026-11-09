@@ -19,7 +19,7 @@ Nothing open.
 
 ### F-M-5 · search homelab documents by meaning
 
-`todo` `large` `filed 2026-11-07`
+`wip` `large` `filed 2026-11-07`
 
 Agents can find a document only by its name. A question such as "the letter
 about the rent increase" needs a search by meaning, with the index and the
@@ -38,6 +38,12 @@ changed files and drops deleted ones. `search_documents(query, filters)`
 merges meaning and keyword search and returns 5 to 10 passages with path and
 page.
 
+**State 2026-11-09:** written and checked offline (T-M-1); llama-server
+b12223 builds on the Pi in 8 min and EmbeddingGemma answered with the unit's
+flags: 683 MB, 1.1 s a passage, 0.04 s a query. Left: install 0.2.0 (ask
+first), T-P-1, T-P-2, T-M-2. Whoopy registration after that, asked
+separately.
+
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -53,11 +59,34 @@ embedding model does not redo it.
 
 ## Tests
 
-Nothing open.
+### T-M-2 · search finds documents by meaning on the real folders
+
+`todo` `playtest` `filed 2026-11-09`
+
+Once the first index run is done (`journalctl -u cheruby-docs-mcp-index`),
+ask search_documents for five documents by what they are about, in other
+words than theirs, French and English: "the letter about the rent increase",
+"mon dernier bulletin de salaire", ... Pass: each is in the top 5. If not,
+try Qwen3-Embedding 0.6B.
+
+### T-P-1 · the installed server reads only its folders
+
+`todo` `playtest` `reopened 2026-11-09`
+
+Reopened by F-M-5: two new units, the index folder bound into the server.
+Also check that the embedding unit sees only its binary and model, that
+`curl 127.0.0.1:8771/slots` is refused, and that the indexer writes only in
+the index folder. Last result: done 2026-11-09 at `ee3c119`.
+
+### T-P-2 · backup and restore keep the tokens
+
+`todo` `playtest` `reopened 2026-11-09`
+
+Reopened by F-M-5: restore now builds llama-server and fetches the model,
+and clears the index for the timer to rebuild. Last result: done 2026-11-09
+at `ee3c119`.
 
 ## Closed
 
 - `F-M-4` done `large` 2026-11-09 · list, find and read the author's folders through Whoopy; Claude Code and Hermes Agent each found and read a document with a key of their own
-- `T-P-2` done `playtest` 2026-11-09 at `ee3c119` · backup, remove, restore: the same token came back and answers; no log holds it
-- `T-P-1` done `playtest` 2026-11-09 at `ee3c119` · 401 without the token; a file that was mode 600 reads; config.php, Syncthing's config, PHP sessions, the rest of Nextcloud and Syncthing, the author's home and the photo disk are absent in the unit; the folders are read-only; no capabilities; the token is in no install log
-- `T-M-1` done `spec` 2026-11-07 at `3e6f8cc` · `tests/check_server.py`: 21 of 21 pass on the locked wheels
+- `T-M-1` done `spec` 2026-11-09 · `tests/check_server.py`: 45 of 45 pass on the locked wheels, search and indexer included
