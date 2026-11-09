@@ -22,10 +22,11 @@ Nothing open.
 `wip` `large` `filed 2026-11-06`
 
 Agents cannot see the files kept on the Pi. The tool server is written and
-passes its offline check; the app is not installed yet.
+is installed on the server with the author's two folders and passes T-P-1;
+no agent reaches it until Whoopy registers it.
 
-**Do:** install it with Syncthing's `Documents` and Nextcloud's `Notes` for
-the author, pass T-P-1, then register `docs_<user>` in Whoopy (its F-M-6).
+**Do:** register `docs_<user>` in Whoopy (its F-M-6), then have an agent list,
+find and read through it.
 
 ### F-M-5 · search homelab documents by meaning
 
@@ -49,23 +50,10 @@ search and returns 5 to 10 passages with path and page.
 
 ## Tests
 
-### T-P-1 · the installed server reads only its folders
-
-`todo` `playtest` `filed 2026-11-09` `needs: F-M-4`
-
-**Do:** install with the author's two folders, then call the server on
-loopback with and without the token, read a file that was mode 600 before
-the 2026-11-07 chmod, and try `/var/www/nextcloud/config/config.php` and a
-PHP session from inside the unit. **Pass:** 401 without the token; the file
-reads; the rest is not there for the process.
-
-### T-P-2 · backup and restore keep the tokens
-
-`todo` `playtest` `filed 2026-11-09` `needs: T-P-1`
-
-**Do:** `yunohost backup create --apps cheruby-docs-mcp`, remove, restore.
-**Pass:** the token from before the backup still works.
+Nothing open.
 
 ## Closed
 
+- `T-P-2` done `playtest` 2026-11-09 at `ee3c119` · backup, remove, restore: the same token came back and answers; no log holds it
+- `T-P-1` done `playtest` 2026-11-09 at `ee3c119` · 401 without the token; a file that was mode 600 reads; config.php, Syncthing's config, PHP sessions, the rest of Nextcloud and Syncthing, the author's home and the photo disk are absent in the unit; the folders are read-only; no capabilities; the token is in no install log
 - `T-M-1` done `spec` 2026-11-07 at `3e6f8cc` · `tests/check_server.py`: 21 of 21 pass on the locked wheels
