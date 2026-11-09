@@ -22,11 +22,11 @@ Nothing open.
 `wip` `large` `filed 2026-11-06`
 
 Agents cannot see the files kept on the Pi. The app is installed with the
-author's two folders, and Whoopy serves it at `/mcp/docs_<user>` to granted keys
-since 2026-11-09; no agent has used it for real yet.
+author's two folders, and Whoopy serves it at `/mcp/docs_<user>` to granted
+keys. Claude Code, with a key of its own, used it on 2026-11-09.
 
-**Do:** give Claude Code and one local-model client (Open WebUI or Hermes
-Agent) each a granted key, and have them find and read a document.
+**Do:** have one local-model client (Open WebUI or Hermes Agent) with a
+granted key find and read a document.
 
 ### F-M-5 · search homelab documents by meaning
 
