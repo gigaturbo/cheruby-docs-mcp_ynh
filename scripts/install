@@ -6,7 +6,11 @@ source /usr/share/yunohost/helpers
 ynh_script_progression "Installing the tool server from the locked wheels..."
 docs_build_venv
 
+ynh_script_progression "Building the embedding server, about 8 minutes, and fetching its model..."
+docs_build_llama
+
 ynh_script_progression "Adding configuration files..."
+docs_clear_index
 docs_configure
 
 ynh_script_progression "Starting the tool server..."

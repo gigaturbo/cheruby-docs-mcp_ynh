@@ -1,0 +1,53 @@
+[Unit]
+Description=Cheruby Docs: embedding model for the search index (__APP__)
+After=network.target
+
+[Service]
+Type=simple
+User=__APP__
+Group=__APP__
+# Two slots of 2048 tokens: a search is not stuck behind the indexer. Lower
+# priority than every other app; the model takes about 0.7 GB. No slot monitor:
+# it would show any local process the passages being embedded.
+ExecStart=__INSTALL_DIR__/bin/llama-server --model __INSTALL_DIR__/model/__MODEL_FILE__ --embeddings \
+    --host 127.0.0.1 --port __PORT_EMBED__ --ctx-size 4096 --parallel 2 \
+    --batch-size 2048 --ubatch-size 2048 --threads 4 --no-webui --no-slots
+Nice=10
+CPUWeight=20
+MemoryMax=1G
+
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictAddressFamilies=AF_INET AF_INET6
+
+# It reads its binary and model, nothing else.
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/www:ro
+BindReadOnlyPaths=__INSTALL_DIR__/bin __INSTALL_DIR__/model
+InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
+
+UMask=077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

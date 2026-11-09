@@ -4,10 +4,10 @@ packaging_format = 2
 
 id = "cheruby-docs-mcp"
 name = "Cheruby Docs"
-description.en = "Read-only MCP tools that let each user's AI agents list, find and read that user's folders"
-description.fr = "Outils MCP en lecture seule : les agents IA de chaque utilisateur listent, cherchent et lisent ses dossiers"
+description.en = "Read-only MCP tools that let each user's AI agents list, find, read and search that user's folders"
+description.fr = "Outils MCP en lecture seule : les agents IA de chaque utilisateur listent, cherchent, lisent et fouillent ses dossiers"
 
-version = "0.1.0~ynh1"
+version = "0.2.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -22,9 +22,11 @@ architectures = ["arm64"]
 multi_instance = false
 ldap = false
 sso = false
-disk = "200M"
-ram.build = "300M"
-ram.runtime = "200M"
+# The model (330 MB), llama-server and the venv; the index grows with the folders.
+disk = "1G"
+# Compiling llama-server.
+ram.build = "1500M"
+ram.runtime = "800M"
 
 [install]
     [install.folders]
@@ -45,6 +47,18 @@ ram.runtime = "200M"
     autoupdate.upstream = "https://github.com/astral-sh/uv"
     autoupdate.asset.arm64 = "^uv-aarch64-unknown-linux-gnu.tar.gz$"
 
+    # Built at install: the prebuilt arm64 binaries need a newer glibc than Debian 12's.
+    [resources.sources.llama_cpp]
+    url = "https://github.com/ggml-org/llama.cpp/archive/refs/tags/b12223.tar.gz"
+    sha256 = "92210b1f75abd45e9122f5d7d7a6afd32fbfa663d7e200cf2ef576758cd5ef8a"
+
+    # EmbeddingGemma 300M, the embedding model of the search index, at a fixed revision.
+    [resources.sources.model]
+    url = "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF/resolve/0f741b5a6585bd53aeb15cd1372c56f2a0f65e12/embeddinggemma-300M-Q8_0.gguf"
+    sha256 = "b5ce9d77a3fc4b3b39ccb5643c36777911cc4eb46a66962eadfa3f5f60490d63"
+    extract = false
+    rename = "embeddinggemma-300M-Q8_0.gguf"
+
     [resources.system_user]
 
     [resources.install_dir]
@@ -52,8 +66,19 @@ ram.runtime = "200M"
     owner = "root:rwx"
     group = "__APP__:rx"
 
+    # The search index, one SQLite file per user. Rebuilt by the timer, so not
+    # backed up; kept on remove unless --purge, and cleared at install and restore.
+    [resources.data_dir]
+    owner = "__APP__:rwx"
+    group = "__APP__:rx"
+
     [resources.ports]
     main.default = 8770
+    embed.default = 8771
+
+    # To build llama-server.
+    [resources.apt]
+    packages = ["cmake", "g++", "make"]
 
     # No web page: the AI gateway reaches the server on loopback.
     [resources.permissions]

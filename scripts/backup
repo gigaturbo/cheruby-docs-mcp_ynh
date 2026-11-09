@@ -3,8 +3,9 @@
 source ../settings/scripts/_common.sh
 source /usr/share/yunohost/helpers
 
-# Nothing here holds state: the folders and tokens are app settings, which
-# every Yunohost backup carries. The code and venv are rebuilt on restore.
+# The folders and tokens are app settings, which every Yunohost backup
+# carries. The code, venv, llama-server and model are rebuilt on restore. The
+# search index is left out: the timer rebuilds it from the folders.
 
 ynh_backup "/etc/systemd/system/$app.service"
 

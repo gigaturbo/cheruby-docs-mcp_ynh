@@ -3,11 +3,16 @@
 source ../settings/scripts/_common.sh
 source /usr/share/yunohost/helpers
 
-# Needs the network: the code is rebuilt from the lock file, not restored.
+# Needs the network: the code is rebuilt from the lock file and the pinned
+# sources, not restored. The search index is rebuilt by the timer.
 ynh_script_progression "Reinstalling the tool server from the locked wheels..."
 docs_build_venv
 
+ynh_script_progression "Building the embedding server, about 8 minutes, and fetching its model..."
+docs_build_llama
+
 ynh_script_progression "Restoring configuration files..."
+docs_clear_index
 docs_configure
 
 ynh_script_progression "Starting the tool server..."
