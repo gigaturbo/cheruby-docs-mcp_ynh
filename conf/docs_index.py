@@ -3,14 +3,15 @@
 Run by cheruby-docs-mcp-index.service, hourly. Settings come from its
 root-600 env file, which holds no token:
 
-    DOCS_FOLDERS_<user>     as for the tool server
+    DOCS_FOLDERS_FILE       as for the tool server
     DOCS_INDEX_DIR          where each user's index is written
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
     DOCS_EMBED_MODEL        the model's identity; when it changes, everything is redone
 
 Each run walks the folders and redoes only the files whose size or dates
 changed; a moved file keeps its passages, a deleted one loses them, and so do
-the files of a folder taken away or pointed elsewhere. A file that cannot be
+the files of a folder taken away or pointed elsewhere, and those its filters
+now leave out. A file that cannot be
 read is marked failed and retried once it changes; the run goes on. Text
 comes from the files' own text: scans and images are marked as waiting for
 OCR and hold no passage. Paths are stored as the tools show them
@@ -33,7 +34,8 @@ import urllib.parse
 import httpx2
 import numpy
 
-from docs_files import IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, inside, load_folders, office_text, open_pdf
+from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, kept, kept_target, load_folders,
+                        office_text, open_pdf)
 
 # EmbeddingGemma is trained with these prefixes; without them results get worse.
 QUERY_PROMPT = "task: search result | query: "
@@ -129,21 +131,25 @@ def sha256(real):
     return h.hexdigest()
 
 
-def walk(folders):
-    """{shown path: real path} of every file the index can use, hidden names and links out left out."""
+def walk(folders, rules):
+    """{shown path: real path} of every file the index can use: hidden names, links
+    out and what the filters leave out are not."""
     found = {}
     usable = TEXT_SUFFIXES | OFFICE_MEMBERS.keys() | IMAGE_FORMATS.keys() | {".pdf"}
     for label, root in folders.items():
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = [d for d in dirnames if not hidden(d)]
             rel = os.path.relpath(dirpath, root)
+            prefix = label if rel == "." else f"{label}/{rel}"
+            dirnames[:] = [d for d in dirnames if not hidden(d) and kept(rules, f"{prefix}/{d}", True)]
             for name in filenames:
                 real = os.path.join(dirpath, name)
                 if hidden(name) or os.path.splitext(name)[1].lower() not in usable:
                     continue
-                if not inside(os.path.realpath(real), root) or not os.path.isfile(real):
+                if not kept(rules, f"{prefix}/{name}"):
                     continue
-                found["/".join(p for p in (label, "" if rel == "." else rel, name) if p)] = real
+                if not kept_target(rules, label, root, real) or not os.path.isfile(real):
+                    continue
+                found[f"{prefix}/{name}"] = real
     return found
 
 
@@ -185,7 +191,7 @@ def publish(db, path):
     os.replace(path + ".tmp", path)
 
 
-def index_user(db, folders, client, model, published):
+def index_user(db, folders, rules, client, model, published):
     """Bring one user's index in line with their folders. Returns {outcome: count}."""
     meta = dict(db.execute("SELECT key, value FROM meta"))
     if meta.get("model") != model:
@@ -199,7 +205,7 @@ def index_user(db, folders, client, model, published):
     db.execute("INSERT OR REPLACE INTO meta VALUES ('folders', ?)", (folders_key(folders),))
     db.commit()
 
-    found = walk(folders)
+    found = walk(folders, rules)
     known = {r[0]: r[1:] for r in db.execute("SELECT path, id, size, mtime_ns, ctime_ns, sha256 FROM files")}
     gone = {row[4]: row[0] for path, row in known.items() if path not in found}
     reused, counts, last_publish = set(), {}, time.monotonic()
@@ -261,7 +267,7 @@ def wait_ready(client):
 
 
 def main():
-    users = load_folders(os.environ)
+    users, rules = load_folders(os.environ["DOCS_FOLDERS_FILE"])
     index_dir = os.environ["DOCS_INDEX_DIR"]
     broken = []
     with httpx2.Client(base_url=os.environ["DOCS_EMBED_URL"], timeout=300) as client:
@@ -270,7 +276,7 @@ def main():
             base = os.path.join(index_dir, user)
             db = connect(base + ".work.sqlite")
             try:
-                counts = index_user(db, folders, client, os.environ["DOCS_EMBED_MODEL"], base + ".sqlite")
+                counts = index_user(db, folders, rules[user], client, os.environ["DOCS_EMBED_MODEL"], base + ".sqlite")
                 print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files"), flush=True)
             except httpx2.TransportError:
                 raise

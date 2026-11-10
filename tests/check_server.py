@@ -2,9 +2,10 @@
 
     .venv/bin/python tests/check_server.py
 
-Builds two users' folders in a temporary directory, indexes them against a
-stand-in embedding server, starts the tool server on a loopback port, then
-calls each tool and re-runs the indexer after a move, an edit and a deletion.
+Builds two users' folders in a temporary directory, indexes them without
+filters against a stand-in embedding server, starts the tool server with
+filters on a loopback port, then calls each tool and re-runs the indexer
+with the filters, then after a move, an edit and a deletion.
 The stand-in hashes words into vectors: it checks the wiring, not the quality
 of the search. Needs the package's dependencies only.
 Prints one line per check and exits 1 if any fails.
@@ -89,10 +90,19 @@ class FakeEmbedder(BaseHTTPRequestHandler):
         pass
 
 
+def write_folders(path, folders):
+    """The folders file: {user: {label: (real path, only, skip)}}."""
+    with open(path, "w") as f:
+        json.dump({user: {label: {"path": p, "only": only, "skip": skip} for label, (p, only, skip) in entries.items()}
+                   for user, entries in folders.items()}, f)
+
+
 def build(base):
-    """alice: Documents and Notes. bob: Papiers. Returns the env for the server."""
+    """alice: Documents and Notes, filtered. bob: Papiers. Returns the env for the
+    server, and the folders without filters for the first index run."""
     docs, notes, papiers = (os.path.join(base, d) for d in ("docs", "notes", "papiers"))
     os.makedirs(os.path.join(docs, "Factures"))
+    os.makedirs(os.path.join(docs, "Brouillons"))
     os.makedirs(os.path.join(docs, ".stversions"))
     os.makedirs(notes)
     os.makedirs(papiers)
@@ -103,6 +113,8 @@ def build(base):
         f"{notes}/courses.md": "pain, lait",
         f"{notes}/long.md": " ".join(f"Phrase {n} sur le jardin et les tomates." for n in range(300)),
         f"{papiers}/bob.md": "bob only",
+        f"{docs}/Brouillons/draft.md": "brouillon cache",
+        f"{docs}/Factures/Copie.TMP.md": "copie cachee",
         f"{base}/secret.md": "outside every folder",
     }
     for path, text in files.items():
@@ -112,6 +124,8 @@ def build(base):
         f.write(tiny_pdf("Loyer augmente de 3 pourcent"))
     with open(f"{docs}/scan.png", "wb") as f:
         f.write(PNG)
+    with open(f"{notes}/photo.png", "wb") as f:
+        f.write(PNG)
     with zipfile.ZipFile(f"{docs}/lettre.docx", "w") as z:
         z.writestr("word/document.xml",
                    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
@@ -119,18 +133,27 @@ def build(base):
                    "<w:p><w:r><w:t>Objet : préavis</w:t></w:r></w:p></w:body></w:document>")
     os.symlink(f"{base}/secret.md", f"{docs}/escape.md")
     os.symlink(".stversions/old.md", f"{docs}/vieux.md")
+    os.symlink("Brouillons", f"{docs}/Pub")
+    os.symlink("Brouillons/draft.md", f"{docs}/alias.md")
     os.utime(f"{notes}/courses.md", (946_000_000, 946_000_000))  # 1999-12-24
     os.makedirs(f"{base}/index")
+    folders = {"alice": {"Documents": (docs, [], ["brouillons", "/Documents/*.tmp.md"]),
+                         "Notes": (notes, ["*.md"], [])},
+               "ju": {"Papiers": (papiers, [], [])}}
+    write_folders(f"{base}/folders.json", folders)
+    write_folders(f"{base}/open.json", {user: {label: (p, [], []) for label, (p, _, _) in entries.items()}
+                                        for user, entries in folders.items()})
+    write_folders(f"{base}/documents.json", {"alice": {"Documents": folders["alice"]["Documents"]},
+                                             "ju": folders["ju"]})
     return {
         "PATH": os.environ.get("PATH", ""),
         "DOCS_PORT": str(PORT),
         "DOCS_INDEX_DIR": f"{base}/index",
         "DOCS_EMBED_URL": f"http://127.0.0.1:{EMBED_PORT}",
         "DOCS_EMBED_MODEL": "fake-64",
+        "DOCS_FOLDERS_FILE": f"{base}/folders.json",
         "DOCS_TOKEN_alice": ALICE,
-        "DOCS_FOLDERS_alice": f"Documents={docs}:Notes={notes}",
         "DOCS_TOKEN_ju": BOB,
-        "DOCS_FOLDERS_ju": f"Papiers={papiers}",
         "DOCS_GATEWAY_TOKEN": GATEWAY,
         "DOCS_GATEWAY_USER": "alice",
         "DOCS_GATEWAY_FOLDERS": "Notes",
@@ -179,6 +202,24 @@ CHECKS = [
     ("hidden refused", lambda: tool("read_file", path="Documents/.stversions/old.md"), error_with("not allowed")),
     ("link out refused", lambda: tool("read_file", path="Documents/escape.md"), error_with("leads out")),
     ("link into hidden refused", lambda: tool("read_file", path="Documents/vieux.md"), error_with("hidden folder")),
+    ("filtered folder not listed", lambda: tool("list_folder", path="Documents"),
+     lambda r: r[0] == "ok" and "Brouillons" not in r[1] and "Copie" not in r[1]),
+    ("only keeps matching files", lambda: tool("list_folder", path="Notes"),
+     lambda r: r[0] == "ok" and "courses.md" in r[1] and "photo.png" not in r[1]),
+    ("filtered folder reads as missing", lambda: tool("list_folder", path="Documents/Brouillons"), error_with("not found")),
+    ("file below it too", lambda: tool("read_file", path="Documents/Brouillons/draft.md"), error_with("not found")),
+    ("a link to a filtered folder is not listed", lambda: tool("list_folder", path="Documents"),
+     lambda r: r[0] == "ok" and "Pub" not in r[1] and "alias" not in r[1]),
+    ("nor read through", lambda: tool("read_file", path="Documents/Pub/draft.md"), error_with("not found")),
+    ("a link to a filtered file is not read", lambda: tool("read_file", path="Documents/alias.md"), error_with("not found")),
+    ("nor found", lambda: tool("find_files", query="alias"), lambda r: r == ("ok", "Nothing matches 'alias'.")),
+    ("nor the folder link", lambda: tool("find_files", query="pub"), lambda r: r == ("ok", "Nothing matches 'pub'.")),
+    ("filter with a path ignores case", lambda: tool("read_file", path="Documents/Factures/Copie.TMP.md"),
+     error_with("not found")),
+    ("find leaves filtered out", lambda: tool("find_files", query="draft"), lambda r: r == ("ok", "Nothing matches 'draft'.")),
+    ("find keeps to only", lambda: tool("find_files", query="photo"), lambda r: r == ("ok", "Nothing matches 'photo'.")),
+    ("search hides what the index still holds", lambda: tool("search_documents", query="brouillon copie cache", limit=10),
+     lambda r: r[0] == "ok" and "Brouillons" not in r[1] and "Copie" not in r[1]),
     ("find ignores accents and case", lambda: tool("find_files", query="factures energie"), ok_with("Documents/Factures/Énergie_2024.md")),
     ("find within a folder", lambda: tool("find_files", query="courses", path="Notes"), ok_with("Notes/courses.md")),
     ("find leaves hidden out", lambda: tool("find_files", query="old"), lambda r: r[0] == "ok" and ".stversions" not in r[1]),
@@ -236,13 +277,17 @@ def index_checks(base, env, first):
     docs, notes = f"{base}/docs", f"{base}/notes"
     files = statuses(base)
     yield "first run indexes both users", first, "alice:" in first and "ju: 1 indexed" in first
+    yield "first run takes everything", sorted(files), "Documents/Brouillons/draft.md" in files and "Notes/photo.png" in files
     yield "scan waits for OCR", files.get("Documents/scan.png"), files.get("Documents/scan.png") == "needs_ocr"
     yield "hidden and links left out of the index", sorted(files), \
         not any(".st" in p or ".hidden" in p or "escape" in p or "vieux" in p for p in files)
     yield "prompts sent", EMBEDDED[:1], EMBEDDED and EMBEDDED[0].startswith("title: ") \
         and any(t.startswith("task: search result | query: ") for t in EMBEDDED)
     second = run_indexer(env)
-    yield "re-run redoes nothing", second, "alice: 6 unchanged" in second
+    yield "re-run drops what the filters leave out", second, "alice: 4 dropped, 6 unchanged" in second
+    files = statuses(base)
+    yield "filtered files leave the index", sorted(files), \
+        not any("Brouillons" in p or "Copie" in p or "photo" in p or "alias" in p for p in files)
     os.rename(f"{notes}/courses.md", f"{notes}/liste.md")
     os.remove(f"{docs}/lettre.docx")
     with open(f"{docs}/Factures/Énergie_2024.md", "a") as f:
@@ -259,7 +304,7 @@ def index_checks(base, env, first):
     files = statuses(base)
     yield "index follows the folders", sorted(files), "Notes/liste.md" in files and "Notes/courses.md" not in files \
         and "Documents/lettre.docx" not in files
-    run_indexer({**env, "DOCS_FOLDERS_alice": env["DOCS_FOLDERS_alice"].split(":")[0]})
+    run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/documents.json"})
     result = tool("search_documents", query="tomates")
     yield "index of other folders refused", result, error_with("change of folders")(result)
     yield "a folder taken away leaves the index", sorted(statuses(base)), not any(p.startswith("Notes/") for p in statuses(base))
@@ -279,7 +324,7 @@ def main():
     threading.Thread(target=embedder.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:
         env = build(base)
-        first = run_indexer(env)
+        first = run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/open.json"})
         server = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], env=env,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:

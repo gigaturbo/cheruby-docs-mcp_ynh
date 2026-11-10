@@ -5,8 +5,7 @@ Run by cheruby-docs-mcp.service. Settings come from its root-600 env file:
     DOCS_BIND               address to listen on, default 127.0.0.1
     DOCS_PORT               default 8770
     DOCS_TOKEN_<user>       a request carrying "Authorization: Bearer <it>" acts as <user>
-    DOCS_FOLDERS_<user>     that user's folders, "<label>=<path>" joined by ":",
-                            e.g. Documents=/srv/docs:Notes=/srv/notes
+    DOCS_FOLDERS_FILE       each user's folders and their filters (docs_files.load_folders)
     DOCS_GATEWAY_TOKEN      optional: a token for the AI gateway, acting as
     DOCS_GATEWAY_USER       this user, on
     DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
@@ -19,7 +18,7 @@ folder's label, never with a real path.
 
 Nothing here writes. A path is refused if it climbs out of its folder,
 follows a link out of it, or names a hidden file (Syncthing's .stfolder,
-.stversions). The unit adds the outer wall: the process sees only these
+.stversions); one the folder's filters leave out is not found. The unit adds the outer wall: the process sees only these
 folders and the index, read-only.
 
 The tools are served at /mcp over Streamable HTTP, stateless.
@@ -41,7 +40,8 @@ import uvicorn
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from docs_files import IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, inside, load_folders, office_text, open_pdf
+from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, inside, kept, kept_target,
+                        load_folders, office_text, open_pdf)
 from docs_index import QUERY_PROMPT, connect
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
@@ -58,9 +58,8 @@ MAX_RESULTS = 10
 RRF_K = 60
 
 
-def load_users(environ):
+def load_users(environ, folders):
     """{token: (user, {label: real path})} from the DOCS_TOKEN_* and DOCS_GATEWAY_* settings."""
-    folders = load_folders(environ)
     tokens = [(key, token, key.removeprefix("DOCS_TOKEN_"), folders.get(key.removeprefix("DOCS_TOKEN_"), {}))
               for key, token in environ.items() if key.startswith("DOCS_TOKEN_")]
     if environ.get("DOCS_GATEWAY_TOKEN"):
@@ -82,7 +81,8 @@ def load_users(environ):
     return users
 
 
-USERS = load_users(os.environ)
+FOLDERS, RULES = load_folders(os.environ["DOCS_FOLDERS_FILE"])
+USERS = load_users(os.environ, FOLDERS)
 
 # One line per embedding request would fill the journal.
 logging.getLogger("httpx2").setLevel(logging.WARNING)
@@ -117,7 +117,11 @@ def resolve(ctx, path):
     real = os.path.realpath(os.path.join(root, *parts[1:]))
     if not inside(real, root):
         raise ToolError(f"{path}: leads out of {parts[0]} or into a hidden folder.")
-    if not os.path.exists(real):
+    # Left out by a filter, under its name or where it leads, reads as missing:
+    # a filter also hides that a file exists.
+    rules = RULES[user_of(ctx)]
+    if (not os.path.exists(real) or not kept(rules, "/".join(parts), os.path.isdir(real))
+            or not kept_target(rules, parts[0], root, real, os.path.isdir(real))):
         raise ToolError(f"{path}: not found.")
     return real
 
@@ -149,8 +153,13 @@ async def list_folder(ctx: Context, path: str = "") -> str:
         return "\n".join(f"dir  {label}/" for label in folders_of(ctx))
     if not os.path.isdir(real):
         raise ToolError(f"{path}: is a file; read it with read_file.")
-    shown = path.strip().strip("/")
-    entries = sorted((e for e in os.scandir(real) if not hidden(e.name)),
+    shown = "/".join(p for p in path.strip().strip("/").split("/") if p not in ("", "."))
+    rules = RULES[user_of(ctx)]
+    label = shown.split("/", 1)[0]
+    root = folders_of(ctx)[label]
+    entries = sorted((e for e in os.scandir(real)
+                      if not hidden(e.name) and kept(rules, f"{shown}/{e.name}", e.is_dir())
+                      and (not e.is_symlink() or kept_target(rules, label, root, e.path, e.is_dir()))),
                      key=lambda e: (not e.is_dir(), e.name.lower()))
     lines = [describe(e.path, f"{shown}/{e.name}") for e in entries[:MAX_LIST]]
     if len(entries) > MAX_LIST:
@@ -174,14 +183,23 @@ async def find_files(ctx: Context, query: str, path: str = "") -> str:
     if not words:
         raise ToolError("query is empty.")
     real = resolve(ctx, path)
-    starts = list(folders_of(ctx).items()) if real is None else [(path.strip().strip("/"), real)]
+    rules = RULES[user_of(ctx)]
+    shown_path = "/".join(p for p in path.strip().strip("/").split("/") if p not in ("", "."))
+    starts = list(folders_of(ctx).items()) if real is None else [(shown_path, real)]
     found = []
     for shown_root, root in starts:
         for dirpath, dirnames, filenames in os.walk(root):
-            dirnames[:] = sorted(d for d in dirnames if not hidden(d))
             rel = os.path.relpath(dirpath, root)
-            for name in dirnames + sorted(f for f in filenames if not hidden(f)):
-                shown = "/".join(p for p in (shown_root, "" if rel == "." else rel, name) if p)
+            prefix = shown_root if rel == "." else f"{shown_root}/{rel}"
+            label = prefix.split("/", 1)[0]
+            # A link is judged by where it leads too; os.walk does not follow those to folders.
+            def shows(name, is_dir):
+                link = os.path.join(dirpath, name)
+                return (not hidden(name) and kept(rules, f"{prefix}/{name}", is_dir)
+                        and (not os.path.islink(link) or kept_target(rules, label, root, link, is_dir)))
+            dirnames[:] = sorted(d for d in dirnames if shows(d, True))
+            for name in dirnames + sorted(f for f in filenames if shows(f, False)):
+                shown = f"{prefix}/{name}"
                 if all(w in fold(shown).replace("_", " ").replace("-", " ") for w in words):
                     found.append(describe(os.path.join(dirpath, name), shown))
                     if len(found) > MAX_FOUND:
@@ -316,7 +334,7 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
     if parts and parts[0] not in folders:
         raise ToolError(f"{path}: no folder named {parts[0]!r}. Folders: {', '.join(folders)}.")
     # The index holds all the user's folders; a token may open only some of them.
-    clauses = ["f.status = 'indexed'",
+    clauses = ["f.status = 'indexed'", "kept(f.path)",
                f"substr(f.path, 1, instr(f.path, '/') - 1) IN ({','.join('?' * len(folders))})"]
     args = list(folders)
     if parts:
@@ -333,6 +351,8 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
 
     vector = await embed_query(query)
     db = connect(db_path, read_only=True)
+    # Passages of files a filter now leaves out, until the next index run drops them.
+    db.create_function("kept", 1, lambda shown, rules=RULES[user_of(ctx)]: kept(rules, shown), deterministic=True)
     try:
         meta = dict(db.execute("SELECT key, value FROM meta"))
         # A label now on another path: its text in the index is not what read_file reaches.
