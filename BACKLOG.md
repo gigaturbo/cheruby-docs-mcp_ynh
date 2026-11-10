@@ -30,41 +30,14 @@ one wake a night, none when nothing waits. Pages rendered with `pypdfium2`
 from the locked wheels. The read text is kept by file fingerprint, so a new
 embedding model does not redo it.
 
-### F-M-7 · a token for Whoopy, for a chosen user and folders, shown in the panel
-
-`wip` `medium` `filed 2026-11-10`
-
-From its ~ynh9, Whoopy no longer reads this app's settings. It serves one
-`docs` MCP server at `/mcp/docs`, with an address and a token pasted in its
-own panel (Whoopy F-M-8). Until this item, the token pasted there is a user's
-own `token_<user>`, read by `yunohost app setting cheruby-docs-mcp
-token_<user>`.
-
-**Do:** a "Whoopy access" section in the panel: a user (install question,
-type `user`, default the first admin), the folders it opens (a subset of that
-user's, by label), the token shown so it can be copied, and a "New token"
-button that makes another one and restarts the service. That token reuses the
-user's index, so nothing is indexed twice. The token's trace must not reach a
-log, `yunohost-cli.log` included (see T-P-2).
-
-Built, waiting for T-P-3: the panel has a "Whoopy access" section (user,
-folders) and a "Whoopy token" one (the token, its address, "New token"); a
-section holding a button saves nothing, hence two. The per-user tokens stay,
-and no token is traced any more, at configure either.
-
 ## Tests
 
-### T-P-3 · the Whoopy token, from the panel, stays out of the logs
-
-`todo` `playtest` `filed 2026-11-10`
-
-Recipe in the `cheruby-docs-mcp-kb` skill. Covers F-M-7 on the server: the
-token shows in the panel, narrowing the folders narrows list and search, "New
-token" retires the old one, and no new line of `yunohost-cli.log` or of the
-config operation logs holds the token.
+Nothing open.
 
 ## Closed
 
+- `F-M-7` done `medium` 2026-11-10 · one Whoopy token, for a user and some of their folders, shown in the config panel with its address and a "New token" button; it searches that user's index, its folders only; no token is traced any more, so none reaches `yunohost-cli.log`
+- `T-P-3` done `playtest` 2026-11-10 at `392c2be` · token and address in the panel; two folders, then one, applied; an unknown label refused; with Notes only, list, read and search keep to Notes (8 of 8 passages); after "New token" the old one gets 401; neither token, nor `token_blac`, in 4717 new lines of `yunohost-cli.log` or the 19 operation logs
 - `F-M-5` done `large` 2026-11-09 · `search_documents` by meaning and keywords on an hourly index (llama-server built on the Pi, EmbeddingGemma 300M, numpy, FTS5): 288 files indexed in 31 min, 10 of 10 test documents in the top 5; healthchecks.io pinged; the model offered through Whoopy as `embeddinggemma` (Whoopy F-P-2)
 - `T-P-2` done `playtest` 2026-11-09 at `315b90c` · backup, remove, restore: same token (by fingerprint), answers, ping settings back, index cleared and rebuilt by the timer; the shared operation logs hold no token, but yunohost-cli.log (root-only) has held it since the first install, from the `secret_token=` trace line
 - `T-M-2` done `playtest` 2026-11-09 at `bb9fd44` · 10 of 10 real documents found in the top 5 by queries in other words, French and English, 7 at rank 1; 0.12 to 0.18 s a search
