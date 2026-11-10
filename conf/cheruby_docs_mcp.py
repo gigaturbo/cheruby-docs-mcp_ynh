@@ -355,9 +355,10 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
     db.create_function("kept", 1, lambda shown, rules=RULES[user_of(ctx)]: kept(rules, shown), deterministic=True)
     try:
         meta = dict(db.execute("SELECT key, value FROM meta"))
-        # A label now on another path: its text in the index is not what read_file reaches.
+        # A label now on another path: its text in the index is not what read_file
+        # reaches. A folder the index does not know yet just has no passages.
         indexed = json.loads(meta.get("folders", "{}"))
-        if any(indexed.get(label) != real for label, real in folders.items()):
+        if any(indexed.get(label, real) != real for label, real in folders.items()):
             raise ToolError("the search index is being rebuilt after a change of folders; use find_files meanwhile.")
         ids = ranked(db, query, vector, where, args)[:50]
         rows = {r[0]: r[1:] for r in db.execute(

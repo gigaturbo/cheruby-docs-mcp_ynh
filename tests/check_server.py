@@ -145,6 +145,8 @@ def build(base):
                                         for user, entries in folders.items()})
     write_folders(f"{base}/documents.json", {"alice": {"Documents": folders["alice"]["Documents"]},
                                              "ju": folders["ju"]})
+    write_folders(f"{base}/moved.json", {"alice": {**folders["alice"], "Notes": (papiers, [], [])},
+                                         "ju": folders["ju"]})
     return {
         "PATH": os.environ.get("PATH", ""),
         "DOCS_PORT": str(PORT),
@@ -304,9 +306,13 @@ def index_checks(base, env, first):
     files = statuses(base)
     yield "index follows the folders", sorted(files), "Notes/liste.md" in files and "Notes/courses.md" not in files \
         and "Documents/lettre.docx" not in files
+    run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/moved.json"})
+    result = tool("search_documents", query="tomates bob")
+    yield "index of a label on another path refused", result, error_with("change of folders")(result)
     run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/documents.json"})
-    result = tool("search_documents", query="tomates")
-    yield "index of other folders refused", result, error_with("change of folders")(result)
+    result = tool("search_documents", query="loyer tomates")
+    yield "a folder not indexed yet does not stop search", result, ok_with("Documents/bail.pdf")(result) \
+        and "Notes/" not in result[1]
     yield "a folder taken away leaves the index", sorted(statuses(base)), not any(p.startswith("Notes/") for p in statuses(base))
     run_indexer(env)
     result = tool("search_documents", query="tomates", path="Notes")
