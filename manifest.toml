@@ -7,7 +7,7 @@ name = "Cheruby Docs"
 description.en = "Read-only MCP tools that let each user's AI agents list, find, read and search that user's folders"
 description.fr = "Outils MCP en lecture seule : les agents IA de chaque utilisateur listent, cherchent, lisent et fouillent ses dossiers"
 
-version = "0.2.0~ynh1"
+version = "0.3.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -35,6 +35,12 @@ ram.runtime = "800M"
     help.en = "Each user's agents see only that user's folders, under their label. The service joins each folder's group to read it, so the files must be group-readable."
     type = "text"
     example = "alice Documents=/home/yunohost.app/syncthing/Documents"
+
+    [install.whoopy_user]
+    ask.en = "User whose folders Whoopy reaches"
+    ask.fr = "Utilisateur dont Whoopy atteint les dossiers"
+    help.en = "Whoopy gets one token, for this user's folders; the config panel shows it and narrows the folders."
+    type = "user"
 
 [resources]
 

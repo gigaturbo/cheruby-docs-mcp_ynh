@@ -14,12 +14,54 @@ validate__healthcheck_url() {
     validate__healthcheck_enabled
 }
 
+validate__whoopy_folders() {
+    local labels wanted
+    labels=$(awk -v u="$whoopy_user" '$1 == u { sub(/=.*/, "", $2); print $2 }' <<< "$folders")
+    [ -n "$labels" ] || { echo "$whoopy_user has no folder in this app."; return; }
+    for wanted in ${whoopy_folders//,/ }; do
+        if ! grep -qxF "$wanted" <<< "$labels"; then
+            echo "$whoopy_user has no folder '$wanted'. Folders: $(paste -sd, <<< "$labels")."
+            return
+        fi
+    done
+}
+
+validate__whoopy_user() {
+    validate__whoopy_folders
+}
+
+# The token is never read by the traced getter (its bind is null): the trace
+# goes to yunohost-cli.log, which nothing redacts.
+ynh_app_config_show() {
+    _ynh_app_config_show
+    set +o xtrace
+    ynh_return "whoopy_token:"
+    ynh_return "  value: '$(ynh_app_setting_get --key=whoopy_token)'"
+    ynh_return "  help: 'Address for Whoopy: http://127.0.0.1:$port/mcp'"
+    set -o xtrace
+}
+
 # The ping unit reads ping.env at each run: nothing to restart.
 ynh_app_config_apply() {
     _ynh_app_config_apply
     healthcheck_enabled=$(ynh_app_setting_get --key=healthcheck_enabled)
     healthcheck_url=$(ynh_app_setting_get --key=healthcheck_url)
     docs_write_ping
+    if [ "${changed[whoopy_user]}" = "true" ] || [ "${changed[whoopy_folders]}" = "true" ]; then
+        docs_configure
+        ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
+            --wait_until="Uvicorn running on" --timeout=60
+    fi
+}
+
+run__new_token() {
+    set +o xtrace
+    ynh_app_setting_set --key=whoopy_token --value="$(ynh_string_random --length=48)"
+    set -o xtrace
+    docs_configure
+    ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
+        --wait_until="Uvicorn running on" --timeout=60
+    ynh_print_info "A new token is in the panel. Paste it in Whoopy: the old one no longer works."
 }
 
 ynh_app_config_run "$1"

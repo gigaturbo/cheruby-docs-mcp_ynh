@@ -9,6 +9,9 @@ model_file="embeddinggemma-300M-Q8_0.gguf"
 docs_default_settings() {
     ynh_app_setting_set_default --key=healthcheck_enabled --value=0
     ynh_app_setting_set_default --key=healthcheck_url --value=""
+    # Installs from before the Whoopy access: the first user of the folders.
+    ynh_app_setting_set_default --key=whoopy_user --value="$(awk 'NF {print $1; exit}' <<< "$folders")"
+    ynh_app_setting_set_default --key=whoopy_folders --value=""
 }
 
 # ping.env for the ping unit: the check's URL, or nothing when the feature is
@@ -91,12 +94,12 @@ docs_check_downloads() {
 }
 
 # The folders setting, one "<user> <Label>=<path>" per line, becomes:
-# docs.env (each user's token and folders, root 600), index.env (the folders
-# without any token, for the indexer), the units' read-only bind mounts, and
-# the groups the units join to read them. A user's token is made once and
-# kept in the settings.
+# docs.env (each user's token and folders, and the Whoopy token, root 600),
+# index.env (the folders without any token, for the indexer), the units'
+# read-only bind mounts, and the groups the units join to read them. Each
+# token is made once and kept in the settings.
 docs_configure() {
-    local line user rest label path group
+    local line user rest label path group token
     local -A user_folders=()
     local -A groups_seen=()
     bind_paths=""
@@ -125,8 +128,21 @@ docs_configure() {
     done <<< "$folders"
     [ ${#user_folders[@]} -gt 0 ] || ynh_die "Folders: no folder given."
 
-    # The trace would print the tokens. Each one is first assigned to
-    # secret_token, a name Yunohost's log redaction learns the value from.
+    # The Whoopy token opens whoopy_folders (labels joined by ","), or all of
+    # whoopy_user's folders when empty. A label no longer in folders is dropped.
+    local whoopy_labels="" wanted
+    for wanted in ${whoopy_folders//,/ }; do
+        if [[ ":${user_folders[$whoopy_user]:-}" == *":$wanted="* ]]; then
+            whoopy_labels+="${whoopy_labels:+:}$wanted"
+        else
+            ynh_print_warn "Whoopy access: $whoopy_user has no folder '$wanted' any more; left out."
+        fi
+    done
+    if [ -z "$whoopy_folders" ]; then
+        whoopy_labels=$(tr ':' '\n' <<< "${user_folders[$whoopy_user]:-}" | cut -d= -f1 | paste -sd:)
+    fi
+    [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder of $whoopy_user."
+
     {
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
@@ -137,6 +153,8 @@ docs_configure() {
         done
     } > "$install_dir/index.env"
 
+    # The trace stays off while a token is in a variable: it would go to the
+    # operation log and, unredacted, to yunohost-cli.log.
     set +o xtrace
     {
         echo "DOCS_BIND=127.0.0.1"
@@ -144,14 +162,19 @@ docs_configure() {
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
         for user in "${!user_folders[@]}"; do
-            secret_token=$(ynh_app_setting_get --key="token_$user")
-            set -o xtrace
-            secret_token=${secret_token:-$(ynh_string_random --length=48)}
-            set +o xtrace
-            ynh_app_setting_set --key="token_$user" --value="$secret_token"
-            echo "DOCS_TOKEN_$user=$secret_token"
+            token=$(ynh_app_setting_get --key="token_$user")
+            token=${token:-$(ynh_string_random --length=48)}
+            ynh_app_setting_set --key="token_$user" --value="$token"
+            echo "DOCS_TOKEN_$user=$token"
             echo "DOCS_FOLDERS_$user=\"${user_folders[$user]}\""
         done
+        token=$(ynh_app_setting_get --key=whoopy_token)
+        token=${token:-$(ynh_string_random --length=48)}
+        ynh_app_setting_set --key=whoopy_token --value="$token"
+        echo "DOCS_GATEWAY_TOKEN=$token"
+        echo "DOCS_GATEWAY_USER=$whoopy_user"
+        echo "DOCS_GATEWAY_FOLDERS=$whoopy_labels"
+        token=""
     } > "$install_dir/docs.env"
     set -o xtrace
 

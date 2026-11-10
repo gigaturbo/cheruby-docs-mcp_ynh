@@ -21,3 +21,41 @@ name = "Cheruby Docs"
         pattern.regexp = '^$|^https://[A-Za-z0-9.-]+(:[0-9]+)?/[A-Za-z0-9/_.-]+[A-Za-z0-9]$'
         pattern.error = "An https address such as https://hc-ping.com/<uuid>, without a trailing /"
         bind = "settings"
+
+    [main.whoopy]
+    name = "Whoopy access"
+    help = "Whoopy holds one token for this app. It acts as this user, on the folders chosen here, and searches the user's own index."
+
+        [main.whoopy.whoopy_user]
+        ask = "User"
+        type = "user"
+        bind = "settings"
+
+        [main.whoopy.whoopy_folders]
+        ask = "Folders"
+        type = "tags"
+        optional = true
+        help = "Labels of that user's folders, such as Documents. Empty opens all of them."
+        # Checked on the tags joined by commas, not tag by tag.
+        pattern.regexp = '^[A-Za-z0-9][A-Za-z0-9_.-]*(,[A-Za-z0-9][A-Za-z0-9_.-]*)*$'
+        pattern.error = "Folder labels, such as Documents"
+        bind = "settings"
+
+    # Its own section: a section holding a button runs actions and saves nothing.
+    [main.whoopy_token]
+    name = "Whoopy token"
+    help = "Paste it in Whoopy's panel, with the address shown under it."
+
+        # Read by ynh_app_config_show with the trace off, never by the traced getter.
+        [main.whoopy_token.whoopy_token]
+        ask = "Token"
+        type = "string"
+        readonly = true
+        redact = true
+        bind = "null"
+
+        [main.whoopy_token.new_token]
+        ask = "New token"
+        type = "button"
+        style = "warning"
+        help = "Makes another token and restarts the service. The old one stops working: paste the new one in Whoopy."

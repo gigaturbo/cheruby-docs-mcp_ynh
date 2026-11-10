@@ -17,6 +17,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   the sandboxed units.
 - `conf/requirements.in` → `conf/requirements.txt`: the hash-locked wheels.
   The re-lock command is at the top of `requirements.in`.
+- `config_panel.toml`, `scripts/config`: health pings and the Whoopy token.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
   in `scripts/_common.sh`.
 - `tests/check_server.py`: the offline check, on throwaway folders, with a
@@ -26,7 +27,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 
 - **Three units, one user** `cheruby-docs-mcp`, all on loopback:
   - `cheruby-docs-mcp.service`, the tool server (uvicorn). Whoopy reaches it
-    and holds one entry per user (`docs_<user>`).
+    with one token, chosen in the config panel: one user, some of their folders.
   - `cheruby-docs-mcp-embed.service`, llama-server with EmbeddingGemma 300M,
     built from source at install.
   - `cheruby-docs-mcp-index.service`, run hourly by its timer: walks the
@@ -37,7 +38,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   only).
 - **The index is the only state**, one SQLite file per user in
   `/home/yunohost.app/cheruby-docs-mcp`, rebuilt from the folders, never
-  backed up. The `folders` and `token_<user>` settings are the rest;
+  backed up. The `folders`, `token_<user>` and `whoopy_*` settings are the rest;
   configure renders the env files and the units from them.
 - **The token picks the user**, and the unit joins each folder's group to
   read it, with everything else those groups could read hidden.
