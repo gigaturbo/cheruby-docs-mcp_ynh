@@ -47,7 +47,7 @@ ynh_app_config_apply() {
     healthcheck_enabled=$(ynh_app_setting_get --key=healthcheck_enabled)
     healthcheck_url=$(ynh_app_setting_get --key=healthcheck_url)
     docs_write_ping
-    if [ "${changed[whoopy_user]}" = "true" ] || [ "${changed[whoopy_folders]}" = "true" ]; then
+    if [ "${changed[whoopy_user]:-}" = "true" ] || [ "${changed[whoopy_folders]:-}" = "true" ]; then
         docs_configure
         ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
             --wait_until="Uvicorn running on" --timeout=60
