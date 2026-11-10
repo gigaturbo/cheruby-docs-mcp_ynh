@@ -30,9 +30,38 @@ one wake a night, none when nothing waits. Pages rendered with `pypdfium2`
 from the locked wheels. The read text is kept by file fingerprint, so a new
 embedding model does not redo it.
 
+### F-M-7 · a token for Whoopy, for a chosen user and folders, shown in the panel
+
+`wip` `medium` `filed 2026-11-10`
+
+From its ~ynh9, Whoopy no longer reads this app's settings. It serves one
+`docs` MCP server at `/mcp/docs`, with an address and a token pasted in its
+own panel (Whoopy F-M-8). Until this item, the token pasted there is a user's
+own `token_<user>`, read by `yunohost app setting cheruby-docs-mcp
+token_<user>`.
+
+**Do:** a "Whoopy access" section in the panel: a user (install question,
+type `user`, default the first admin), the folders it opens (a subset of that
+user's, by label), the token shown so it can be copied, and a "New token"
+button that makes another one and restarts the service. That token reuses the
+user's index, so nothing is indexed twice. The token's trace must not reach a
+log, `yunohost-cli.log` included (see T-P-2).
+
+Built, waiting for T-P-3: the panel has a "Whoopy access" section (user,
+folders) and a "Whoopy token" one (the token, its address, "New token"); a
+section holding a button saves nothing, hence two. The per-user tokens stay,
+and no token is traced any more, at configure either.
+
 ## Tests
 
-Nothing open.
+### T-P-3 · the Whoopy token, from the panel, stays out of the logs
+
+`todo` `playtest` `filed 2026-11-10`
+
+Recipe in the `cheruby-docs-mcp-kb` skill. Covers F-M-7 on the server: the
+token shows in the panel, narrowing the folders narrows list and search, "New
+token" retires the old one, and no new line of `yunohost-cli.log` or of the
+config operation logs holds the token.
 
 ## Closed
 
