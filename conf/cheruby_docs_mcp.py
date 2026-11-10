@@ -7,12 +7,15 @@ Run by cheruby-docs-mcp.service. Settings come from its root-600 env file:
     DOCS_TOKEN_<user>       a request carrying "Authorization: Bearer <it>" acts as <user>
     DOCS_FOLDERS_<user>     that user's folders, "<label>=<path>" joined by ":",
                             e.g. Documents=/srv/docs:Notes=/srv/notes
+    DOCS_GATEWAY_TOKEN      optional: a token for the AI gateway, acting as
+    DOCS_GATEWAY_USER       this user, on
+    DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
     DOCS_INDEX_DIR          where docs_index.py keeps <user>.sqlite, read here only
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
 
-The AI gateway in front holds one entry per user, each with that user's token,
-so a key granted docs_<user> reaches that user's folders and nobody else's. Paths in
-and out of the tools start with a folder's label, never with a real path.
+A token is one user's, with all or some of that user's folders; the gateway
+token searches that user's index. Paths in and out of the tools start with a
+folder's label, never with a real path.
 
 Nothing here writes. A path is refused if it climbs out of its folder,
 follows a link out of it, or names a hidden file (Syncthing's .stfolder,
@@ -24,6 +27,7 @@ The tools are served at /mcp over Streamable HTTP, stateless.
 
 import asyncio
 import hmac
+import json
 import logging
 import os
 import sqlite3
@@ -38,7 +42,7 @@ from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
 from docs_files import IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, inside, load_folders, office_text, open_pdf
-from docs_index import QUERY_PROMPT, connect, folders_key
+from docs_index import QUERY_PROMPT, connect
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
 PORT = int(os.environ.get("DOCS_PORT", "8770"))
@@ -55,18 +59,24 @@ RRF_K = 60
 
 
 def load_users(environ):
-    """{token: (user, {label: real path})} from DOCS_TOKEN_<user> and DOCS_FOLDERS_<user>."""
+    """{token: (user, {label: real path})} from the DOCS_TOKEN_* and DOCS_GATEWAY_* settings."""
     folders = load_folders(environ)
+    tokens = [(key, token, key.removeprefix("DOCS_TOKEN_"), folders.get(key.removeprefix("DOCS_TOKEN_"), {}))
+              for key, token in environ.items() if key.startswith("DOCS_TOKEN_")]
+    if environ.get("DOCS_GATEWAY_TOKEN"):
+        name = environ.get("DOCS_GATEWAY_USER", "")
+        own = folders.get(name, {})
+        labels = [label for label in environ.get("DOCS_GATEWAY_FOLDERS", "").split(":") if label]
+        if not set(labels) <= set(own):
+            sys.exit(f"DOCS_GATEWAY_FOLDERS names folders {name!r} does not have.")
+        tokens.append(("DOCS_GATEWAY_TOKEN", environ["DOCS_GATEWAY_TOKEN"], name, {label: own[label] for label in labels}))
     users = {}
-    for key, token in environ.items():
-        if not key.startswith("DOCS_TOKEN_"):
-            continue
-        name = key.removeprefix("DOCS_TOKEN_")
+    for key, token, name, granted in tokens:
         if len(token) < 32:
             sys.exit(f"{key} is shorter than 32 characters.")
         if token in users:
-            sys.exit(f"{key} repeats another user's token.")
-        users[token] = (name, folders.get(name, {}))
+            sys.exit(f"{key} repeats another token.")
+        users[token] = (name, granted)
     if not users:
         sys.exit("No DOCS_TOKEN_<user> is set.")
     return users
@@ -302,7 +312,13 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
     parts = [p for p in path.strip().strip("/").split("/") if p not in ("", ".")]
     if any(p == ".." or hidden(p) for p in parts):
         raise ToolError(f"{path}: hidden names and .. are not allowed.")
-    clauses, args = ["f.status = 'indexed'"], []
+    folders = folders_of(ctx)
+    if parts and parts[0] not in folders:
+        raise ToolError(f"{path}: no folder named {parts[0]!r}. Folders: {', '.join(folders)}.")
+    # The index holds all the user's folders; a token may open only some of them.
+    clauses = ["f.status = 'indexed'",
+               f"substr(f.path, 1, instr(f.path, '/') - 1) IN ({','.join('?' * len(folders))})"]
+    args = list(folders)
     if parts:
         prefix = "/".join(parts)
         clauses.append("(f.path = ? OR substr(f.path, 1, ?) = ?)")
@@ -319,8 +335,9 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
     db = connect(db_path, read_only=True)
     try:
         meta = dict(db.execute("SELECT key, value FROM meta"))
-        # Built for other folders: it may hold text this user no longer reaches.
-        if meta.get("folders") != folders_key(folders_of(ctx)):
+        # A label now on another path: its text in the index is not what read_file reaches.
+        indexed = json.loads(meta.get("folders", "{}"))
+        if any(indexed.get(label) != real for label, real in folders.items()):
             raise ToolError("the search index is being rebuilt after a change of folders; use find_files meanwhile.")
         ids = ranked(db, query, vector, where, args)[:50]
         rows = {r[0]: r[1:] for r in db.execute(

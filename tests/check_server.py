@@ -25,7 +25,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 
-ALICE, BOB = "b" * 40, "j" * 40
+ALICE, BOB, GATEWAY = "b" * 40, "j" * 40, "g" * 40
 PORT = 18770
 EMBED_PORT = 18771
 URL = f"http://127.0.0.1:{PORT}/mcp"
@@ -131,6 +131,9 @@ def build(base):
         "DOCS_FOLDERS_alice": f"Documents={docs}:Notes={notes}",
         "DOCS_TOKEN_ju": BOB,
         "DOCS_FOLDERS_ju": f"Papiers={papiers}",
+        "DOCS_GATEWAY_TOKEN": GATEWAY,
+        "DOCS_GATEWAY_USER": "alice",
+        "DOCS_GATEWAY_FOLDERS": "Notes",
     }
 
 
@@ -204,6 +207,13 @@ CHECKS = [
     ("search bad date refused", lambda: tool("search_documents", query="x", after="hier"), error_with("not a date")),
     ("bob's search sees only his", lambda: tool("search_documents", token=BOB, query="loyer bob"),
      lambda r: r[0] == "ok" and "Papiers/bob.md" in r[1] and "Documents" not in r[1]),
+    ("gateway sees only the folders it opens", lambda: tool("list_folder", token=GATEWAY), lambda r: r == ("ok", "dir  Notes/")),
+    ("gateway cannot read the others", lambda: tool("read_file", token=GATEWAY, path="Documents/bail.pdf"),
+     error_with("no folder named")),
+    ("gateway search uses the user's index, its folders only", lambda: tool("search_documents", token=GATEWAY, query="loyer tomates"),
+     lambda r: r[0] == "ok" and "Notes/long.md" in r[1] and "Documents/" not in r[1]),
+    ("gateway search refuses the others", lambda: tool("search_documents", token=GATEWAY, query="loyer", path="Documents"),
+     error_with("no folder named")),
     ("search falls back on keywords", lambda: tool("search_documents", query="panne loyer"),
      ok_with("keyword matches only", "Documents/bail.pdf")),
 ]
@@ -281,6 +291,10 @@ def main():
                     time.sleep(0.2)
             results = [(name, *(lambda r: (r, passes(r)))(run())) for name, run, passes in CHECKS]
             results += list(index_checks(base, env, first))
+            refused = subprocess.run([*PYTHON, "conf/cheruby_docs_mcp.py"], capture_output=True, text=True,
+                                     env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
+            results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],
+                            refused.returncode != 0 and "does not have" in refused.stderr))
         finally:
             server.terminate()
             err = server.communicate()[1].decode()

@@ -18,7 +18,7 @@ OCR and hold no passage. Paths are stored as the tools show them
 
 The indexer works on <user>.work.sqlite and publishes a finished copy as
 <user>.sqlite every ten minutes and at the end, so the tool server, which only
-reads, never sees a write half done. It imports connect(), folders_key() and
+reads, never sees a write half done. It imports connect() and
 QUERY_PROMPT from here.
 """
 
