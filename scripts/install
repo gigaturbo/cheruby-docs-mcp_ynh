@@ -11,9 +11,6 @@ docs_build_venv
 ynh_script_progression "Building the embedding server, about 8 minutes, and fetching its model..."
 docs_build_llama
 
-awk -v u="$whoopy_user" '$1 == u {f = 1} END {exit !f}' <<< "$folders" \
-    || ynh_die "Whoopy access: $whoopy_user has no folder in the folders answer."
-
 ynh_script_progression "Adding configuration files..."
 docs_clear_index
 docs_configure

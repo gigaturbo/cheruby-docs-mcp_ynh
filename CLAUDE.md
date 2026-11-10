@@ -1,8 +1,9 @@
 # CLAUDE.md
 
-A YunoHost package for an MCP tool server that lets each user's AI agents
+A YunoHost package for an MCP tool server that lets one user's AI agents
 list, find, read and search by meaning that user's homelab folders,
-read-only, behind the Whoopy AI gateway.
+read-only, behind the Whoopy AI gateway. The folders come from sources
+(Syncthing, local storage) chosen in the config panel.
 
 The host's own `CLAUDE.md` still applies, and its rules win: installing or
 upgrading this app touches a running service, so ask first. Durable
@@ -12,7 +13,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 
 - `conf/cheruby_docs_mcp.py`: the tool server.
 - `conf/docs_index.py`: the indexer, and the index format the server reads.
-- `conf/docs_files.py`: what both know about the folders and their files.
+- `conf/docs_files.py`: what both know about the folders, their filters
+  and their files.
 - `conf/systemd.service`, `embed.service`, `index.service`, `index.timer`:
   the sandboxed units.
 - `conf/requirements.in` → `conf/requirements.txt`: the hash-locked wheels.
@@ -31,15 +33,17 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   - `cheruby-docs-mcp-embed.service`, llama-server with EmbeddingGemma 300M,
     built from source at install.
   - `cheruby-docs-mcp-index.service`, run hourly by its timer: walks the
-    folders and updates each user's search index.
+    folders and updates the user's search index.
 - **Code and secrets** in `/var/www/cheruby-docs-mcp`, root-owned, group
   read-only: the venv, the Python modules, `bin/llama-server`, `model/`,
-  `docs.env` (root 600, tokens and folders) and `index.env` (root 600, folders
-  only).
-- **The index is the only state**, one SQLite file per user in
+  `folders.json` (the folders and their filters), `docs.env` (root 600, the
+  tokens) and `index.env` (root 600, no token).
+- **The index is the only state**, one SQLite file for the user in
   `/home/yunohost.app/cheruby-docs-mcp`, rebuilt from the folders, never
-  backed up. The `folders`, `token_<user>` and `whoopy_*` settings are the rest;
-  configure renders the env files and the units from them.
+  backed up. The settings are the rest: `docs_user`, each source's
+  `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>` and
+  `whoopy_*`; configure renders `folders.json`, the env files and the units
+  from them.
 - **The token picks the user**, and the unit joins each folder's group to
   read it, with everything else those groups could read hidden.
 

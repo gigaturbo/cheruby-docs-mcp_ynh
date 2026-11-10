@@ -4,10 +4,10 @@ packaging_format = 2
 
 id = "cheruby-docs-mcp"
 name = "Cheruby Docs"
-description.en = "Read-only MCP tools that let each user's AI agents list, find, read and search that user's folders"
-description.fr = "Outils MCP en lecture seule : les agents IA de chaque utilisateur listent, cherchent, lisent et fouillent ses dossiers"
+description.en = "Read-only MCP tools that let a user's AI agents list, find, read and search that user's folders"
+description.fr = "Outils MCP en lecture seule : les agents IA d'un utilisateur listent, cherchent, lisent et fouillent ses dossiers"
 
-version = "0.3.0~ynh1"
+version = "0.4.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -29,17 +29,11 @@ ram.build = "1500M"
 ram.runtime = "800M"
 
 [install]
-    [install.folders]
-    ask.en = "Folders, one per line: <user> <Label>=<path>"
-    ask.fr = "Dossiers, un par ligne : <utilisateur> <Nom>=<chemin>"
-    help.en = "Each user's agents see only that user's folders, under their label. The service joins each folder's group to read it, so the files must be group-readable."
-    type = "text"
-    example = "alice Documents=/home/yunohost.app/syncthing/Documents"
-
-    [install.whoopy_user]
-    ask.en = "User whose folders Whoopy reaches"
-    ask.fr = "Utilisateur dont Whoopy atteint les dossiers"
-    help.en = "Whoopy gets one token, for this user's folders; the config panel shows it and narrows the folders."
+    [install.docs_user]
+    ask.en = "User whose folders the AI agents reach"
+    ask.fr = "Utilisateur dont les agents IA atteignent les dossiers"
+    help.en = "The folders are chosen after the install, in the config panel: Syncthing folders, local folders, and what to leave out of them."
+    help.fr = "Les dossiers se choisissent après l'installation, dans le panneau de configuration : dossiers Syncthing, dossiers locaux, et ce qu'il faut en exclure."
     type = "user"
 
 [resources]

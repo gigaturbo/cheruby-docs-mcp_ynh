@@ -9,9 +9,145 @@ model_file="embeddinggemma-300M-Q8_0.gguf"
 docs_default_settings() {
     ynh_app_setting_set_default --key=healthcheck_enabled --value=0
     ynh_app_setting_set_default --key=healthcheck_url --value=""
-    # Installs from before the Whoopy access: the first user of the folders.
-    ynh_app_setting_set_default --key=whoopy_user --value="$(awk 'NF {print $1; exit}' <<< "$folders")"
+    # Installs from before the one user: the Whoopy user, or the first user of the folders.
+    ynh_app_setting_set_default --key=docs_user \
+        --value="${whoopy_user:-$(awk 'NF {print $1; exit}' <<< "${folders:-}")}"
     ynh_app_setting_set_default --key=whoopy_folders --value=""
+    local key
+    for key in syncthing_enabled local_enabled; do
+        ynh_app_setting_set_default --key="$key" --value=0
+    done
+    for key in syncthing_folders syncthing_only syncthing_skip local_folders local_only local_skip; do
+        ynh_app_setting_set_default --key="$key" --value=""
+    done
+
+    # Installs from before the sources: each of the user's folders becomes the
+    # Syncthing folder on that path and with that label, or a local folder.
+    if [ -n "${folders:-}" ]; then
+        local line user rest label path sync_label sync_path ignore found syncs="" locals=""
+        while IFS= read -r line; do
+            read -r user rest <<< "$line"
+            [ -z "$user" ] && continue
+            label=${rest%%=*}
+            path=${rest#*=}
+            if [ "$user" != "$docs_user" ]; then
+                ynh_print_warn "Folders: $label of $user is left out: the app now serves $docs_user only."
+                ynh_app_setting_delete --key="token_$user"
+                continue
+            fi
+            found=""
+            while IFS=$'\t' read -r sync_label sync_path ignore; do
+                if [ "$sync_path" = "$path" ] && [ "$(docs_label "$sync_label")" = "$label" ]; then
+                    found=$sync_label
+                fi
+            done < <(docs_syncthing_folders)
+            if [ -n "$found" ]; then
+                syncs+="${syncs:+,}$found"
+            else
+                locals+="${locals:+$'\n'}$label=$path"
+            fi
+        done <<< "$folders"
+        if [ -n "$syncs" ]; then
+            syncthing_enabled=1
+            syncthing_folders=$syncs
+        fi
+        if [ -n "$locals" ]; then
+            local_enabled=1
+            local_folders=$locals
+        fi
+        for key in syncthing_enabled syncthing_folders local_enabled local_folders; do
+            ynh_app_setting_set --key="$key" --value="${!key}"
+        done
+        ynh_app_setting_delete --key=folders
+        ynh_app_setting_delete --key=whoopy_user
+    fi
+}
+
+# Syncthing's folders, one "<label>\t<path>\t<ignorePerms>" per line, read from
+# its config file where the YunoHost Syncthing package keeps it. Nothing when
+# Syncthing is not installed.
+docs_syncthing_folders() {
+    local dir file
+    [ -f /etc/yunohost/apps/syncthing/settings.yml ] || return 0
+    dir=$(ynh_app_setting_get --app=syncthing --key=install_dir)
+    for file in "$dir/.config/syncthing/config.xml" "$dir/.local/state/syncthing/config.xml"; do
+        [ -f "$file" ] || continue
+        # Top-level folders only: the one under <defaults> is a template.
+        python3 -I -c '
+import sys
+import xml.etree.ElementTree as ET
+try:
+    root = ET.parse(sys.argv[1]).getroot()
+except (OSError, ET.ParseError):
+    sys.exit()
+for folder in root.findall("folder"):
+    label, path = folder.get("label") or folder.get("id") or "", folder.get("path") or ""
+    if label and path and not any(c in label + path for c in "\t\n,"):
+        print(label, path, folder.get("ignorePerms", "false"), sep="\t")
+' "$file"
+        return 0
+    done
+}
+
+# The tool label of a Syncthing folder: "Android Pictures" is Android_Pictures.
+docs_label() {
+    LC_ALL=C sed 's/[^A-Za-z0-9_.-]/_/g; s/^[^A-Za-z0-9]*//' <<< "$1"
+}
+
+# The folders of the turned-on sources, from the settings' variables, into
+# folder_path[label] and folder_source[label]. A bad entry is left out and
+# described in folder_error, one line each: the panel refuses to save it,
+# while an upgrade or a restore, which cannot ask, goes on without it.
+docs_collect_folders() {
+    declare -gA folder_path=() folder_source=()
+    folder_error=""
+    # The same labels from the web admin and from a shell in another locale.
+    local LC_ALL=C
+    local candidates="" sync_label path ignore line label source wanted
+    local -A names=([syncthing]="Syncthing" [local]="Local storage")
+    if [ "${syncthing_enabled:-0}" = 1 ]; then
+        local -A synced=()
+        while IFS=$'\t' read -r sync_label path ignore; do
+            synced[$sync_label]=$path
+        done < <(docs_syncthing_folders)
+        [ ${#synced[@]} -gt 0 ] || folder_error+="Syncthing: no folder found. Is Syncthing installed?"$'\n'
+        local -a picked=()
+        IFS=, read -ra picked <<< "${syncthing_folders:-}"
+        [ ${#picked[@]} -gt 0 ] || picked=("${!synced[@]}")
+        for wanted in "${picked[@]}"; do
+            if [ -z "${synced[$wanted]+x}" ]; then
+                folder_error+="Syncthing has no folder '$wanted'."$'\n'
+                continue
+            fi
+            candidates+="syncthing"$'\t'"$(docs_label "$wanted")"$'\t'"${synced[$wanted]}"$'\n'
+        done
+    fi
+    if [ "${local_enabled:-0}" = 1 ]; then
+        while IFS= read -r line; do
+            line=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' <<< "$line")
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            if [[ "$line" != *=* ]]; then
+                folder_error+="Local storage: '$line' needs <Label>=<path>."$'\n'
+                continue
+            fi
+            candidates+="local"$'\t'"${line%%=*}"$'\t'"${line#*=}"$'\n'
+        done <<< "${local_folders:-}"
+    fi
+    while IFS=$'\t' read -r source label path; do
+        [ -z "$source" ] && continue
+        if ! [[ "$label" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
+            folder_error+="${names[$source]}: '$label' is not a label: letters, digits, _ . - and no space."$'\n'
+        elif [ -n "${folder_path[$label]+x}" ]; then
+            folder_error+="${names[$source]}: the label $label is already a ${names[${folder_source[$label]}]} folder."$'\n'
+        elif ! [[ "$path" == /* && "$path" != *:* && "$path" != *'"'* ]]; then
+            folder_error+="${names[$source]}: '$path' must be absolute, without : or quotes."$'\n'
+        elif [ ! -d "$path" ]; then
+            folder_error+="${names[$source]}: '$path' is not a folder."$'\n'
+        else
+            folder_path[$label]=$path
+            folder_source[$label]=$source
+        fi
+    done <<< "$candidates"
 }
 
 # ping.env for the ping unit: the check's URL, or nothing when the feature is
@@ -93,64 +229,62 @@ docs_check_downloads() {
     done
 }
 
-# The folders setting, one "<user> <Label>=<path>" per line, becomes:
-# docs.env (each user's token and folders, and the Whoopy token, root 600),
-# index.env (the folders without any token, for the indexer), the units'
-# read-only bind mounts, and the groups the units join to read them. Each
-# token is made once and kept in the settings.
+# The sources' settings become: folders.json (the user's folders and their
+# filters), index.env (no token) and docs.env (the tokens), both root 600,
+# the units' read-only bind mounts, and the groups the units join to read
+# the folders. Each token is made once and kept in the settings.
 docs_configure() {
-    local line user rest label path group token
-    local -A user_folders=()
+    local label path group token only skip line
     local -A groups_seen=()
     bind_paths=""
     groups=""
-
+    docs_collect_folders
     while IFS= read -r line; do
-        line=$(echo "$line" | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
-        [ -z "$line" ] && continue
-        user=${line%% *}
-        rest=${line#* }
-        label=${rest%%=*}
-        path=${rest#*=}
-        [[ "$user" =~ ^[a-z0-9_]+$ ]] || ynh_die "Folders: bad user name in '$line'."
-        [[ "$rest" == *=* && "$label" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]] \
-            || ynh_die "Folders: '$line' needs <user> <Label>=<path>, the label without spaces or /."
-        [[ "$path" == /* && "$path" != *:* && "$path" != *'"'* ]] \
-            || ynh_die "Folders: '$path' must be absolute, without : or quotes."
-        [ -d "$path" ] || ynh_die "Folders: '$path' is not a folder."
-        user_folders[$user]+="${user_folders[$user]:+:}$label=$path"
+        [ -n "$line" ] && ynh_print_warn "$line Left out."
+    done <<< "$folder_error"
+    [ ${#folder_path[@]} -gt 0 ] || ynh_print_warn "No folder is open: turn on a source in the config panel."
+
+    # Tags settings hold their values joined by ",".
+    local entries="{}"
+    for label in "${!folder_path[@]}"; do
+        path=${folder_path[$label]}
+        only=${folder_source[$label]}_only
+        skip=${folder_source[$label]}_skip
+        entries=$(jq -c --arg l "$label" --arg p "$path" --arg only "${!only:-}" --arg skip "${!skip:-}" \
+            '.[$l] = {path: $p, only: ($only | split(",") | map(select(length > 0))),
+                      skip: ($skip | split(",") | map(select(length > 0)))}' <<< "$entries")
         bind_paths+=" \"$path\""
         group=$(stat -c %G "$path")
         if [ -z "${groups_seen[$group]:-}" ]; then
             groups_seen[$group]=1
             groups+=" $group"
         fi
-    done <<< "$folders"
-    [ ${#user_folders[@]} -gt 0 ] || ynh_die "Folders: no folder given."
+    done
+    jq --arg u "$docs_user" '{($u): .}' <<< "$entries" > "$install_dir/folders.json"
 
-    # The Whoopy token opens whoopy_folders (labels joined by ","), or all of
-    # whoopy_user's folders when empty. A label no longer in folders is dropped.
+    # The Whoopy token opens whoopy_folders (labels joined by ","), or all the
+    # folders when empty. A label no longer among them is dropped.
     local whoopy_labels="" wanted
-    for wanted in ${whoopy_folders//,/ }; do
-        if [[ ":${user_folders[$whoopy_user]:-}" == *":$wanted="* ]]; then
+    local -a picked=()
+    IFS=, read -ra picked <<< "${whoopy_folders:-}"
+    for wanted in "${picked[@]}"; do
+        if [ -n "${folder_path[$wanted]+x}" ]; then
             whoopy_labels+="${whoopy_labels:+:}$wanted"
         else
-            ynh_print_warn "Whoopy access: $whoopy_user has no folder '$wanted' any more; left out."
+            ynh_print_warn "Whoopy access: no folder '$wanted' any more; left out."
         fi
     done
-    if [ -z "$whoopy_folders" ]; then
-        whoopy_labels=$(tr ':' '\n' <<< "${user_folders[$whoopy_user]:-}" | cut -d= -f1 | paste -sd:)
+    if [ ${#picked[@]} -eq 0 ]; then
+        whoopy_labels=$(printf '%s\n' "${!folder_path[@]}" | sed '/^$/d' | sort | paste -sd:)
     fi
-    [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder of $whoopy_user."
+    [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder."
 
     {
+        echo "DOCS_FOLDERS_FILE=$install_dir/folders.json"
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
         # Changes with the model file or llama.cpp, either of which changes the vectors.
         echo "DOCS_EMBED_MODEL=$(ynh_read_manifest "resources.sources.model.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_cpp.sha256" | cut -c1-16)"
-        for user in "${!user_folders[@]}"; do
-            echo "DOCS_FOLDERS_$user=\"${user_folders[$user]}\""
-        done
     } > "$install_dir/index.env"
 
     # The trace stays off while a token is in a variable: it would go to the
@@ -159,20 +293,18 @@ docs_configure() {
     {
         echo "DOCS_BIND=127.0.0.1"
         echo "DOCS_PORT=$port"
+        echo "DOCS_FOLDERS_FILE=$install_dir/folders.json"
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
-        for user in "${!user_folders[@]}"; do
-            token=$(ynh_app_setting_get --key="token_$user")
-            token=${token:-$(ynh_string_random --length=48)}
-            ynh_app_setting_set --key="token_$user" --value="$token"
-            echo "DOCS_TOKEN_$user=$token"
-            echo "DOCS_FOLDERS_$user=\"${user_folders[$user]}\""
-        done
+        token=$(ynh_app_setting_get --key="token_$docs_user")
+        token=${token:-$(ynh_string_random --length=48)}
+        ynh_app_setting_set --key="token_$docs_user" --value="$token"
+        echo "DOCS_TOKEN_$docs_user=$token"
         token=$(ynh_app_setting_get --key=whoopy_token)
         token=${token:-$(ynh_string_random --length=48)}
         ynh_app_setting_set --key=whoopy_token --value="$token"
         echo "DOCS_GATEWAY_TOKEN=$token"
-        echo "DOCS_GATEWAY_USER=$whoopy_user"
+        echo "DOCS_GATEWAY_USER=$docs_user"
         echo "DOCS_GATEWAY_FOLDERS=$whoopy_labels"
         token=""
     } > "$install_dir/docs.env"

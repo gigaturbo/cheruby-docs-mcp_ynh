@@ -14,26 +14,76 @@ validate__healthcheck_url() {
     validate__healthcheck_enabled
 }
 
-validate__whoopy_folders() {
-    local labels wanted
-    labels=$(awk -v u="$whoopy_user" '$1 == u { sub(/=.*/, "", $2); print $2 }' <<< "$folders")
-    [ -n "$labels" ] || { echo "$whoopy_user has no folder in this app."; return; }
-    for wanted in ${whoopy_folders//,/ }; do
-        if ! grep -qxF "$wanted" <<< "$labels"; then
-            echo "$whoopy_user has no folder '$wanted'. Folders: $(paste -sd, <<< "$labels")."
-            return
+# The folders of every turned-on source, then the labels Whoopy opens. The
+# message goes into a double-quoted YAML string: no quote or backslash.
+docs_check_folders() {
+    local message="" wanted
+    docs_collect_folders
+    message=$(head -n 1 <<< "$folder_error")
+    local -a picked=()
+    IFS=, read -ra picked <<< "${whoopy_folders:-}"
+    for wanted in "${picked[@]}"; do
+        if [ -z "$message" ] && [ -z "${folder_path[$wanted]+x}" ]; then
+            message="Whoopy access: no folder '$wanted'. Folders: $(printf '%s\n' "${!folder_path[@]}" | sort | paste -sd,)."
         fi
     done
+    echo "${message//[\"\\]/?}"
 }
 
-validate__whoopy_user() {
-    validate__whoopy_folders
-}
+validate__syncthing_enabled() { docs_check_folders; }
+validate__syncthing_folders() { docs_check_folders; }
+validate__local_enabled() { docs_check_folders; }
+validate__local_folders() { docs_check_folders; }
+validate__whoopy_folders() { docs_check_folders; }
 
-# The token is never read by the traced getter (its bind is null): the trace
-# goes to yunohost-cli.log, which nothing redacts.
+# Defined for show only: a getter makes its field look changed on every save.
+if [ "${1:-}" = "show" ]; then
+    get__syncthing_folders() {
+        jq -cn --arg v "$(ynh_app_setting_get --key=syncthing_folders)" --arg c "$(docs_syncthing_folders | cut -f1)" \
+            '{value: $v, choices: ($c | split("\n") | map(select(length > 0)))}'
+    }
+fi
+
+# Each source's status says, per folder, what the app cannot read, checked as
+# the app user with the folder's group. The token is never read by the traced
+# getter (its bind is null): the trace goes to yunohost-cli.log, which nothing
+# redacts.
 ynh_app_config_show() {
     _ynh_app_config_show
+    local source label path group ignore found line
+    local -A status=() ignores=()
+    while IFS=$'\t' read -r label path ignore; do
+        ignores[$path]=$ignore
+    done < <(docs_syncthing_folders)
+    docs_collect_folders
+    while IFS= read -r line; do
+        source=local
+        [[ "$line" == Syncthing* ]] && source=syncthing
+        [ -n "$line" ] && status[$source]+="- **Left out**: $line"$'\n'
+    done <<< "$folder_error"
+    for label in $(printf '%s\n' "${!folder_path[@]}" | sort); do
+        path=${folder_path[$label]}
+        source=${folder_source[$label]}
+        group=$(stat -c %G "$path")
+        status[$source]+="- **$label**: "
+        # A find that fails, as for a path the app cannot reach, reports nothing on stdout.
+        if ! found=$(setpriv --reuid="$app" --regid="$app" --groups="$group" \
+            find "$path" \( -name '.*' -prune \) -o \( ! -readable -o -type d ! -executable \) -print 2>/dev/null); then
+            status[$source]+="could not be checked: the app may not reach it, or the group $group may not read part of it."
+        elif [ -z "$found" ]; then
+            status[$source]+="every file can be read."
+        else
+            status[$source]+="$(wc -l <<< "$found") files or folders cannot be read; the group $group needs to read them."
+        fi
+        if [ "$source" = "syncthing" ] && [ "${ignores[$path]:-}" != "true" ]; then
+            status[$source]+=" Syncthing keeps the permissions of the devices it syncs from: turn on Ignore Permissions for this folder, or they may undo a fix."
+        fi
+        status[$source]+=$'\n'
+    done
+    for source in syncthing local; do
+        ynh_return "${source}_status: $(jq -cn --arg a "${status[$source]:-No folder open.}" '{ask: $a}')"
+    done
+
     set +o xtrace
     ynh_return "whoopy_token:"
     ynh_return "  value: '$(ynh_app_setting_get --key=whoopy_token)'"
@@ -41,17 +91,29 @@ ynh_app_config_show() {
     set -o xtrace
 }
 
-# The ping unit reads ping.env at each run: nothing to restart.
+# The ping unit reads ping.env at each run: nothing to restart for it.
 ynh_app_config_apply() {
     _ynh_app_config_apply
     healthcheck_enabled=$(ynh_app_setting_get --key=healthcheck_enabled)
     healthcheck_url=$(ynh_app_setting_get --key=healthcheck_url)
     docs_write_ping
-    if [ "${changed[whoopy_user]:-}" = "true" ] || [ "${changed[whoopy_folders]:-}" = "true" ]; then
-        docs_configure
-        ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-            --wait_until="Uvicorn running on" --timeout=60
+    # The previous user's token and index serve nobody any more. The folders stay.
+    if [ "${changed[docs_user]:-}" = "true" ]; then
+        ynh_app_setting_delete --key="token_${old[docs_user]}"
+        ynh_safe_rm "$data_dir/${old[docs_user]}.sqlite"
+        ynh_safe_rm "$data_dir/${old[docs_user]}.work.sqlite"
+        ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
     fi
+    local key
+    for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_only syncthing_skip \
+        local_enabled local_folders local_only local_skip; do
+        if [ "${changed[$key]:-}" = "true" ]; then
+            docs_configure
+            ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
+                --wait_until="Uvicorn running on" --timeout=60
+            return
+        fi
+    done
 }
 
 run__new_token() {
