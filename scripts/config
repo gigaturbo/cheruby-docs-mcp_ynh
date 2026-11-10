@@ -73,7 +73,12 @@ ynh_app_config_show() {
         elif [ -z "$found" ]; then
             status[$source]+="every file can be read."
         else
-            status[$source]+="$(wc -l <<< "$found") files or folders cannot be read; the group $group needs to read them."
+            found=$(wc -l <<< "$found")
+            if [ "$found" -eq 1 ]; then
+                status[$source]+="1 file or folder cannot be read; the group $group needs to read it."
+            else
+                status[$source]+="$found files or folders cannot be read; the group $group needs to read them."
+            fi
         fi
         if [ "$source" = "syncthing" ] && [ "${ignores[$path]:-}" != "true" ]; then
             status[$source]+=" Syncthing keeps the permissions of the devices it syncs from: turn on Ignore Permissions for this folder, or they may undo a fix."
