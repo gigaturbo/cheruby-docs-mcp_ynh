@@ -13,9 +13,99 @@ folders, without writing anything and without waking the desktop.
 
 ## Bugs
 
-Nothing open.
+### B-P-1 · a stuck index run is never stopped
+
+`open` `medium` `filed 2026-11-10`
+
+`index.service` is `Type=oneshot` with `TimeoutStartSec=infinity`, and
+systemd ignores `RuntimeMaxSec=6h` for a oneshot unit (`systemd-analyze
+verify` says so on systemd 252). A run that hangs blocks the timer for good,
+while the unit's comment says it fails after 6 hours.
+
+**Fix:** `TimeoutStartSec=6h` and no `RuntimeMaxSec`.
 
 ## Features
+
+### F-M-8 · sources Syncthing and Local, with filters, for one chosen user
+
+`wip` `large` `filed 2026-11-10` `blocks: F-M-9`
+
+The `folders` text mixes users, paths and apps in one field and cannot leave
+files out. The app serves several users when one is enough.
+
+**Do:** one user, chosen in the panel. A section per source, each with an
+on/off switch, a folder list (Syncthing: ticked from Syncthing's own folders;
+Local: `<Label>=<path>` per line) and "Only these files" and "Leave out"
+patterns, empty meaning everything but hidden names. One function decides
+what list, find, read, search and the indexer may see. The upgrade turns the
+old `folders` setting into the new ones by path. The panel shows, per
+folder, the files the app cannot read and whether Syncthing ignores
+permissions. Built, 66 of 66 offline; owes T-P-4 and the reopened checks.
+
+### F-M-9 · Nextcloud through WebDAV
+
+`todo` `large` `filed 2026-11-10` `needs: F-M-8`
+
+Reading Nextcloud's data folder on disk misses files shared by others, would
+leave written files unknown to Nextcloud, and makes the unit join the
+`nextcloud` group, which is most of what the sandbox has to hide.
+
+**Do:** a WebDAV source, on/off in the panel, with folders inside the
+account (empty for all) and its filter. Configure makes the user's app
+password with `occ user:auth-tokens:add` and keeps it like a token, never
+traced. The indexer walks with `Depth: 1` and skips any folder whose ETag is
+unchanged. The unit stops joining `nextcloud`, and its hiding list shrinks
+to match. Read-only is enforced by the server, since an app password cannot
+be narrowed.
+
+### F-P-1 · indexing controls and status in the panel
+
+`todo` `medium` `filed 2026-11-10`
+
+The index runs hourly with no way to start, rebuild, slow or stop it, and
+its progress is only in the journal.
+
+**Do:** a schedule (off, hourly, every 6 h, nightly) that writes the timer's
+`OnCalendar`; a "Run now" button (start without waiting); a "Rebuild" button
+(drop the index, the next run starts from zero); a read-only status from a
+file the indexer writes: last run, files indexed, waiting and failed.
+
+### F-M-10 · first index embedded through Whoopy on the desktop's GPU
+
+`todo` `medium` `filed 2026-11-10` `needs: F-P-1`
+
+A first index of many files takes hours on the Pi, and nearly all of it is
+embedding; reading the text is fast.
+
+**Do:** a "Run now on remote" button: the indexer reads the files on the
+Pi and sends the passages to Whoopy's Ollama `embeddinggemma`, with a key
+allowed that model only. Before using it, it embeds a fixed set of about 20
+passages on both servers and refuses the remote unless every pair has a
+cosine of 0.995 or more, since search still embeds queries on the Pi. When
+Whoopy cannot be reached, the run goes on locally. Never used by the timer.
+
+### F-P-2 · choice of embedding model in the panel
+
+`todo` `medium` `filed 2026-11-10`
+
+The model is fixed to EmbeddingGemma 300M.
+
+**Do:** a short list in the panel, EmbeddingGemma by default, each model
+pinned in the manifest by commit and sha256 so a restore can fetch it, and
+its search prefixes kept in the code. A change downloads the model,
+restarts the embedding unit and re-indexes everything (`DOCS_EMBED_MODEL`).
+F-M-10's remote must serve the same model.
+
+### F-M-11 · write files in the folders marked writable
+
+`todo` `large` `filed 2026-11-10` `needs: F-M-9`
+
+The tools only read.
+
+**Do:** a "Writable folders" field per source, and a write tool for those
+folders only, never a delete. Disk folders become writable mounts in the unit, group-writable with setgid directories;
+a Syncthing folder needs file versioning on before it can be `rw`, since a
+change syncs to every device. Nextcloud writes go through WebDAV `PUT`.
 
 ### F-M-6 · read scans and images into the search index
 
@@ -32,15 +122,47 @@ embedding model does not redo it.
 
 ## Tests
 
-Nothing open.
+### T-P-4 · the upgrade keeps the folders, and the panel's sources choose them
+
+`todo` `playtest` `filed 2026-11-10` `needs: F-M-8`
+
+New with F-M-8: the migration of the `folders` setting, the source sections,
+their filters and status, have only run with stubbed helpers.
+
+### T-P-1 · the installed server reads only its folders
+
+`todo` `playtest`
+
+F-M-8 changed the scripts that render the units and moved the folders into
+`folders.json`. Last passed at `bb9fd44` on 2026-11-09: 401 without the
+token; each unit saw its folders, the index and its code only.
+
+### T-P-2 · backup and restore keep the tokens
+
+`todo` `playtest`
+
+F-M-8 changed `docs_configure` and the settings a restore carries. Last passed
+at `315b90c` on 2026-11-09: same token by fingerprint, ping settings back,
+index rebuilt by the timer.
+
+### T-P-3 · the Whoopy token, from the panel, stays out of the logs
+
+`todo` `playtest`
+
+F-M-8 rewrote `scripts/config` and the panel. Last passed at `392c2be` on
+2026-11-10: token and address shown, folders narrowed, old token 401, no
+token in 4717 new lines of `yunohost-cli.log`.
+
+### T-M-2 · search finds documents by meaning
+
+`todo` `playtest`
+
+F-M-8 changed the indexer's walk. Last passed at `bb9fd44` on 2026-11-09:
+10 of 10 real documents in the top 5.
 
 ## Closed
 
 - `F-M-7` done `medium` 2026-11-10 · one Whoopy token, for a user and some of their folders, shown in the config panel with its address and a "New token" button; it searches that user's index, its folders only; no token is traced any more, so none reaches `yunohost-cli.log`
-- `T-P-3` done `playtest` 2026-11-10 at `392c2be` · token and address in the panel; two folders, then one, applied; an unknown label refused; with Notes only, list, read and search keep to Notes (8 of 8 passages); after "New token" the old one gets 401; neither token, nor `token_blac`, in 4717 new lines of `yunohost-cli.log` or the 19 operation logs
 - `F-M-5` done `large` 2026-11-09 · `search_documents` by meaning and keywords on an hourly index (llama-server built on the Pi, EmbeddingGemma 300M, numpy, FTS5): 288 files indexed in 31 min, 10 of 10 test documents in the top 5; healthchecks.io pinged; the model offered through Whoopy as `embeddinggemma` (Whoopy F-P-2)
-- `T-P-2` done `playtest` 2026-11-09 at `315b90c` · backup, remove, restore: same token (by fingerprint), answers, ping settings back, index cleared and rebuilt by the timer; the shared operation logs hold no token, but yunohost-cli.log (root-only) has held it since the first install, from the `secret_token=` trace line
-- `T-M-2` done `playtest` 2026-11-09 at `bb9fd44` · 10 of 10 real documents found in the top 5 by queries in other words, French and English, 7 at rank 1; 0.12 to 0.18 s a search
-- `T-P-1` done `playtest` 2026-11-09 at `bb9fd44` · 401 without the token; tool server and indexer see the folders, the index and their code only (Nextcloud data only as the empty path to Notes); the embedding unit sees its binary and model only; the server cannot write the index, the indexer cannot write its code or the folders; `/slots` gives 501; no capabilities
 - `F-M-4` done `large` 2026-11-09 · list, find and read the author's folders through Whoopy; Claude Code and Hermes Agent each found and read a document with a key of their own
-- `T-M-1` done `spec` 2026-11-09 · `tests/check_server.py`: 45 of 45 pass on the locked wheels, search and indexer included
+- `T-M-1` done `spec` 2026-11-10 · `tests/check_server.py`: 66 of 66 pass on the locked wheels, search, indexer, filters and links to filtered paths included
