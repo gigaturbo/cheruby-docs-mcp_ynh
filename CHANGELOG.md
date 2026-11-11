@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- A Nextcloud source: folders of the user's Nextcloud account, shares from others included, read through Nextcloud with an app password the app makes and deletes itself.
+- The panel shows, per Nextcloud folder, whether Nextcloud lets the app read it.
+- The index lists again only the Nextcloud folders that changed; when Nextcloud does not answer, its passages stay and the run is reported as failed.
+- The upgrade turns a local folder inside the user's Nextcloud files into a Nextcloud folder, so the service no longer needs Nextcloud's group.
+
 ## 0.4.0
 
 - One user, chosen at install; their folders come from sources chosen in the config panel: Syncthing folders ticked from Syncthing's list, and local folders.

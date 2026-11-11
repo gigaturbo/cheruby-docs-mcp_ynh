@@ -11,10 +11,10 @@ OnFailure=__APP__-ping@fail.service
 Type=oneshot
 User=__APP__
 Group=__APP__
-# The same groups as the tool server, to read the same files.
+# The same groups as the tool server, to read the same files on disk.
 SupplementaryGroups=__GROUPS__
 
-# Folders and index settings, no token. Root 600.
+# Folders, index settings and the Nextcloud app password, no MCP token. Root 600.
 EnvironmentFile=__INSTALL_DIR__/index.env
 # The start ping is sent only when a run really starts: as a Wants=, the
 # timer firing during a long run sent it again. "+" runs it outside the

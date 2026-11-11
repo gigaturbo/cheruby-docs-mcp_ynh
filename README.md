@@ -19,11 +19,16 @@ Paths start with a folder's label, such as `Documents/Factures`.
 ## Install
 
 The install asks for one user. Their folders are chosen afterwards in the
-config panel, from two sources, each turned on or off:
+config panel, from three sources, each turned on or off:
 
 - **Syncthing**: the folders Syncthing syncs on the server, ticked from a list
   (empty opens them all), each under its Syncthing label.
 - **Local storage**: any folder, one per line as `<Label>=<path>`.
+- **Nextcloud**: folders of the user's account, shares included, one per
+  line as `<Label>=<folder in the account>` (empty opens all of it). They are
+  read through Nextcloud with an app password the app makes, named
+  `cheruby-docs-mcp` in the user's security settings, and deletes when the
+  source is turned off or the app removed.
 
 Each source also has "Only these files" and "Leave out" patterns, such as
 `*.pdf`, `Archives` or `Documents/Old`. What they leave out cannot be listed,
@@ -38,6 +43,6 @@ ones listed under "Whoopy access", and searches the user's index. "New token"
 replaces it. The user also has a token of their own, on all the folders, read
 with `yunohost app setting cheruby-docs-mcp token_<user>`.
 
-The service joins each folder's group to read it, so the files must be
-group-readable. Everything else on the server stays hidden from it, and it
+The service joins each folder's group to read the folders on disk, so their
+files must be group-readable. Everything else on the server stays hidden from it, and it
 can reach nothing but loopback.

@@ -86,6 +86,43 @@ name = "Cheruby Docs"
         type = "markdown"
         bind = "null"
 
+    [main.nextcloud]
+    name = "Nextcloud"
+    help = "Folders of the user's Nextcloud account, shares from others included, read through Nextcloud. The app makes itself an app password, listed as cheruby-docs-mcp in the user's Nextcloud security settings, and deletes it when this source is turned off."
+
+        [main.nextcloud.nextcloud_enabled]
+        ask = "Open Nextcloud folders"
+        type = "boolean"
+        bind = "settings"
+
+        [main.nextcloud.nextcloud_folders]
+        ask = "Folders"
+        type = "text"
+        optional = true
+        example = "Cloud=/Documents"
+        help = "One per line: <Label>=<folder in the account>, / for all of it. Empty opens the whole account as Nextcloud. The label is what the AI agents see: letters, digits, _ . - and no space."
+        bind = "settings"
+
+        [main.nextcloud.nextcloud_only]
+        ask = "Only these files"
+        type = "tags"
+        optional = true
+        help = "Empty keeps every file. Otherwise only what matches, or lies in a folder that matches. *.pdf or Factures match any name; Cloud/Factures matches from the folder on. Case is ignored, and * crosses folders."
+        bind = "settings"
+
+        [main.nextcloud.nextcloud_skip]
+        ask = "Leave out"
+        type = "tags"
+        optional = true
+        help = "What matches is left out with all it holds: not listed, found, read nor searched. *.tmp or Old match any name; Cloud/Old matches from the folder on. Case is ignored, and * crosses folders."
+        bind = "settings"
+
+        # Filled when the panel opens: whether Nextcloud lets the app read each folder.
+        [main.nextcloud.nextcloud_status]
+        ask = "No folder open."
+        type = "markdown"
+        bind = "null"
+
     [main.whoopy]
     name = "Whoopy access"
     help = "Whoopy holds one token for this app. It opens the folders chosen here, and searches the user's index."

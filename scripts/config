@@ -34,6 +34,8 @@ validate__syncthing_enabled() { docs_check_folders; }
 validate__syncthing_folders() { docs_check_folders; }
 validate__local_enabled() { docs_check_folders; }
 validate__local_folders() { docs_check_folders; }
+validate__nextcloud_enabled() { docs_check_folders; }
+validate__nextcloud_folders() { docs_check_folders; }
 validate__whoopy_folders() { docs_check_folders; }
 
 # Defined for show only: a getter makes its field look changed on every save.
@@ -45,12 +47,12 @@ if [ "${1:-}" = "show" ]; then
 fi
 
 # Each source's status says, per folder, what the app cannot read, checked as
-# the app user with the folder's group. The token is never read by the traced
-# getter (its bind is null): the trace goes to yunohost-cli.log, which nothing
-# redacts.
+# the app user with the folder's group, or for Nextcloud with its app
+# password. No token is ever read by the traced getter (the bind is null):
+# the trace goes to yunohost-cli.log, which nothing redacts.
 ynh_app_config_show() {
     _ynh_app_config_show
-    local source label path group ignore found line
+    local source label path group ignore found line nc_password
     local -A status=() ignores=()
     while IFS=$'\t' read -r label path ignore; do
         ignores[$path]=$ignore
@@ -59,11 +61,30 @@ ynh_app_config_show() {
     while IFS= read -r line; do
         source=local
         [[ "$line" == Syncthing* ]] && source=syncthing
+        [[ "$line" == Nextcloud* ]] && source=nextcloud
         [ -n "$line" ] && status[$source]+="- **Left out**: $line"$'\n'
     done <<< "$folder_error"
     for label in $(printf '%s\n' "${!folder_path[@]}" | sort); do
         path=${folder_path[$label]}
         source=${folder_source[$label]}
+        if [ "$source" = nextcloud ]; then
+            set +o xtrace
+            nc_password=$(ynh_app_setting_get --key=nextcloud_token)
+            if [ -z "$nc_password" ] || [ "$(ynh_app_setting_get --key=nextcloud_token_user)" != "$docs_user" ]; then
+                found="the app password is made when the source is saved."
+            else
+                case $(docs_nextcloud_code "${path#nextcloud:}" "$nc_password") in
+                    207) found="can be read." ;;
+                    404) found="no such folder in the account of $docs_user." ;;
+                    401) found="Nextcloud refuses the app password: save the source again to make another." ;;
+                    *) found="Nextcloud does not answer." ;;
+                esac
+            fi
+            nc_password=""
+            set -o xtrace
+            status[$source]+="- **$label**: $found"$'\n'
+            continue
+        fi
         group=$(stat -c %G "$path")
         status[$source]+="- **$label**: "
         # A find that fails, as for a path the app cannot reach, reports nothing on stdout.
@@ -85,7 +106,7 @@ ynh_app_config_show() {
         fi
         status[$source]+=$'\n'
     done
-    for source in syncthing local; do
+    for source in syncthing local nextcloud; do
         ynh_return "${source}_status: $(jq -cn --arg a "${status[$source]:-No folder open.}" '{ask: $a}')"
     done
 
@@ -111,7 +132,7 @@ ynh_app_config_apply() {
     fi
     local key
     for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_only syncthing_skip \
-        local_enabled local_folders local_only local_skip; do
+        local_enabled local_folders local_only local_skip nextcloud_enabled nextcloud_folders nextcloud_only nextcloud_skip; do
         if [ "${changed[$key]:-}" = "true" ]; then
             docs_configure
             ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \

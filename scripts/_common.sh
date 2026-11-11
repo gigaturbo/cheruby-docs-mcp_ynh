@@ -14,10 +14,40 @@ docs_default_settings() {
         --value="${whoopy_user:-$(awk 'NF {print $1; exit}' <<< "${folders:-}")}"
     ynh_app_setting_set_default --key=whoopy_folders --value=""
     local key
-    for key in syncthing_enabled local_enabled; do
+
+    # Installs from before the Nextcloud source: a local folder in the user's
+    # Nextcloud files becomes a Nextcloud folder, read through Nextcloud, with
+    # the local filters.
+    if [ -z "${nextcloud_enabled:-}" ] && [ "${local_enabled:-0}" = 1 ] && [ -n "${local_folders:-}" ] \
+        && docs_nextcloud_where; then
+        local files line kept="" moved=""
+        files="$(ynh_app_setting_get --app=nextcloud --key=data_dir)/data/$docs_user/files"
+        while IFS= read -r line; do
+            if [[ "${line#*=}" == "$files" || "${line#*=}" == "$files"/* ]]; then
+                moved+="${moved:+$'\n'}${line%%=*}=/${line#*="$files"}"
+            else
+                kept+="${kept:+$'\n'}$line"
+            fi
+        done <<< "$local_folders"
+        if [ -n "$moved" ]; then
+            nc_migrated=1
+            nextcloud_enabled=1
+            nextcloud_folders=$(sed 's|=//*|=/|' <<< "$moved")
+            nextcloud_only=${local_only:-}
+            nextcloud_skip=${local_skip:-}
+            local_folders=$kept
+            [ -n "$kept" ] || local_enabled=0
+            for key in nextcloud_enabled nextcloud_folders nextcloud_only nextcloud_skip local_folders local_enabled; do
+                ynh_app_setting_set --key="$key" --value="${!key}"
+            done
+        fi
+    fi
+
+    for key in syncthing_enabled local_enabled nextcloud_enabled; do
         ynh_app_setting_set_default --key="$key" --value=0
     done
-    for key in syncthing_folders syncthing_only syncthing_skip local_folders local_only local_skip; do
+    for key in syncthing_folders syncthing_only syncthing_skip local_folders local_only local_skip \
+        nextcloud_folders nextcloud_only nextcloud_skip; do
         ynh_app_setting_set_default --key="$key" --value=""
     done
 
@@ -89,6 +119,70 @@ for folder in root.findall("folder"):
     done
 }
 
+# Where this server's Nextcloud is, from its package's settings: nc_dir,
+# nc_php, nc_host and nc_url, the user's WebDAV root as the units reach it,
+# on loopback. Returns 1 when Nextcloud is not installed.
+docs_nextcloud_where() {
+    [ -f /etc/yunohost/apps/nextcloud/settings.yml ] || return 1
+    nc_dir=$(ynh_app_setting_get --app=nextcloud --key=install_dir)
+    nc_php=$(ynh_app_setting_get --app=nextcloud --key=php_version)
+    nc_host=$(ynh_app_setting_get --app=nextcloud --key=domain)
+    nc_url="https://127.0.0.1$(ynh_app_setting_get --app=nextcloud --key=path | sed 's|/*$||')/remote.php/dav/files/$docs_user"
+}
+
+# runuser, not sudo: sudo's output log would keep the app password occ prints.
+docs_occ() {
+    (cd "$nc_dir" && runuser -u nextcloud -- "php$nc_php" --define apc.enable_cli=1 occ --no-interaction --no-ansi "$@")
+}
+
+# The HTTP code Nextcloud answers a password with on a folder of the user's
+# account, 207 when it can be read, 000 when Nextcloud does not answer.
+# Needs the trace off: the password goes to curl on stdin, never on its
+# command line.
+docs_nextcloud_code() { # <path in the account> <password>
+    local quoted
+    quoted=$(jq -rn --arg p "$1" '$p | split("/") | map(select(length > 0) | @uri) | join("/")')
+    curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --config - \
+        --resolve "$nc_host:443:127.0.0.1" --request PROPFIND --header "Depth: 0" \
+        "https://$nc_host${nc_url#https://127.0.0.1}/$quoted" <<< "user = \"$docs_user:$2\"" || true
+}
+
+# Deletes the app passwords this app made for a Nextcloud user.
+docs_nextcloud_drop() { # <user>
+    local id
+    for id in $(docs_occ user:auth-tokens:list "$1" --output=json 2>/dev/null \
+        | jq -r --arg n "$app" '.[] | select(.name == $n) | .id'); do
+        docs_occ user:auth-tokens:delete "$1" "$id" >/dev/null || true
+    done
+}
+
+# The user's app password in nc_token: the one kept, while Nextcloud takes it
+# or does not answer, otherwise a new one, the old ones deleted. Empty when
+# none can be made. Needs the trace off.
+docs_nextcloud_token() {
+    local owner
+    nc_token=$(ynh_app_setting_get --key=nextcloud_token)
+    owner=$(ynh_app_setting_get --key=nextcloud_token_user)
+    if [ -n "$nc_token" ] && [ "$owner" = "$docs_user" ]; then
+        case $(docs_nextcloud_code "" "$nc_token") in
+            207) return 0 ;;
+            401) ;;
+            *) ynh_print_warn "Nextcloud does not answer: its app password is kept, untested."; return 0 ;;
+        esac
+    fi
+    [ -z "$owner" ] || docs_nextcloud_drop "$owner"
+    docs_nextcloud_drop "$docs_user"
+    nc_token=$(docs_occ user:auth-tokens:add --name="$app" "$docs_user" 2>/dev/null | tail -n 1) || nc_token=""
+    if ! [[ "$nc_token" =~ ^[A-Za-z0-9]{32,}$ ]]; then
+        nc_token=""
+        ynh_app_setting_delete --key=nextcloud_token
+        ynh_app_setting_delete --key=nextcloud_token_user
+        return 0
+    fi
+    ynh_app_setting_set --key=nextcloud_token --value="$nc_token"
+    ynh_app_setting_set --key=nextcloud_token_user --value="$docs_user"
+}
+
 # The tool label of a Syncthing folder: "Android Pictures" is Android_Pictures.
 docs_label() {
     LC_ALL=C sed 's/[^A-Za-z0-9_.-]/_/g; s/^[^A-Za-z0-9]*//' <<< "$1"
@@ -104,7 +198,7 @@ docs_collect_folders() {
     # The same labels from the web admin and from a shell in another locale.
     local LC_ALL=C
     local candidates="" sync_label path ignore line label source wanted
-    local -A names=([syncthing]="Syncthing" [local]="Local storage")
+    local -A names=([syncthing]="Syncthing" [local]="Local storage" [nextcloud]="Nextcloud")
     if [ "${syncthing_enabled:-0}" = 1 ]; then
         local -A synced=()
         while IFS=$'\t' read -r sync_label path ignore; do
@@ -133,12 +227,31 @@ docs_collect_folders() {
             candidates+="local"$'\t'"${line%%=*}"$'\t'"${line#*=}"$'\n'
         done <<< "${local_folders:-}"
     fi
+    if [ "${nextcloud_enabled:-0}" = 1 ] && ! docs_nextcloud_where; then
+        folder_error+="Nextcloud: it is not installed."$'\n'
+    elif [ "${nextcloud_enabled:-0}" = 1 ]; then
+        # Empty opens the whole account.
+        while IFS= read -r line; do
+            line=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' <<< "$line")
+            [[ -z "$line" || "$line" == \#* ]] && continue
+            if [[ "$line" != *=* ]]; then
+                folder_error+="Nextcloud: '$line' needs <Label>=<folder in the account>."$'\n'
+                continue
+            fi
+            candidates+="nextcloud"$'\t'"${line%%=*}"$'\t'"nextcloud:/$(sed 's|^/*||' <<< "${line#*=}")"$'\n'
+        done <<< "${nextcloud_folders:-Nextcloud=/}"
+    fi
     while IFS=$'\t' read -r source label path; do
         [ -z "$source" ] && continue
         if ! [[ "$label" =~ ^[A-Za-z0-9][A-Za-z0-9_.-]*$ ]]; then
             folder_error+="${names[$source]}: '$label' is not a label: letters, digits, _ . - and no space."$'\n'
         elif [ -n "${folder_path[$label]+x}" ]; then
             folder_error+="${names[$source]}: the label $label is already a ${names[${folder_source[$label]}]} folder."$'\n'
+        elif [ "$source" = nextcloud ] && [[ "${path#nextcloud:}/" == */.* || "$path" == *'"'* ]]; then
+            folder_error+="Nextcloud: '${path#nextcloud:}' must be a folder of the account, without hidden names, .. or quotes."$'\n'
+        elif [ "$source" = nextcloud ]; then
+            folder_path[$label]=$(sed 's|//*|/|g' <<< "$path")
+            folder_source[$label]=$source
         elif ! [[ "$path" == /* && "$path" != *:* && "$path" != *'"'* ]]; then
             folder_error+="${names[$source]}: '$path' must be absolute, without : or quotes."$'\n'
         elif [ ! -d "$path" ]; then
@@ -230,11 +343,13 @@ docs_check_downloads() {
 }
 
 # The sources' settings become: folders.json (the user's folders and their
-# filters), index.env (no token) and docs.env (the tokens), both root 600,
-# the units' read-only bind mounts, and the groups the units join to read
-# the folders. Each token is made once and kept in the settings.
+# filters), index.env (the Nextcloud app password, no MCP token) and docs.env
+# (the tokens), both root 600, the units' read-only bind mounts, and the
+# groups the units join to read the folders on disk. Each token is made once
+# and kept in the settings; the Nextcloud app password while a folder is in
+# Nextcloud, deleted from it otherwise.
 docs_configure() {
-    local label path group token only skip line
+    local label path group token only skip line nextcloud_env="" nc_ready=0
     local -A groups_seen=()
     bind_paths=""
     groups=""
@@ -242,6 +357,35 @@ docs_configure() {
     while IFS= read -r line; do
         [ -n "$line" ] && ynh_print_warn "$line Left out."
     done <<< "$folder_error"
+
+    set +o xtrace
+    if printf '%s\n' "${folder_source[@]}" | grep -qx nextcloud; then
+        docs_nextcloud_token
+        if [ -n "$nc_token" ]; then
+            nextcloud_env="DOCS_NEXTCLOUD_URL=$nc_url"$'\n'"DOCS_NEXTCLOUD_HOST=$nc_host"
+            nextcloud_env+=$'\n'"DOCS_NEXTCLOUD_USER=$docs_user"$'\n'"DOCS_NEXTCLOUD_PASSWORD=$nc_token"
+        fi
+        nc_token=""
+        [ -z "$nextcloud_env" ] || nc_ready=1
+    elif [ -n "$(ynh_app_setting_get --key=nextcloud_token)" ]; then
+        docs_nextcloud_where && docs_nextcloud_drop "$(ynh_app_setting_get --key=nextcloud_token_user)"
+        ynh_app_setting_delete --key=nextcloud_token
+        ynh_app_setting_delete --key=nextcloud_token_user
+    fi
+    set -o xtrace
+    # A folder just moved from Local storage must not vanish: the upgrade
+    # fails, and YunoHost restores the app as it was.
+    if [ "$nc_ready" = 0 ] && [ "${nc_migrated:-0}" = 1 ]; then
+        ynh_die "Nextcloud made no app password for $docs_user, so its folders cannot move to the Nextcloud source. Nothing was changed."
+    fi
+    if [ "$nc_ready" = 0 ]; then
+        for label in "${!folder_source[@]}"; do
+            if [ "${folder_source[$label]}" = nextcloud ]; then
+                ynh_print_warn "Nextcloud: no app password could be made for $docs_user; $label is left out."
+                unset "folder_path[$label]" "folder_source[$label]"
+            fi
+        done
+    fi
     [ ${#folder_path[@]} -gt 0 ] || ynh_print_warn "No folder is open: turn on a source in the config panel."
 
     # Tags settings hold their values joined by ",".
@@ -251,8 +395,11 @@ docs_configure() {
         only=${folder_source[$label]}_only
         skip=${folder_source[$label]}_skip
         entries=$(jq -c --arg l "$label" --arg p "$path" --arg only "${!only:-}" --arg skip "${!skip:-}" \
-            '.[$l] = {path: $p, only: ($only | split(",") | map(select(length > 0))),
-                      skip: ($skip | split(",") | map(select(length > 0)))}' <<< "$entries")
+            '.[$l] = (if $p | startswith("nextcloud:") then {nextcloud: ($p | ltrimstr("nextcloud:"))} else {path: $p} end)
+                     + {only: ($only | split(",") | map(select(length > 0))),
+                        skip: ($skip | split(",") | map(select(length > 0)))}' <<< "$entries")
+        # Nextcloud's folders are read through Nextcloud, not on disk.
+        [ "${folder_source[$label]}" = nextcloud ] && continue
         bind_paths+=" \"$path\""
         group=$(stat -c %G "$path")
         if [ -z "${groups_seen[$group]:-}" ]; then
@@ -279,17 +426,20 @@ docs_configure() {
     fi
     [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder."
 
-    {
-        echo "DOCS_FOLDERS_FILE=$install_dir/folders.json"
-        echo "DOCS_INDEX_DIR=$data_dir"
-        echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
-        # Changes with the model file or llama.cpp, either of which changes the vectors.
-        echo "DOCS_EMBED_MODEL=$(ynh_read_manifest "resources.sources.model.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_cpp.sha256" | cut -c1-16)"
-    } > "$install_dir/index.env"
+    # Changes with the model file or llama.cpp, either of which changes the vectors.
+    local model
+    model="$(ynh_read_manifest "resources.sources.model.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_cpp.sha256" | cut -c1-16)"
 
     # The trace stays off while a token is in a variable: it would go to the
     # operation log and, unredacted, to yunohost-cli.log.
     set +o xtrace
+    {
+        echo "DOCS_FOLDERS_FILE=$install_dir/folders.json"
+        echo "DOCS_INDEX_DIR=$data_dir"
+        echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
+        echo "DOCS_EMBED_MODEL=$model"
+        [ -z "$nextcloud_env" ] || echo "$nextcloud_env"
+    } > "$install_dir/index.env"
     {
         echo "DOCS_BIND=127.0.0.1"
         echo "DOCS_PORT=$port"
@@ -306,8 +456,10 @@ docs_configure() {
         echo "DOCS_GATEWAY_TOKEN=$token"
         echo "DOCS_GATEWAY_USER=$docs_user"
         echo "DOCS_GATEWAY_FOLDERS=$whoopy_labels"
+        [ -z "$nextcloud_env" ] || echo "$nextcloud_env"
         token=""
     } > "$install_dir/docs.env"
+    nextcloud_env=""
     set -o xtrace
 
     local module
