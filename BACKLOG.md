@@ -26,26 +26,6 @@ while the unit's comment says it fails after 6 hours.
 
 ## Features
 
-### F-M-9 · Nextcloud through WebDAV
-
-`wip` `large` `filed 2026-11-10`
-
-Reading Nextcloud's data folder on disk misses files shared by others, would
-leave written files unknown to Nextcloud, and makes the unit join the
-`nextcloud` group, which is most of what the sandbox has to hide.
-
-**Do:** a WebDAV source, on/off in the panel, with folders inside the
-account (empty for all) and its filter. Configure makes the user's app
-password with `occ user:auth-tokens:add` and keeps it like a token, never
-traced. The indexer walks with `Depth: 1` and skips any folder whose ETag is
-unchanged. The unit stops joining `nextcloud`, and its hiding list shrinks
-to match. Read-only is enforced by the server, since an app password cannot
-be narrowed. Built, 88 of 88 offline: folders as `<Label>=<folder in the
-account>`; the 0.5 upgrade moved `Notes` over from Local storage. The hiding
-list stays whole: Syncthing's group still reads Syncthing's config. Then the
-app password moved from `occ` to the panel, pasted by the user, with an
-optional other login for read-only shares: owes T-P-5 again.
-
 ### F-P-1 · indexing controls and status in the panel
 
 `todo` `medium` `filed 2026-11-10`
@@ -110,15 +90,6 @@ embedding model does not redo it.
 
 ## Tests
 
-### T-P-5 · Nextcloud folders are read through Nextcloud only
-
-`todo` `playtest`
-
-F-M-9 replaced `occ` with a pasted app password and a login field. Last
-passed at `b7823bb` on 2026-11-11: `Notes` moved, `nextcloud` group dropped,
-one app password, list, find, read and search on Nextcloud, one PROPFIND for
-an unchanged account, the password deleted with the source and in no log.
-
 ### T-P-1 · the installed server reads only its folders
 
 `todo` `playtest`
@@ -152,6 +123,8 @@ F-M-8, then F-M-9, changed the indexer's walk. Last passed at `bb9fd44` on 2026-
 
 ## Closed
 
+- `T-P-5` done `playtest` 2026-11-11 at `ee29bbd` · the service no longer joins `nextcloud`; a pasted app password saved and a wrong one refused at save; list, find, read and search on `Notes` through Nextcloud, one PROPFIND for an unchanged account (the `occ` build passed the same at `b7823bb`); the password in no new line of `yunohost-cli.log`, the operation logs or the journal
+- `F-M-9` done `large` 2026-11-11 · a Nextcloud source read over WebDAV on loopback, PROPFIND and GET only, shares included; an app password made in Nextcloud and pasted in the panel, with an optional other login for read-only shares; the indexer lists only folders whose ETag changed and keeps what Nextcloud does not list; `Notes` moved over from Local storage
 - `T-P-4` done `playtest` 2026-11-10 at `4a7b472` · the upgrade made Documents a Syncthing folder and Notes a local one, dropped `folders` and `whoopy_user`, kept the gateway token and its two folders; the panel listed Syncthing's three folders as choices and counted a 600 file as unreadable; `*.pdf` left out hid PDFs from list, read and a search whose index still held them; local off removed Notes; an unchanged save restarted nothing
 - `F-M-8` done `large` 2026-11-10 · one user, Syncthing and local sources with only/skip patterns, chosen in the config panel with a readability status per folder; links judged by where they lead; the old `folders` setting migrated on upgrade
 - `F-M-7` done `medium` 2026-11-10 · one Whoopy token, for a user and some of their folders, shown in the config panel with its address and a "New token" button; it searches that user's index, its folders only; no token is traced any more, so none reaches `yunohost-cli.log`
