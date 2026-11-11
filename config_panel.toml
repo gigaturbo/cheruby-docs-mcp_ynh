@@ -109,7 +109,7 @@ name = "Cheruby Docs"
         ask = "App password"
         type = "password"
         optional = true
-        help = "In Nextcloud, logged in as that account: Settings, Security, Create new app password, named Cheruby Docs. Paste it here. Empty keeps the one saved. Revoke it there to cut the app off."
+        help = "In Nextcloud, logged in as that account: Personal settings, Security, Devices & sessions, Create new app password, named Cheruby Docs (not an OAuth 2.0 client). Paste the password it shows, xxxxx-xxxxx-xxxxx-xxxxx-xxxxx. Empty keeps the one saved. Revoke it there to cut the app off."
         bind = "null"
 
         [main.nextcloud.nextcloud_folders]
