@@ -28,7 +28,7 @@ while the unit's comment says it fails after 6 hours.
 
 ### F-M-9 · Nextcloud through WebDAV
 
-`todo` `large` `filed 2026-11-10`
+`wip` `large` `filed 2026-11-10`
 
 Reading Nextcloud's data folder on disk misses files shared by others, would
 leave written files unknown to Nextcloud, and makes the unit join the
@@ -40,7 +40,10 @@ password with `occ user:auth-tokens:add` and keeps it like a token, never
 traced. The indexer walks with `Depth: 1` and skips any folder whose ETag is
 unchanged. The unit stops joining `nextcloud`, and its hiding list shrinks
 to match. Read-only is enforced by the server, since an app password cannot
-be narrowed.
+be narrowed. Built, 88 of 88 offline: folders as `<Label>=<folder in the
+account>`, the upgrade moves `Notes` over from Local storage. The hiding
+list stays whole: Syncthing's group still reads Syncthing's config. Owes
+T-P-5 and the reopened checks.
 
 ### F-P-1 · indexing controls and status in the panel
 
@@ -106,11 +109,19 @@ embedding model does not redo it.
 
 ## Tests
 
+### T-P-5 · Nextcloud folders are read through Nextcloud only
+
+`todo` `playtest`
+
+New with F-M-9: the upgrade moves `Notes`, the unit drops `nextcloud`, one
+app password, the tools and search on a Nextcloud folder, one PROPFIND for
+an unchanged account, the password deleted with the source and never logged.
+
 ### T-P-1 · the installed server reads only its folders
 
 `todo` `playtest`
 
-F-M-8 changed the scripts that render the units and moved the folders into
+F-M-8, then F-M-9, changed the scripts that render the units and moved the folders into
 `folders.json`. Last passed at `bb9fd44` on 2026-11-09: 401 without the
 token; each unit saw its folders, the index and its code only.
 
@@ -118,7 +129,7 @@ token; each unit saw its folders, the index and its code only.
 
 `todo` `playtest`
 
-F-M-8 changed `docs_configure` and the settings a restore carries. Last passed
+F-M-8, then F-M-9, changed `docs_configure` and the settings a restore carries. Last passed
 at `315b90c` on 2026-11-09: same token by fingerprint, ping settings back,
 index rebuilt by the timer.
 
@@ -126,7 +137,7 @@ index rebuilt by the timer.
 
 `todo` `playtest`
 
-F-M-8 rewrote `scripts/config` and the panel. Last passed at `392c2be` on
+F-M-8, then F-M-9, rewrote `scripts/config` and the panel. Last passed at `392c2be` on
 2026-11-10: token and address shown, folders narrowed, old token 401, no
 token in 4717 new lines of `yunohost-cli.log`.
 
@@ -134,7 +145,7 @@ token in 4717 new lines of `yunohost-cli.log`.
 
 `todo` `playtest`
 
-F-M-8 changed the indexer's walk. Last passed at `bb9fd44` on 2026-11-09:
+F-M-8, then F-M-9, changed the indexer's walk. Last passed at `bb9fd44` on 2026-11-09:
 10 of 10 real documents in the top 5.
 
 ## Closed
