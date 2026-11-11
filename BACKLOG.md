@@ -88,18 +88,26 @@ one wake a night, none when nothing waits. Pages rendered with `pypdfium2`
 from the locked wheels. The read text is kept by file fingerprint, so a new
 embedding model does not redo it.
 
+### F-M-12 · rank search results by how well they answer the query
+
+`todo` `medium` `filed 2026-11-11`
+
+Search fuses the embedding ranking and the keyword ranking (RRF), and
+nothing judges the passages against the query itself. T-M-2 on 2026-11-11
+found 5 of 7 documents in the top 5: the CVs came above the publications
+list for "list of scientific papers I authored", and the wool section of
+the washing note never came up for "how to wash wool by hand". Both files
+are indexed.
+
+**Do:** a ranking step on the fused top 30 or so, before the limit is
+applied, run on the Pi on loopback like the embedding unit. Pass: T-M-2's
+seven queries all in the top 5, and a search still answers in a few seconds.
+
 ## Tests
-
-### T-P-3 · the Whoopy token, from the panel, stays out of the logs
-
-`todo` `playtest`
-
-F-M-8, then F-M-9, rewrote `scripts/config` and the panel. Last passed at `392c2be` on
-2026-11-10: token and address shown, folders narrowed, old token 401, no
-token in 4717 new lines of `yunohost-cli.log`.
 
 ## Closed
 
+- `T-P-3` done `playtest` 2026-11-11 at `f3a3628` · narrowed in the panel to two folders then to `Notes`, then a new token: it lists, finds and searches `Notes` only and is told `Documents` does not exist; the token from before gets 401; no gateway token, user token or Nextcloud password in the 50 new lines of `yunohost-cli.log` or the 4 operations' logs
 - `T-P-1` done `playtest` 2026-11-11 at `f3a3628` · 401 without the token; with it, Documents and Notes listed and read, `..` refused; the tool server sees in `/var/www` its own code only, in `/home/yunohost.app` its index (read-only) and the Syncthing folder, and cannot read `settings.yml`, `docs.env`, `index.env` or `/etc/shadow`; the embedding unit sees `bin/` and `model/` only, `/slots` answers 501; the indexer writes in its index folder only
 - `T-M-2` done `playtest` 2026-11-11 at `f3a3628` · after a full rebuild, 5 of 7 documents in the top 5, French and English: the washing recipe, the btrfs note, the Dell invoice, the garden-centre CV and the bread note; missed: the publications list (CVs ranked above it) and the wool section of the washing note
 - `T-P-2` done `playtest` 2026-11-11 at `ee29bbd` · backup, remove, restore: the user token, the gateway token and the Nextcloud app password came back with the same fingerprints, the ping and source settings the same, the service still without `nextcloud`; no token answered 401; no secret in the new lines of `yunohost-cli.log` or the backup, remove and restore logs; old kernel kept with `apt-mark manual`. Notes then failed: the app password had been revoked in Nextcloud meanwhile
