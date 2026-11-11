@@ -1,9 +1,9 @@
 """Search index: each user's documents cut into passages, with their vectors.
 
 Run by cheruby-docs-mcp-index.service, hourly. Settings come from its
-root-600 env file, which holds no token:
+root-600 env file, which holds no MCP token:
 
-    DOCS_FOLDERS_FILE       as for the tool server
+    DOCS_FOLDERS_FILE       as for the tool server, and DOCS_NEXTCLOUD_* when a folder is in Nextcloud
     DOCS_INDEX_DIR          where each user's index is written
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
     DOCS_EMBED_MODEL        the model's identity; when it changes, everything is redone
@@ -12,7 +12,10 @@ Each run walks the folders and redoes only the files whose size or dates
 changed; a moved file keeps its passages, a deleted one loses them, and so do
 the files of a folder taken away or pointed elsewhere, and those its filters
 now leave out. A file that cannot be
-read is marked failed and retried once it changes; the run goes on. Text
+read is marked failed and retried once it changes; the run goes on. A
+Nextcloud folder is listed only where its ETag changed since the last run;
+when Nextcloud does not answer, what the index holds of it stays, and the
+run ends as failed. Text
 comes from the files' own text: scans and images are marked as waiting for
 OCR and hold no passage. Paths are stored as the tools show them
 (Documents/...), never as real paths.
@@ -34,8 +37,8 @@ import urllib.parse
 import httpx2
 import numpy
 
-from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, kept, kept_target, load_folders,
-                        office_text, open_pdf)
+from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, Folders, Nextcloud, NextcloudError,
+                        load_folders, needs_nextcloud, office_text, open_pdf)
 
 # EmbeddingGemma is trained with these prefixes; without them results get worse.
 QUERY_PROMPT = "task: search result | query: "
@@ -45,6 +48,7 @@ DOC_PROMPT = "title: {title} | text: {text}"
 PASSAGE_CHARS = 1600
 OVERLAP_CHARS = 200
 MAX_FILE_CHARS = 300_000
+MAX_FETCH_BYTES = 64_000_000
 BATCH = 8
 PUBLISH_EVERY_S = 600
 
@@ -56,6 +60,7 @@ CREATE TABLE IF NOT EXISTS files (
 CREATE TABLE IF NOT EXISTS passages (
     id INTEGER PRIMARY KEY, file INTEGER NOT NULL, page INTEGER, text TEXT, vector BLOB);
 CREATE INDEX IF NOT EXISTS passages_file ON passages (file);
+CREATE TABLE IF NOT EXISTS nextcloud_folders (path TEXT PRIMARY KEY, listing TEXT);
 CREATE VIRTUAL TABLE IF NOT EXISTS passages_fts USING fts5(
     text, content='passages', content_rowid='id', tokenize='unicode61 remove_diacritics 2');
 CREATE TRIGGER IF NOT EXISTS passages_ai AFTER INSERT ON passages BEGIN
@@ -98,17 +103,15 @@ def passages(text):
     return [p for p in out if p]
 
 
-def file_pages(real):
-    """[(page, text)] of a file, page 0 when it has no pages, and its count of pages without text."""
-    suffix = os.path.splitext(real)[1].lower()
+def file_pages(f, suffix):
+    """[(page, text)] of a binary file, page 0 when it has no pages, and its count of pages without text."""
     if suffix == ".pdf":
-        pages = [(n, (page.extract_text() or "").strip()) for n, page in enumerate(open_pdf(real).pages, 1)]
+        pages = [(n, (page.extract_text() or "").strip()) for n, page in enumerate(open_pdf(f).pages, 1)]
         return [(n, t) for n, t in pages if t], sum(1 for _, t in pages if not t)
     if suffix in OFFICE_MEMBERS:
-        text = office_text(real)
+        text = office_text(f, suffix)
     else:
-        with open(real, encoding="utf-8", errors="replace") as f:
-            text = f.read(MAX_FILE_CHARS)
+        text = f.read(MAX_FILE_CHARS * 4).decode("utf-8", errors="replace")[:MAX_FILE_CHARS]
     return ([(0, text)] if text.strip() else []), 0
 
 
@@ -123,34 +126,34 @@ def embed(client, texts):
     return matrix / numpy.linalg.norm(matrix, axis=1, keepdims=True)
 
 
-def sha256(real):
+def sha256(f):
+    """The hash of a binary file, which is left at its start."""
     h = hashlib.sha256()
-    with open(real, "rb") as f:
-        for block in iter(lambda: f.read(1 << 20), b""):
-            h.update(block)
+    for block in iter(lambda: f.read(1 << 20), b""):
+        h.update(block)
+    f.seek(0)
     return h.hexdigest()
 
 
-def walk(folders, rules):
-    """{shown path: real path} of every file the index can use: hidden names, links
-    out and what the filters leave out are not."""
-    found = {}
+def walk(tree):
+    """({shown path: Item} of every file the index can use, {folders and labels
+    Nextcloud did not list}). Hidden names, links out and what the filters
+    leave out are not used."""
+    found, unreachable = {}, set()
     usable = TEXT_SUFFIXES | OFFICE_MEMBERS.keys() | IMAGE_FORMATS.keys() | {".pdf"}
-    for label, root in folders.items():
-        for dirpath, dirnames, filenames in os.walk(root):
-            rel = os.path.relpath(dirpath, root)
-            prefix = label if rel == "." else f"{label}/{rel}"
-            dirnames[:] = [d for d in dirnames if not hidden(d) and kept(rules, f"{prefix}/{d}", True)]
-            for name in filenames:
-                real = os.path.join(dirpath, name)
-                if hidden(name) or os.path.splitext(name)[1].lower() not in usable:
-                    continue
-                if not kept(rules, f"{prefix}/{name}"):
-                    continue
-                if not kept_target(rules, label, root, real) or not os.path.isfile(real):
-                    continue
-                found[f"{prefix}/{name}"] = real
-    return found
+    for label in tree.roots:
+        try:
+            top = tree.item(label, [])
+            items = list(tree.walk(top)) if top and top.is_dir else []
+        except NextcloudError as e:
+            print(f"{label}: {e} What the index holds of it stays.", file=sys.stderr, flush=True)
+            unreachable.add(label)
+            continue
+        found.update((i.shown, i) for i in items
+                     if not i.is_dir and os.path.splitext(i.shown)[1].lower() in usable)
+    for shown in tree.unlisted:
+        print(f"{shown}: Nextcloud did not list it. What the index holds of it stays.", file=sys.stderr, flush=True)
+    return found, unreachable | set(tree.unlisted)
 
 
 def drop(db, file_id):
@@ -158,15 +161,16 @@ def drop(db, file_id):
     db.execute("DELETE FROM files WHERE id = ?", (file_id,))
 
 
-def index_file(db, client, shown, real, st, digest):
+def index_file(db, client, item, f, digest):
     """Store one file's passages and vectors; returns its status. Embedding errors propagate."""
-    suffix = os.path.splitext(real)[1].lower()
+    shown = item.shown
+    suffix = os.path.splitext(shown)[1].lower()
     status, empty, error, rows = "indexed", 0, None, []
     if suffix in IMAGE_FORMATS:
         status = "needs_ocr"
     else:
         try:
-            pages, empty = file_pages(real)
+            pages, empty = file_pages(f, suffix)
         except Exception as e:  # any reader error: the file is marked, the run goes on
             pages, status, error = [], "failed", f"{type(e).__name__}: {e}"[:300]
         rows = [(page, text) for page, whole in pages for text in passages(whole)]
@@ -175,7 +179,7 @@ def index_file(db, client, shown, real, st, digest):
     vectors = embed(client, [DOC_PROMPT.format(title=os.path.basename(shown), text=t) for _, t in rows]) if rows else []
     cur = db.execute("INSERT INTO files (path, size, mtime_ns, ctime_ns, sha256, status, empty_pages, error) "
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                     (shown, st.st_size, st.st_mtime_ns, st.st_ctime_ns, digest, status, empty, error))
+                     (shown, item.size, item.mtime_ns, item.ctime_ns, digest, status, empty, error))
     db.executemany("INSERT INTO passages (file, page, text, vector) VALUES (?, ?, ?, ?)",
                    [(cur.lastrowid, page, text, vec.tobytes()) for (page, text), vec in zip(rows, vectors)])
     return status
@@ -191,8 +195,9 @@ def publish(db, path):
     os.replace(path + ".tmp", path)
 
 
-def index_user(db, folders, rules, client, model, published):
-    """Bring one user's index in line with their folders. Returns {outcome: count}."""
+def index_user(db, folders, rules, nextcloud, client, model, published):
+    """Bring one user's index in line with their folders. Returns ({outcome: count},
+    {labels Nextcloud did not list})."""
     meta = dict(db.execute("SELECT key, value FROM meta"))
     if meta.get("model") != model:
         db.executescript("DELETE FROM passages; DELETE FROM files;")
@@ -205,41 +210,49 @@ def index_user(db, folders, rules, client, model, published):
     db.execute("INSERT OR REPLACE INTO meta VALUES ('folders', ?)", (folders_key(folders),))
     db.commit()
 
-    found = walk(folders, rules)
-    known = {r[0]: r[1:] for r in db.execute("SELECT path, id, size, mtime_ns, ctime_ns, sha256 FROM files")}
+    cache = {path: json.loads(listing) for path, listing in db.execute("SELECT path, listing FROM nextcloud_folders")}
+    tree = Folders(folders, rules, nextcloud, cache)
+    found, unreachable = walk(tree)
+    # What Nextcloud did not list is kept as it was, neither dropped nor taken as moved.
+    known = {r[0]: r[1:] for r in db.execute("SELECT path, id, size, mtime_ns, ctime_ns, sha256 FROM files")
+             if not any(r[0].startswith(u + "/") for u in unreachable)}
     gone = {row[4]: row[0] for path, row in known.items() if path not in found}
     reused, counts, last_publish = set(), {}, time.monotonic()
-    for shown, real in sorted(found.items()):
+    for shown, item in sorted(found.items()):
         row = known.get(shown)
-        st = None
         try:
-            st = os.stat(real)
-            if row and row[1:4] == (st.st_size, st.st_mtime_ns, st.st_ctime_ns):
+            if row and row[1:4] == (item.size, item.mtime_ns, item.ctime_ns):
                 outcome = "unchanged"
             else:
-                digest = sha256(real)
-                moved = gone.pop(digest, None) if row is None else None
-                reused.add(moved)
-                if moved is not None or (row and row[4] == digest):
-                    db.execute("UPDATE files SET path = ?, size = ?, mtime_ns = ?, ctime_ns = ? WHERE id = ?",
-                               (shown, st.st_size, st.st_mtime_ns, st.st_ctime_ns,
-                                moved if moved is not None else row[0]))
-                    outcome = "moved" if moved is not None else "unchanged"
-                else:
-                    if row:
-                        drop(db, row[0])
-                    outcome = index_file(db, client, shown, real, st, digest)
+                with tree.open(item, MAX_FETCH_BYTES) as f:
+                    digest = sha256(f)
+                    moved = gone.pop(digest, None) if row is None else None
+                    reused.add(moved)
+                    if moved is not None or (row and row[4] == digest):
+                        db.execute("UPDATE files SET path = ?, size = ?, mtime_ns = ?, ctime_ns = ? WHERE id = ?",
+                                   (shown, item.size, item.mtime_ns, item.ctime_ns,
+                                    moved if moved is not None else row[0]))
+                        outcome = "moved" if moved is not None else "unchanged"
+                    else:
+                        if row:
+                            drop(db, row[0])
+                        outcome = index_file(db, client, item, f, digest)
         except httpx2.TransportError:
             raise
+        except NextcloudError as e:
+            # Not the file's fault: kept as it was, and tried again next run.
+            db.rollback()
+            print(f"{shown}: {e}", file=sys.stderr, flush=True)
+            unreachable.add(shown.split("/", 1)[0])
+            outcome = "skipped"
         except (OSError, ValueError, httpx2.HTTPStatusError) as e:
             # Kept as failed with its dates, so it is retried once it changes.
             db.rollback()
             if row:
                 drop(db, row[0])
-            if st:
-                db.execute("INSERT INTO files (path, size, mtime_ns, ctime_ns, status, error) "
-                           "VALUES (?, ?, ?, ?, 'failed', ?)", (shown, st.st_size, st.st_mtime_ns,
-                                                                st.st_ctime_ns, f"{type(e).__name__}: {e}"[:300]))
+            db.execute("INSERT INTO files (path, size, mtime_ns, ctime_ns, status, error) "
+                       "VALUES (?, ?, ?, ?, 'failed', ?)", (shown, item.size, item.mtime_ns,
+                                                            item.ctime_ns, f"{type(e).__name__}: {e}"[:300]))
             outcome = "failed"
         db.commit()
         counts[outcome] = counts.get(outcome, 0) + 1
@@ -250,8 +263,13 @@ def index_user(db, folders, rules, client, model, published):
         if path not in found and row[0] not in reused:
             drop(db, row[0])
             counts["dropped"] = counts.get("dropped", 0) + 1
+    # The listings of this run only, so a folder gone or filtered out is not kept.
+    if not unreachable:
+        db.execute("DELETE FROM nextcloud_folders")
+    db.executemany("INSERT OR REPLACE INTO nextcloud_folders VALUES (?, ?)",
+                   [(path, json.dumps(listing)) for path, listing in tree.listed.items()])
     publish(db, published)
-    return counts
+    return counts, unreachable
 
 
 def wait_ready(client):
@@ -268,6 +286,8 @@ def wait_ready(client):
 
 def main():
     users, rules = load_folders(os.environ["DOCS_FOLDERS_FILE"])
+    nextcloud = Nextcloud.from_env(os.environ)
+    needs_nextcloud(users, nextcloud)
     index_dir = os.environ["DOCS_INDEX_DIR"]
     broken = []
     with httpx2.Client(base_url=os.environ["DOCS_EMBED_URL"], timeout=300) as client:
@@ -276,8 +296,11 @@ def main():
             base = os.path.join(index_dir, user)
             db = connect(base + ".work.sqlite")
             try:
-                counts = index_user(db, folders, rules[user], client, os.environ["DOCS_EMBED_MODEL"], base + ".sqlite")
+                counts, unreachable = index_user(db, folders, rules[user], nextcloud, client,
+                                                 os.environ["DOCS_EMBED_MODEL"], base + ".sqlite")
                 print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files"), flush=True)
+                if unreachable:
+                    broken.append(user)
             except httpx2.TransportError:
                 raise
             except Exception as e:  # one user's broken index must not stop the others

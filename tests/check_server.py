@@ -2,12 +2,13 @@
 
     .venv/bin/python tests/check_server.py
 
-Builds two users' folders in a temporary directory, indexes them without
-filters against a stand-in embedding server, starts the tool server with
-filters on a loopback port, then calls each tool and re-runs the indexer
-with the filters, then after a move, an edit and a deletion.
-The stand-in hashes words into vectors: it checks the wiring, not the quality
-of the search. Needs the package's dependencies only.
+Builds two users' folders in a temporary directory, one of alice's served by
+a stand-in Nextcloud, indexes them without filters against a stand-in
+embedding server, starts the tool server with filters on a loopback port,
+then calls each tool and re-runs the indexer with the filters, then after a
+move, an edit and a deletion, then with Nextcloud changed, down and refusing.
+The stand-in embedder hashes words into vectors: it checks the wiring, not
+the quality of the search. Needs the package's dependencies only.
 Prints one line per check and exits 1 if any fails.
 """
 
@@ -21,7 +22,9 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 import zipfile
+from email.utils import formatdate
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
@@ -29,6 +32,10 @@ import httpx
 ALICE, BOB, GATEWAY = "b" * 40, "j" * 40, "g" * 40
 PORT = 18770
 EMBED_PORT = 18771
+DAV_PORT = 18773
+DAV_PASSWORD = "n" * 72
+DAV_LOG = []
+DAV = {"root": "", "down": False, "fail": None}
 URL = f"http://127.0.0.1:{PORT}/mcp"
 PYTHON = [sys.executable, "-E", "-s", "-B"]
 EMBEDDED = []
@@ -90,16 +97,100 @@ class FakeEmbedder(BaseHTTPRequestHandler):
         pass
 
 
+class FakeNextcloud(BaseHTTPRequestHandler):
+    """WebDAV on DAV["root"] as alice's account, at /dav/files/alice: PROPFIND
+    at depth 0 or 1, and GET. A folder's ETag changes with anything below it,
+    as Nextcloud's does. Every request goes to DAV_LOG as (method, depth, path).
+    """
+
+    base = "/dav/files/alice"
+
+    def etag(self, real):
+        if not os.path.isdir(real):
+            st = os.stat(real)
+            return f"{st.st_size}-{st.st_mtime_ns}"
+        inner = "".join(f"{n}:{self.etag(os.path.join(real, n))}" for n in sorted(os.listdir(real)))
+        return hashlib.sha256(inner.encode()).hexdigest()[:16]
+
+    def target(self):
+        """The real path asked for, or None after an answer was sent."""
+        path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
+        DAV_LOG.append((self.command, self.headers.get("Depth", ""), path[len(self.base):].rstrip("/") or "/"))
+        if DAV["down"] or (DAV["fail"] and path.startswith(self.base + DAV["fail"])):
+            self.send_response(503)
+            self.end_headers()
+            return None
+        if self.headers.get("Authorization") != "Basic " + base64.b64encode(f"alice:{DAV_PASSWORD}".encode()).decode():
+            self.send_response(401)
+            self.end_headers()
+            return None
+        real = os.path.join(DAV["root"], path[len(self.base):].strip("/"))
+        if not path.startswith(self.base) or not os.path.exists(real):
+            self.send_response(404)
+            self.end_headers()
+            return None
+        return real
+
+    def response(self, real):
+        rel = os.path.relpath(real, DAV["root"])
+        href = urllib.parse.quote(self.base + ("" if rel == "." else "/" + rel) + ("/" if os.path.isdir(real) else ""))
+        kind = "<d:resourcetype><d:collection/></d:resourcetype>" if os.path.isdir(real) else \
+            f"<d:resourcetype/><d:getcontentlength>{os.path.getsize(real)}</d:getcontentlength>"
+        return (f"<d:response><d:href>{href}</d:href><d:propstat><d:prop>{kind}"
+                f"<d:getlastmodified>{formatdate(os.path.getmtime(real), usegmt=True)}</d:getlastmodified>"
+                f'<d:getetag>"{self.etag(real)}"</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status>'
+                f"</d:propstat></d:response>")
+
+    def do_PROPFIND(self):
+        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        real = self.target()
+        if real is None:
+            return
+        found = [real]
+        if self.headers.get("Depth") == "1" and os.path.isdir(real):
+            found += [os.path.join(real, n) for n in sorted(os.listdir(real))]
+        body = ('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">'
+                + "".join(self.response(r) for r in found) + "</d:multistatus>").encode()
+        self.send_response(207)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self):
+        real = self.target()
+        if real is None:
+            return
+        with open(real, "rb") as f:
+            body = f.read()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def __getattr__(self, name):
+        # Any other method, such as PUT or DELETE, is logged and refused.
+        if name.startswith("do_"):
+            return lambda: (self.target(), self.send_response(405), self.end_headers())
+        raise AttributeError(name)
+
+    def log_message(self, *args):
+        pass
+
+
 def write_folders(path, folders):
-    """The folders file: {user: {label: (real path, only, skip)}}."""
+    """The folders file: {user: {label: (root, only, skip)}}, a root in
+    Nextcloud written as nextcloud:<path in the account>."""
+    def entry(root, only, skip):
+        where = {"nextcloud": root[len("nextcloud:"):]} if root.startswith("nextcloud:") else {"path": root}
+        return {**where, "only": only, "skip": skip}
     with open(path, "w") as f:
-        json.dump({user: {label: {"path": p, "only": only, "skip": skip} for label, (p, only, skip) in entries.items()}
-                   for user, entries in folders.items()}, f)
+        json.dump({user: {label: entry(*e) for label, e in entries.items()} for user, entries in folders.items()}, f)
 
 
 def build(base):
-    """alice: Documents and Notes, filtered. bob: Papiers. Returns the env for the
-    server, and the folders without filters for the first index run."""
+    """alice: Documents and Notes, filtered, and Cloud in Nextcloud. bob: Papiers.
+    Returns the env for the server; the folders file without filters is for
+    the first index run."""
     docs, notes, papiers = (os.path.join(base, d) for d in ("docs", "notes", "papiers"))
     os.makedirs(os.path.join(docs, "Factures"))
     os.makedirs(os.path.join(docs, "Brouillons"))
@@ -137,8 +228,20 @@ def build(base):
     os.symlink("Brouillons/draft.md", f"{docs}/alias.md")
     os.utime(f"{notes}/courses.md", (946_000_000, 946_000_000))  # 1999-12-24
     os.makedirs(f"{base}/index")
+    DAV["root"] = f"{base}/nextcloud"
+    for path, text in {"Partage/compte-rendu.md": "Réunion du conseil syndical, ravalement vote",
+                       "Partage/.cache.md": "hidden",
+                       "Partage/Vieux/old.md": "ancien compte rendu",
+                       "Autre/prive.md": "outside the shared folder"}.items():
+        os.makedirs(os.path.dirname(f"{base}/nextcloud/{path}"), exist_ok=True)
+        with open(f"{base}/nextcloud/{path}", "w") as f:
+            f.write(text)
+    os.makedirs(f"{base}/nextcloud/Partage/Sous dossier")
+    with open(f"{base}/nextcloud/Partage/Sous dossier/plan d'été.pdf", "wb") as f:
+        f.write(tiny_pdf("Plan du jardin partage"))
     folders = {"alice": {"Documents": (docs, [], ["brouillons", "/Documents/*.tmp.md"]),
-                         "Notes": (notes, ["*.md"], [])},
+                         "Notes": (notes, ["*.md"], []),
+                         "Cloud": ("nextcloud:/Partage", [], ["vieux"])},
                "ju": {"Papiers": (papiers, [], [])}}
     write_folders(f"{base}/folders.json", folders)
     write_folders(f"{base}/open.json", {user: {label: (p, [], []) for label, (p, _, _) in entries.items()}
@@ -159,6 +262,9 @@ def build(base):
         "DOCS_GATEWAY_TOKEN": GATEWAY,
         "DOCS_GATEWAY_USER": "alice",
         "DOCS_GATEWAY_FOLDERS": "Notes",
+        "DOCS_NEXTCLOUD_URL": f"http://127.0.0.1:{DAV_PORT}/dav/files/alice",
+        "DOCS_NEXTCLOUD_USER": "alice",
+        "DOCS_NEXTCLOUD_PASSWORD": DAV_PASSWORD,
     }
 
 
@@ -194,7 +300,8 @@ CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
     ("four tools listed", lambda: call("tools/list"), lambda r: r[1] == "list_folder find_files read_file search_documents"),
-    ("alice sees her two folders", lambda: tool("list_folder"), lambda r: r == ("ok", "dir  Documents/\ndir  Notes/")),
+    ("alice sees her three folders", lambda: tool("list_folder"),
+     lambda r: r == ("ok", "dir  Documents/\ndir  Notes/\ndir  Cloud/")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
     ("bob cannot reach alice's", lambda: tool("read_file", token=BOB, path="Notes/courses.md"), error_with("no folder named")),
     ("alice cannot reach bob's", lambda: tool("read_file", path="Papiers/bob.md"), error_with("no folder named")),
@@ -259,6 +366,22 @@ CHECKS = [
      error_with("no folder named")),
     ("search falls back on keywords", lambda: tool("search_documents", query="panne loyer"),
      ok_with("keyword matches only", "Documents/bail.pdf")),
+    ("a Nextcloud folder is listed", lambda: tool("list_folder", path="Cloud"),
+     lambda r: r[0] == "ok" and r[1].startswith("dir ") and "Cloud/Sous dossier/" in r[1]
+     and "Cloud/compte-rendu.md" in r[1] and ".cache" not in r[1] and "Vieux" not in r[1]),
+    ("a Nextcloud file is read", lambda: tool("read_file", path="Cloud/compte-rendu.md"), ok_with("conseil syndical")),
+    ("a Nextcloud PDF is read", lambda: tool("read_file", path="Cloud/Sous dossier/plan d'été.pdf"), ok_with("Plan du jardin")),
+    ("a filtered Nextcloud folder reads as missing", lambda: tool("read_file", path="Cloud/Vieux/old.md"), error_with("not found")),
+    ("a missing Nextcloud file is not found", lambda: tool("read_file", path="Cloud/absent.md"), error_with("not found")),
+    ("Nextcloud .. refused", lambda: tool("read_file", path="Cloud/../Autre/prive.md"), error_with("not allowed")),
+    ("Nextcloud hidden refused", lambda: tool("read_file", path="Cloud/.cache.md"), error_with("not allowed")),
+    ("find walks Nextcloud", lambda: tool("find_files", query="plan ete"), ok_with("Cloud/Sous dossier/plan d'été.pdf")),
+    ("find leaves Nextcloud's filtered out", lambda: tool("find_files", query="old"),
+     lambda r: r[0] == "ok" and "Vieux" not in r[1]),
+    ("search finds a Nextcloud passage", lambda: tool("search_documents", query="conseil syndical"),
+     ok_with("Cloud/compte-rendu.md")),
+    ("the gateway does not see Nextcloud", lambda: tool("read_file", token=GATEWAY, path="Cloud/compte-rendu.md"),
+     error_with("no folder named")),
 ]
 
 
@@ -286,7 +409,7 @@ def index_checks(base, env, first):
     yield "prompts sent", EMBEDDED[:1], EMBEDDED and EMBEDDED[0].startswith("title: ") \
         and any(t.startswith("task: search result | query: ") for t in EMBEDDED)
     second = run_indexer(env)
-    yield "re-run drops what the filters leave out", second, "alice: 4 dropped, 6 unchanged" in second
+    yield "re-run drops what the filters leave out", second, "alice: 5 dropped, 8 unchanged" in second
     files = statuses(base)
     yield "filtered files leave the index", sorted(files), \
         not any("Brouillons" in p or "Copie" in p or "photo" in p or "alias" in p for p in files)
@@ -324,10 +447,47 @@ def index_checks(base, env, first):
     left = sorted(os.listdir(f"{base}/index"))
     yield "a removed user's index goes", left, left == ["alice.sqlite", "alice.work.sqlite", "ju.sqlite", "ju.work.sqlite"]
 
+    DAV_LOG.clear()
+    run_indexer(env)
+    yield "unchanged Nextcloud is not listed again", DAV_LOG, DAV_LOG == [("PROPFIND", "0", "/Partage")]
+    with open(f"{base}/nextcloud/Partage/compte-rendu.md", "a") as f:
+        f.write(" et toiture")
+    DAV_LOG.clear()
+    out = run_indexer(env)
+    listed = [p for m, d, p in DAV_LOG if d == "1"]
+    yield "a changed Nextcloud file is indexed", out, "alice: 1 indexed" in out
+    yield "only the changed Nextcloud folder is listed", listed, listed == ["/Partage"]
+    DAV["down"] = True
+    out = run_indexer(env)
+    yield "Nextcloud down fails the run", out, "What the index holds of it stays" in out and "index failed for alice" in out
+    result = tool("search_documents", query="toiture")
+    yield "Nextcloud down keeps its passages", result, ok_with("Cloud/compte-rendu.md")(result)
+    result = tool("find_files", query="liste")
+    DAV["down"] = False
+    yield "find answers from the other folders while Nextcloud is down", result, \
+        ok_with("Notes/liste.md", "[Cloud: Nextcloud answered 503.]")(result)
+    with open(f"{base}/nextcloud/Partage/compte-rendu.md", "a") as f:
+        f.write(" et gouttieres")
+    with open(f"{base}/nextcloud/Partage/Sous dossier/nouveau.md", "w") as f:
+        f.write("nouveau")
+    DAV["fail"] = "/Partage/Sous dossier"
+    out = run_indexer(env)
+    DAV["fail"] = None
+    yield "one unlisted Nextcloud folder fails the run, not its label", out, \
+        "Cloud/Sous dossier: Nextcloud did not list it" in out and "1 indexed" in out and "index failed for alice" in out
+    result = tool("search_documents", query="jardin partage")
+    yield "an unlisted Nextcloud folder keeps its passages", result, ok_with("Cloud/Sous dossier/plan")(result)
+    out = run_indexer({**env, "DOCS_NEXTCLOUD_PASSWORD": "wrong"})
+    yield "a wrong app password is said", out, "refused the app password" in out
+    methods = {m for m, _, _ in DAV_LOG}
+    yield "Nextcloud is only read", methods, methods <= {"PROPFIND", "GET"}
+
 
 def main():
     embedder = ThreadingHTTPServer(("127.0.0.1", EMBED_PORT), FakeEmbedder)
     threading.Thread(target=embedder.serve_forever, daemon=True).start()
+    nextcloud = ThreadingHTTPServer(("127.0.0.1", DAV_PORT), FakeNextcloud)
+    threading.Thread(target=nextcloud.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:
         env = build(base)
         first = run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/open.json"})

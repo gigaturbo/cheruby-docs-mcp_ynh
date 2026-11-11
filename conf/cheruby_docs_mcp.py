@@ -11,15 +11,20 @@ Run by cheruby-docs-mcp.service. Settings come from its root-600 env file:
     DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
     DOCS_INDEX_DIR          where docs_index.py keeps <user>.sqlite, read here only
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
+    DOCS_NEXTCLOUD_URL      when a folder is in Nextcloud: the user's WebDAV root,
+    DOCS_NEXTCLOUD_HOST     the name Nextcloud answers to,
+    DOCS_NEXTCLOUD_USER     the account and
+    DOCS_NEXTCLOUD_PASSWORD its app password (docs_files.Nextcloud)
 
 A token is one user's, with all or some of that user's folders; the gateway
 token searches that user's index. Paths in and out of the tools start with a
 folder's label, never with a real path.
 
-Nothing here writes. A path is refused if it climbs out of its folder,
-follows a link out of it, or names a hidden file (Syncthing's .stfolder,
-.stversions); one the folder's filters leave out is not found. The unit adds the outer wall: the process sees only these
-folders and the index, read-only.
+Nothing here writes, and Nextcloud is only asked to list and send files. A
+path is refused if it climbs out of its folder, follows a link out of it, or
+names a hidden file (Syncthing's .stfolder, .stversions); one the folder's
+filters leave out is not found. The unit adds the outer wall: the process
+sees only these folders on disk and the index, read-only.
 
 The tools are served at /mcp over Streamable HTTP, stateless.
 """
@@ -29,7 +34,6 @@ import hmac
 import json
 import logging
 import os
-import sqlite3
 import sys
 import unicodedata
 from datetime import datetime
@@ -40,8 +44,8 @@ import uvicorn
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, hidden, inside, kept, kept_target,
-                        load_folders, office_text, open_pdf)
+from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, Folders, Nextcloud, hidden, kept,
+                        load_folders, needs_nextcloud, office_text, open_pdf)
 from docs_index import QUERY_PROMPT, connect
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
@@ -54,6 +58,7 @@ MAX_FOUND = 50
 MAX_CHARS = 20_000
 MAX_PDF_PAGES = 20
 MAX_IMAGE_BYTES = 4_000_000
+MAX_FETCH_BYTES = 64_000_000
 MAX_RESULTS = 10
 RRF_K = 60
 
@@ -83,6 +88,8 @@ def load_users(environ, folders):
 
 FOLDERS, RULES = load_folders(os.environ["DOCS_FOLDERS_FILE"])
 USERS = load_users(os.environ, FOLDERS)
+NEXTCLOUD = Nextcloud.from_env(os.environ)
+needs_nextcloud(FOLDERS, NEXTCLOUD)
 
 # One line per embedding request would fill the journal.
 logging.getLogger("httpx2").setLevel(logging.WARNING)
@@ -103,36 +110,39 @@ def user_of(ctx):
     return ctx.request_context.request.scope["state"]["docs_user"]
 
 
+def folders(ctx):
+    return Folders(folders_of(ctx), RULES[user_of(ctx)], NEXTCLOUD)
+
+
+def split(path):
+    return [p for p in path.strip().strip("/").split("/") if p not in ("", ".")]
+
+
 def resolve(ctx, path):
-    """The real path behind a tool path, or a ToolError. "" means the folder list."""
-    parts = [p for p in path.strip().strip("/").split("/") if p not in ("", ".")]
+    """The Item behind a tool path, or a ToolError. "" means the folder list, None."""
+    parts = split(path)
     if not parts:
         return None
     if any(p == ".." or hidden(p) or "\0" in p for p in parts):
         raise ToolError(f"{path}: hidden names and .. are not allowed.")
-    folders = folders_of(ctx)
-    root = folders.get(parts[0])
-    if root is None:
-        raise ToolError(f"{path}: no folder named {parts[0]!r}. Folders: {', '.join(folders)}.")
-    real = os.path.realpath(os.path.join(root, *parts[1:]))
-    if not inside(real, root):
-        raise ToolError(f"{path}: leads out of {parts[0]} or into a hidden folder.")
-    # Left out by a filter, under its name or where it leads, reads as missing:
-    # a filter also hides that a file exists.
-    rules = RULES[user_of(ctx)]
-    if (not os.path.exists(real) or not kept(rules, "/".join(parts), os.path.isdir(real))
-            or not kept_target(rules, parts[0], root, real, os.path.isdir(real))):
+    if parts[0] not in folders_of(ctx):
+        raise ToolError(f"{path}: no folder named {parts[0]!r}. Folders: {', '.join(folders_of(ctx))}.")
+    # A filter also hides that a file exists: left out reads as missing.
+    try:
+        item = folders(ctx).item(parts[0], parts[1:])
+    except (ValueError, OSError) as e:
+        raise ToolError(f"{path}: {e}") from None
+    if item is None:
         raise ToolError(f"{path}: not found.")
-    return real
+    return item
 
 
-def describe(real, shown):
+def describe(item):
     """One listing line: kind, size, date, path."""
-    st = os.stat(real)
-    date = datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d")
-    if os.path.isdir(real):
-        return f"dir             {date}  {shown}/"
-    return f"file {human(st.st_size):>9}  {date}  {shown}"
+    date = datetime.fromtimestamp(item.mtime_ns / 1e9).strftime("%Y-%m-%d")
+    if item.is_dir:
+        return f"dir             {date}  {item.shown}/"
+    return f"file {human(item.size):>9}  {date}  {item.shown}"
 
 
 def human(size):
@@ -148,28 +158,51 @@ async def list_folder(ctx: Context, path: str = "") -> str:
 
     path: a folder such as "Documents/Factures"; empty lists the top folders.
     """
-    real = resolve(ctx, path)
-    if real is None:
+    # Off the event loop: a Nextcloud that hangs must not stall the other requests.
+    folder = await asyncio.to_thread(resolve, ctx, path)
+    if folder is None:
         return "\n".join(f"dir  {label}/" for label in folders_of(ctx))
-    if not os.path.isdir(real):
+    if not folder.is_dir:
         raise ToolError(f"{path}: is a file; read it with read_file.")
-    shown = "/".join(p for p in path.strip().strip("/").split("/") if p not in ("", "."))
-    rules = RULES[user_of(ctx)]
-    label = shown.split("/", 1)[0]
-    root = folders_of(ctx)[label]
-    entries = sorted((e for e in os.scandir(real)
-                      if not hidden(e.name) and kept(rules, f"{shown}/{e.name}", e.is_dir())
-                      and (not e.is_symlink() or kept_target(rules, label, root, e.path, e.is_dir()))),
-                     key=lambda e: (not e.is_dir(), e.name.lower()))
-    lines = [describe(e.path, f"{shown}/{e.name}") for e in entries[:MAX_LIST]]
-    if len(entries) > MAX_LIST:
-        lines.append(f"[{len(entries) - MAX_LIST} more not shown; use find_files]")
-    return "\n".join(lines) or f"{shown}/ is empty."
+    try:
+        items = await asyncio.to_thread(folders(ctx).children, folder)
+    except OSError as e:
+        raise ToolError(f"{path}: {e}") from None
+    items.sort(key=lambda i: (not i.is_dir, i.shown.lower()))
+    lines = [describe(i) for i in items[:MAX_LIST]]
+    if len(items) > MAX_LIST:
+        lines.append(f"[{len(items) - MAX_LIST} more not shown; use find_files]")
+    return "\n".join(lines) or f"{folder.shown}/ is empty."
 
 
 def fold(text):
     """Lower case without accents, so "factures energie" finds "Factures_Énergie"."""
     return "".join(c for c in unicodedata.normalize("NFKD", text.lower()) if not unicodedata.combining(c))
+
+
+def find(ctx, words, start):
+    """Description lines of what matches every word, MAX_FOUND + 1 at most,
+    then a line per folder Nextcloud did not list."""
+    found, notes = [], []
+    tree = folders(ctx)
+    starts = [start] if start else []
+    for label in folders_of(ctx) if start is None else ():
+        try:
+            starts.append(tree.item(label, []))
+        except OSError as e:
+            notes.append(f"[{label}: {e}]")
+    for top in starts:
+        try:
+            items = list(tree.walk(top)) if top else []
+        except OSError as e:
+            notes.append(f"[{top.shown}: {e}]")
+            continue
+        for item in items:
+            if all(w in fold(item.shown).replace("_", " ").replace("-", " ") for w in words):
+                found.append(describe(item))
+                if len(found) > MAX_FOUND:
+                    return found, notes
+    return found, notes + [f"[{shown}: Nextcloud did not list it]" for shown in tree.unlisted]
 
 
 @mcp.tool()
@@ -182,29 +215,11 @@ async def find_files(ctx: Context, query: str, path: str = "") -> str:
     words = fold(query).replace("_", " ").replace("-", " ").split()
     if not words:
         raise ToolError("query is empty.")
-    real = resolve(ctx, path)
-    rules = RULES[user_of(ctx)]
-    shown_path = "/".join(p for p in path.strip().strip("/").split("/") if p not in ("", "."))
-    starts = list(folders_of(ctx).items()) if real is None else [(shown_path, real)]
-    found = []
-    for shown_root, root in starts:
-        for dirpath, dirnames, filenames in os.walk(root):
-            rel = os.path.relpath(dirpath, root)
-            prefix = shown_root if rel == "." else f"{shown_root}/{rel}"
-            label = prefix.split("/", 1)[0]
-            # A link is judged by where it leads too; os.walk does not follow those to folders.
-            def shows(name, is_dir):
-                link = os.path.join(dirpath, name)
-                return (not hidden(name) and kept(rules, f"{prefix}/{name}", is_dir)
-                        and (not os.path.islink(link) or kept_target(rules, label, root, link, is_dir)))
-            dirnames[:] = sorted(d for d in dirnames if shows(d, True))
-            for name in dirnames + sorted(f for f in filenames if shows(f, False)):
-                shown = f"{prefix}/{name}"
-                if all(w in fold(shown).replace("_", " ").replace("-", " ") for w in words):
-                    found.append(describe(os.path.join(dirpath, name), shown))
-                    if len(found) > MAX_FOUND:
-                        return "\n".join(found[:MAX_FOUND]) + "\n[more matches; narrow the query]"
-    return "\n".join(found) or f"Nothing matches {query!r}."
+    start = await asyncio.to_thread(resolve, ctx, path)
+    found, notes = await asyncio.to_thread(find, ctx, words, start)
+    if len(found) > MAX_FOUND:
+        return "\n".join(found[:MAX_FOUND]) + "\n[more matches; narrow the query]"
+    return "\n".join(found + notes) or f"Nothing matches {query!r}."
 
 
 def cut(text, offset, max_chars):
@@ -216,8 +231,8 @@ def cut(text, offset, max_chars):
     return part
 
 
-def pdf_text(real, page, pages):
-    reader = open_pdf(real)
+def pdf_text(source, page, pages):
+    reader = open_pdf(source)
     total = len(reader.pages)
     if not 1 <= page <= total:
         raise ToolError(f"page {page} is out of range; the PDF has {total} pages.")
@@ -232,6 +247,18 @@ def pdf_text(real, page, pages):
     return head + "\n\n" + "\n\n".join(chunks)
 
 
+def read_item(tree, item, suffix, page, pages, offset, max_chars):
+    """What read_file returns for a file Item."""
+    with tree.open(item, MAX_IMAGE_BYTES if suffix in IMAGE_FORMATS else MAX_FETCH_BYTES) as f:
+        if suffix in IMAGE_FORMATS:
+            return Image(data=f.read(), format=IMAGE_FORMATS[suffix])
+        if suffix == ".pdf":
+            return pdf_text(f, page, pages)
+        if suffix in OFFICE_MEMBERS:
+            return cut(office_text(f, suffix), offset, max_chars)
+        return cut(f.read().decode("utf-8", errors="replace"), offset, max_chars)
+
+
 @mcp.tool()
 async def read_file(ctx: Context, path: str, page: int = 1, pages: int = 5,
                     offset: int = 0, max_chars: int = 8000) -> str | Image:
@@ -242,30 +269,21 @@ async def read_file(ctx: Context, path: str, page: int = 1, pages: int = 5,
     (up to 20000). An image comes back as the picture itself. A scanned PDF has
     no text yet.
     """
-    real = resolve(ctx, path)
-    if real is None or os.path.isdir(real):
+    item = await asyncio.to_thread(resolve, ctx, path)
+    if item is None or item.is_dir:
         raise ToolError(f"{path or '(empty)'}: is a folder; list it with list_folder.")
-    suffix = os.path.splitext(real)[1].lower()
-    max_chars = max(1, min(max_chars, MAX_CHARS))
-    offset = max(0, offset)
-
-    if suffix in IMAGE_FORMATS:
-        if os.path.getsize(real) > MAX_IMAGE_BYTES:
-            raise ToolError(f"{path}: the image is larger than {human(MAX_IMAGE_BYTES)}.")
-        with open(real, "rb") as f:
-            return Image(data=f.read(), format=IMAGE_FORMATS[suffix])
+    suffix = os.path.splitext(item.shown)[1].lower()
+    if suffix not in IMAGE_FORMATS.keys() | OFFICE_MEMBERS.keys() | TEXT_SUFFIXES | {".pdf"}:
+        raise ToolError(f"{path}: {suffix or 'this file type'} cannot be read as text.")
+    if suffix in IMAGE_FORMATS and item.size > MAX_IMAGE_BYTES:
+        raise ToolError(f"{path}: the image is larger than {human(MAX_IMAGE_BYTES)}.")
     try:
-        if suffix == ".pdf":
-            return await asyncio.to_thread(pdf_text, real, page, max(1, min(pages, MAX_PDF_PAGES)))
-        if suffix in OFFICE_MEMBERS:
-            return cut(await asyncio.to_thread(office_text, real), offset, max_chars)
-    except ValueError as e:
+        return await asyncio.to_thread(read_item, folders(ctx), item, suffix, page,
+                                       max(1, min(pages, MAX_PDF_PAGES)), max(0, offset), max(1, min(max_chars, MAX_CHARS)))
+    except FileNotFoundError:
+        raise ToolError(f"{path}: not found.") from None
+    except (ValueError, OSError) as e:
         raise ToolError(f"{path}: {e}") from None
-    if suffix in TEXT_SUFFIXES:
-        with open(real, encoding="utf-8", errors="replace") as f:
-            text = f.read()
-        return cut(text, offset, max_chars)
-    raise ToolError(f"{path}: {suffix or 'this file type'} cannot be read as text.")
 
 
 def ranked(db, query, vector, where, args):
@@ -327,7 +345,7 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
     db_path = os.path.join(INDEX_DIR, f"{user_of(ctx)}.sqlite")
     if not os.path.exists(db_path):
         raise ToolError("the search index is not built yet; use find_files meanwhile.")
-    parts = [p for p in path.strip().strip("/").split("/") if p not in ("", ".")]
+    parts = split(path)
     if any(p == ".." or hidden(p) for p in parts):
         raise ToolError(f"{path}: hidden names and .. are not allowed.")
     folders = folders_of(ctx)
