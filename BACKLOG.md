@@ -41,9 +41,10 @@ traced. The indexer walks with `Depth: 1` and skips any folder whose ETag is
 unchanged. The unit stops joining `nextcloud`, and its hiding list shrinks
 to match. Read-only is enforced by the server, since an app password cannot
 be narrowed. Built, 88 of 88 offline: folders as `<Label>=<folder in the
-account>`, the upgrade moves `Notes` over from Local storage. The hiding
-list stays whole: Syncthing's group still reads Syncthing's config. Owes
-T-P-5 and the reopened checks.
+account>`; the 0.5 upgrade moved `Notes` over from Local storage. The hiding
+list stays whole: Syncthing's group still reads Syncthing's config. Then the
+app password moved from `occ` to the panel, pasted by the user, with an
+optional other login for read-only shares: owes T-P-5 again.
 
 ### F-P-1 · indexing controls and status in the panel
 
@@ -113,9 +114,10 @@ embedding model does not redo it.
 
 `todo` `playtest`
 
-New with F-M-9: the upgrade moves `Notes`, the unit drops `nextcloud`, one
-app password, the tools and search on a Nextcloud folder, one PROPFIND for
-an unchanged account, the password deleted with the source and never logged.
+F-M-9 replaced `occ` with a pasted app password and a login field. Last
+passed at `b7823bb` on 2026-11-11: `Notes` moved, `nextcloud` group dropped,
+one app password, list, find, read and search on Nextcloud, one PROPFIND for
+an unchanged account, the password deleted with the source and in no log.
 
 ### T-P-1 · the installed server reads only its folders
 
