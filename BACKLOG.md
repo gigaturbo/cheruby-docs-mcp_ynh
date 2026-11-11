@@ -98,14 +98,6 @@ F-M-8, then F-M-9, changed the scripts that render the units and moved the folde
 `folders.json`. Last passed at `bb9fd44` on 2026-11-09: 401 without the
 token; each unit saw its folders, the index and its code only.
 
-### T-P-2 · backup and restore keep the tokens
-
-`todo` `playtest`
-
-F-M-8, then F-M-9, changed `docs_configure` and the settings a restore carries. Last passed
-at `315b90c` on 2026-11-09: same token by fingerprint, ping settings back,
-index rebuilt by the timer.
-
 ### T-P-3 · the Whoopy token, from the panel, stays out of the logs
 
 `todo` `playtest`
@@ -123,6 +115,7 @@ F-M-8, then F-M-9, changed the indexer's walk. Last passed at `bb9fd44` on 2026-
 
 ## Closed
 
+- `T-P-2` done `playtest` 2026-11-11 at `ee29bbd` · backup, remove, restore: the user token, the gateway token and the Nextcloud app password came back with the same fingerprints, the ping and source settings the same, the service still without `nextcloud`; no token answered 401; no secret in the new lines of `yunohost-cli.log` or the backup, remove and restore logs; old kernel kept with `apt-mark manual`. Notes then failed: the app password had been revoked in Nextcloud meanwhile
 - `T-P-5` done `playtest` 2026-11-11 at `ee29bbd` · the service no longer joins `nextcloud`; a pasted app password saved and a wrong one refused at save; list, find, read and search on `Notes` through Nextcloud, one PROPFIND for an unchanged account (the `occ` build passed the same at `b7823bb`); the password in no new line of `yunohost-cli.log`, the operation logs or the journal
 - `F-M-9` done `large` 2026-11-11 · a Nextcloud source read over WebDAV on loopback, PROPFIND and GET only, shares included; an app password made in Nextcloud and pasted in the panel, with an optional other login for read-only shares; the indexer lists only folders whose ETag changed and keeps what Nextcloud does not list; `Notes` moved over from Local storage
 - `T-P-4` done `playtest` 2026-11-10 at `4a7b472` · the upgrade made Documents a Syncthing folder and Notes a local one, dropped `folders` and `whoopy_user`, kept the gateway token and its two folders; the panel listed Syncthing's three folders as choices and counted a 600 file as unreadable; `*.pdf` left out hid PDFs from list, read and a search whose index still held them; local off removed Notes; an unchanged save restarted nothing
