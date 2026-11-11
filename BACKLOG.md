@@ -90,14 +90,6 @@ embedding model does not redo it.
 
 ## Tests
 
-### T-P-1 · the installed server reads only its folders
-
-`todo` `playtest`
-
-F-M-8, then F-M-9, changed the scripts that render the units and moved the folders into
-`folders.json`. Last passed at `bb9fd44` on 2026-11-09: 401 without the
-token; each unit saw its folders, the index and its code only.
-
 ### T-P-3 · the Whoopy token, from the panel, stays out of the logs
 
 `todo` `playtest`
@@ -106,15 +98,10 @@ F-M-8, then F-M-9, rewrote `scripts/config` and the panel. Last passed at `392c2
 2026-11-10: token and address shown, folders narrowed, old token 401, no
 token in 4717 new lines of `yunohost-cli.log`.
 
-### T-M-2 · search finds documents by meaning
-
-`todo` `playtest`
-
-F-M-8, then F-M-9, changed the indexer's walk. Last passed at `bb9fd44` on 2026-11-09:
-10 of 10 real documents in the top 5.
-
 ## Closed
 
+- `T-P-1` done `playtest` 2026-11-11 at `f3a3628` · 401 without the token; with it, Documents and Notes listed and read, `..` refused; the tool server sees in `/var/www` its own code only, in `/home/yunohost.app` its index (read-only) and the Syncthing folder, and cannot read `settings.yml`, `docs.env`, `index.env` or `/etc/shadow`; the embedding unit sees `bin/` and `model/` only, `/slots` answers 501; the indexer writes in its index folder only
+- `T-M-2` done `playtest` 2026-11-11 at `f3a3628` · after a full rebuild, 5 of 7 documents in the top 5, French and English: the washing recipe, the btrfs note, the Dell invoice, the garden-centre CV and the bread note; missed: the publications list (CVs ranked above it) and the wool section of the washing note
 - `T-P-2` done `playtest` 2026-11-11 at `ee29bbd` · backup, remove, restore: the user token, the gateway token and the Nextcloud app password came back with the same fingerprints, the ping and source settings the same, the service still without `nextcloud`; no token answered 401; no secret in the new lines of `yunohost-cli.log` or the backup, remove and restore logs; old kernel kept with `apt-mark manual`. Notes then failed: the app password had been revoked in Nextcloud meanwhile
 - `T-P-5` done `playtest` 2026-11-11 at `ee29bbd` · the service no longer joins `nextcloud`; a pasted app password saved and a wrong one refused at save; list, find, read and search on `Notes` through Nextcloud, one PROPFIND for an unchanged account (the `occ` build passed the same at `b7823bb`); the password in no new line of `yunohost-cli.log`, the operation logs or the journal
 - `F-M-9` done `large` 2026-11-11 · a Nextcloud source read over WebDAV on loopback, PROPFIND and GET only, shares included; an app password made in Nextcloud and pasted in the panel, with an optional other login for read-only shares; the indexer lists only folders whose ETag changed and keeps what Nextcloud does not list; `Notes` moved over from Local storage
