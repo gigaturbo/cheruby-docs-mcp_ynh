@@ -88,12 +88,29 @@ name = "Cheruby Docs"
 
     [main.nextcloud]
     name = "Nextcloud"
-    help = "Folders of the user's Nextcloud account, shares from others included, read through Nextcloud. The app makes itself an app password, listed as cheruby-docs-mcp in the user's Nextcloud security settings, and deletes it when this source is turned off."
+    help = "Folders of a Nextcloud account, shares from others included, read through Nextcloud with an app password you make there and paste here."
 
         [main.nextcloud.nextcloud_enabled]
         ask = "Open Nextcloud folders"
         type = "boolean"
         bind = "settings"
+
+        [main.nextcloud.nextcloud_account]
+        ask = "Nextcloud login"
+        type = "string"
+        optional = true
+        help = "Empty means the user above. An app password can change and delete files: another account, given read-only shares of the folders, keeps the app from changing anything."
+        pattern.regexp = '^[A-Za-z0-9_.@-]*$'
+        pattern.error = "A Nextcloud login: letters, digits, _ . @ -"
+        bind = "settings"
+
+        # Never shown and never traced: stored by set__nextcloud_password with the trace off.
+        [main.nextcloud.nextcloud_password]
+        ask = "App password"
+        type = "password"
+        optional = true
+        help = "In Nextcloud, logged in as that account: Settings, Security, Create new app password, named Cheruby Docs. Paste it here. Empty keeps the one saved. Revoke it there to cut the app off."
+        bind = "null"
 
         [main.nextcloud.nextcloud_folders]
         ask = "Folders"

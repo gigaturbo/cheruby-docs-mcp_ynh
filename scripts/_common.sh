@@ -15,39 +15,20 @@ docs_default_settings() {
     ynh_app_setting_set_default --key=whoopy_folders --value=""
     local key
 
-    # Installs from before the Nextcloud source: a local folder in the user's
-    # Nextcloud files becomes a Nextcloud folder, read through Nextcloud, with
-    # the local filters.
-    if [ -z "${nextcloud_enabled:-}" ] && [ "${local_enabled:-0}" = 1 ] && [ -n "${local_folders:-}" ] \
-        && docs_nextcloud_where; then
-        local files line kept="" moved=""
-        files="$(ynh_app_setting_get --app=nextcloud --key=data_dir)/data/$docs_user/files"
-        while IFS= read -r line; do
-            if [[ "${line#*=}" == "$files" || "${line#*=}" == "$files"/* ]]; then
-                moved+="${moved:+$'\n'}${line%%=*}=/${line#*="$files"}"
-            else
-                kept+="${kept:+$'\n'}$line"
-            fi
-        done <<< "$local_folders"
-        if [ -n "$moved" ]; then
-            nc_migrated=1
-            nextcloud_enabled=1
-            nextcloud_folders=$(sed 's|=//*|=/|' <<< "$moved")
-            nextcloud_only=${local_only:-}
-            nextcloud_skip=${local_skip:-}
-            local_folders=$kept
-            [ -n "$kept" ] || local_enabled=0
-            for key in nextcloud_enabled nextcloud_folders nextcloud_only nextcloud_skip local_folders local_enabled; do
-                ynh_app_setting_set --key="$key" --value="${!key}"
-            done
-        fi
+    # The app password the 0.5 test build made with occ, now pasted in the panel.
+    set +o xtrace
+    if [ -n "$(ynh_app_setting_get --key=nextcloud_token)" ]; then
+        ynh_app_setting_set --key=nextcloud_password --value="$(ynh_app_setting_get --key=nextcloud_token)"
     fi
+    set -o xtrace
+    ynh_app_setting_delete --key=nextcloud_token
+    ynh_app_setting_delete --key=nextcloud_token_user
 
     for key in syncthing_enabled local_enabled nextcloud_enabled; do
         ynh_app_setting_set_default --key="$key" --value=0
     done
     for key in syncthing_folders syncthing_only syncthing_skip local_folders local_only local_skip \
-        nextcloud_folders nextcloud_only nextcloud_skip; do
+        nextcloud_account nextcloud_folders nextcloud_only nextcloud_skip; do
         ynh_app_setting_set_default --key="$key" --value=""
     done
 
@@ -119,23 +100,18 @@ for folder in root.findall("folder"):
     done
 }
 
-# Where this server's Nextcloud is, from its package's settings: nc_dir,
-# nc_php, nc_host and nc_url, the user's WebDAV root as the units reach it,
-# on loopback. Returns 1 when Nextcloud is not installed.
+# Where this server's Nextcloud is, from its package's settings: nc_host,
+# nc_account (nextcloud_account, or the app's user) and nc_url, that
+# account's WebDAV root as the units reach it, on loopback. Returns 1 when
+# Nextcloud is not installed.
 docs_nextcloud_where() {
     [ -f /etc/yunohost/apps/nextcloud/settings.yml ] || return 1
-    nc_dir=$(ynh_app_setting_get --app=nextcloud --key=install_dir)
-    nc_php=$(ynh_app_setting_get --app=nextcloud --key=php_version)
     nc_host=$(ynh_app_setting_get --app=nextcloud --key=domain)
-    nc_url="https://127.0.0.1$(ynh_app_setting_get --app=nextcloud --key=path | sed 's|/*$||')/remote.php/dav/files/$docs_user"
+    nc_account=${nextcloud_account:-$docs_user}
+    nc_url="https://127.0.0.1$(ynh_app_setting_get --app=nextcloud --key=path | sed 's|/*$||')/remote.php/dav/files/$(jq -rn --arg a "$nc_account" '$a | @uri')"
 }
 
-# runuser, not sudo: sudo's output log would keep the app password occ prints.
-docs_occ() {
-    (cd "$nc_dir" && runuser -u nextcloud -- "php$nc_php" --define apc.enable_cli=1 occ --no-interaction --no-ansi "$@")
-}
-
-# The HTTP code Nextcloud answers a password with on a folder of the user's
+# The HTTP code Nextcloud answers an app password with on a folder of the
 # account, 207 when it can be read, 000 when Nextcloud does not answer.
 # Needs the trace off: the password goes to curl on stdin, never on its
 # command line.
@@ -144,43 +120,8 @@ docs_nextcloud_code() { # <path in the account> <password>
     quoted=$(jq -rn --arg p "$1" '$p | split("/") | map(select(length > 0) | @uri) | join("/")')
     curl --silent --output /dev/null --write-out '%{http_code}' --max-time 20 --config - \
         --resolve "$nc_host:443:127.0.0.1" --request PROPFIND --header "Depth: 0" \
-        "https://$nc_host${nc_url#https://127.0.0.1}/$quoted" <<< "user = \"$docs_user:$2\"" || true
-}
-
-# Deletes the app passwords this app made for a Nextcloud user.
-docs_nextcloud_drop() { # <user>
-    local id
-    for id in $(docs_occ user:auth-tokens:list "$1" --output=json 2>/dev/null \
-        | jq -r --arg n "$app" '.[] | select(.name == $n) | .id'); do
-        docs_occ user:auth-tokens:delete "$1" "$id" >/dev/null || true
-    done
-}
-
-# The user's app password in nc_token: the one kept, while Nextcloud takes it
-# or does not answer, otherwise a new one, the old ones deleted. Empty when
-# none can be made. Needs the trace off.
-docs_nextcloud_token() {
-    local owner
-    nc_token=$(ynh_app_setting_get --key=nextcloud_token)
-    owner=$(ynh_app_setting_get --key=nextcloud_token_user)
-    if [ -n "$nc_token" ] && [ "$owner" = "$docs_user" ]; then
-        case $(docs_nextcloud_code "" "$nc_token") in
-            207) return 0 ;;
-            401) ;;
-            *) ynh_print_warn "Nextcloud does not answer: its app password is kept, untested."; return 0 ;;
-        esac
-    fi
-    [ -z "$owner" ] || docs_nextcloud_drop "$owner"
-    docs_nextcloud_drop "$docs_user"
-    nc_token=$(docs_occ user:auth-tokens:add --name="$app" "$docs_user" 2>/dev/null | tail -n 1) || nc_token=""
-    if ! [[ "$nc_token" =~ ^[A-Za-z0-9]{32,}$ ]]; then
-        nc_token=""
-        ynh_app_setting_delete --key=nextcloud_token
-        ynh_app_setting_delete --key=nextcloud_token_user
-        return 0
-    fi
-    ynh_app_setting_set --key=nextcloud_token --value="$nc_token"
-    ynh_app_setting_set --key=nextcloud_token_user --value="$docs_user"
+        "https://$nc_host${nc_url#https://127.0.0.1}/$quoted" \
+        <<< "user = \"$(sed 's/["\\]/\\&/g' <<< "$nc_account"):$2\"" || true
 }
 
 # The tool label of a Syncthing folder: "Android Pictures" is Android_Pictures.
@@ -346,8 +287,7 @@ docs_check_downloads() {
 # filters), index.env (the Nextcloud app password, no MCP token) and docs.env
 # (the tokens), both root 600, the units' read-only bind mounts, and the
 # groups the units join to read the folders on disk. Each token is made once
-# and kept in the settings; the Nextcloud app password while a folder is in
-# Nextcloud, deleted from it otherwise.
+# and kept in the settings.
 docs_configure() {
     local label path group token only skip line nextcloud_env="" nc_ready=0
     local -A groups_seen=()
@@ -358,30 +298,23 @@ docs_configure() {
         [ -n "$line" ] && ynh_print_warn "$line Left out."
     done <<< "$folder_error"
 
+    # The app password is pasted in the panel; without it, the Nextcloud
+    # folders are left out. Only the nc_ready flag leaves the untraced part.
     set +o xtrace
     if printf '%s\n' "${folder_source[@]}" | grep -qx nextcloud; then
-        docs_nextcloud_token
-        if [ -n "$nc_token" ]; then
+        token=$(ynh_app_setting_get --key=nextcloud_password)
+        if [ -n "$token" ]; then
             nextcloud_env="DOCS_NEXTCLOUD_URL=$nc_url"$'\n'"DOCS_NEXTCLOUD_HOST=$nc_host"
-            nextcloud_env+=$'\n'"DOCS_NEXTCLOUD_USER=$docs_user"$'\n'"DOCS_NEXTCLOUD_PASSWORD=$nc_token"
+            nextcloud_env+=$'\n'"DOCS_NEXTCLOUD_USER=$nc_account"$'\n'"DOCS_NEXTCLOUD_PASSWORD=$token"
+            nc_ready=1
         fi
-        nc_token=""
-        [ -z "$nextcloud_env" ] || nc_ready=1
-    elif [ -n "$(ynh_app_setting_get --key=nextcloud_token)" ]; then
-        docs_nextcloud_where && docs_nextcloud_drop "$(ynh_app_setting_get --key=nextcloud_token_user)"
-        ynh_app_setting_delete --key=nextcloud_token
-        ynh_app_setting_delete --key=nextcloud_token_user
+        token=""
     fi
     set -o xtrace
-    # A folder just moved from Local storage must not vanish: the upgrade
-    # fails, and YunoHost restores the app as it was.
-    if [ "$nc_ready" = 0 ] && [ "${nc_migrated:-0}" = 1 ]; then
-        ynh_die "Nextcloud made no app password for $docs_user, so its folders cannot move to the Nextcloud source. Nothing was changed."
-    fi
     if [ "$nc_ready" = 0 ]; then
         for label in "${!folder_source[@]}"; do
             if [ "${folder_source[$label]}" = nextcloud ]; then
-                ynh_print_warn "Nextcloud: no app password could be made for $docs_user; $label is left out."
+                ynh_print_warn "Nextcloud: no app password is saved in the config panel; $label is left out."
                 unset "folder_path[$label]" "folder_source[$label]"
             fi
         done

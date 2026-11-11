@@ -24,11 +24,12 @@ config panel, from three sources, each turned on or off:
 - **Syncthing**: the folders Syncthing syncs on the server, ticked from a list
   (empty opens them all), each under its Syncthing label.
 - **Local storage**: any folder, one per line as `<Label>=<path>`.
-- **Nextcloud**: folders of the user's account, shares included, one per
+- **Nextcloud**: folders of a Nextcloud account, shares included, one per
   line as `<Label>=<folder in the account>` (empty opens all of it). They are
-  read through Nextcloud with an app password the app makes, named
-  `cheruby-docs-mcp` in the user's security settings, and deletes when the
-  source is turned off or the app removed.
+  read through Nextcloud with an app password made in Nextcloud (Settings,
+  Security) and pasted in the panel. An app password can also change files:
+  give another login, holding read-only shares of the folders, to keep the
+  app from changing anything.
 
 Each source also has "Only these files" and "Leave out" patterns, such as
 `*.pdf`, `Archives` or `Documents/Old`. What they leave out cannot be listed,

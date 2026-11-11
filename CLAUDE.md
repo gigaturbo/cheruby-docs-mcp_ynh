@@ -43,7 +43,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   `/home/yunohost.app/cheruby-docs-mcp`, rebuilt from the folders, never
   backed up. The settings are the rest: `docs_user`, each source's
   `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
-  `nextcloud_token` and `whoopy_*`; configure renders `folders.json`, the env files and the units
+  `nextcloud_account`, `nextcloud_password` and `whoopy_*`; configure renders `folders.json`, the env files and the units
   from them.
 - **The token picks the user**, and the unit joins each folder's group to
   read it, with everything else those groups could read hidden. Nextcloud's

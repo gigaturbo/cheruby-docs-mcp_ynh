@@ -19,11 +19,6 @@ done
 ynh_config_remove_systemd "$app-embed"
 ynh_config_remove_systemd
 
-# The app password it made in Nextcloud.
-if [ -n "${nextcloud_token_user:-}" ] && docs_nextcloud_where; then
-    docs_nextcloud_drop "$nextcloud_token_user"
-fi
-
 # The install dir and the user go with the manifest's resources; the index
 # stays unless the app is removed with --purge. The folders are only read,
 # never touched.

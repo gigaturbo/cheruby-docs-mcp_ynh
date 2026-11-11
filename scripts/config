@@ -36,6 +36,46 @@ validate__local_enabled() { docs_check_folders; }
 validate__local_folders() { docs_check_folders; }
 validate__nextcloud_enabled() { docs_check_folders; }
 validate__nextcloud_folders() { docs_check_folders; }
+
+# A pasted app password, or the saved one with a new login, must open the
+# account. An empty password field comes as "" or "None": it keeps the saved one.
+docs_check_nextcloud() {
+    local password code
+    [ "${nextcloud_enabled:-0}" = 1 ] && docs_nextcloud_where || return 0
+    set +o xtrace
+    password=${nextcloud_password:-}
+    [[ "$password" != "" && "$password" != "None" ]] || password=$(ynh_app_setting_get --key=nextcloud_password)
+    code=000
+    [ -z "$password" ] || code=$(docs_nextcloud_code "" "$password")
+    password=""
+    set -o xtrace
+    case $code in
+        207 | 000) ;;
+        401) echo "Nextcloud refuses this app password for $nc_account." ;;
+        404) echo "Nextcloud has no account $nc_account." ;;
+        *) echo "Nextcloud answered $code for $nc_account." ;;
+    esac
+}
+
+validate__nextcloud_account() { docs_check_nextcloud; }
+validate__nextcloud_password() {
+    set +o xtrace
+    local given=0
+    [[ "${nextcloud_password:-}" == "" || "${nextcloud_password:-}" == "None" ]] || given=1
+    set -o xtrace
+    [ "$given" = 0 ] || docs_check_nextcloud
+}
+
+# Stores a pasted app password with the trace off; its bind is null, so it is
+# never read back by the traced getter.
+set__nextcloud_password() {
+    set +o xtrace
+    if [[ "${nextcloud_password:-}" != "" && "${nextcloud_password:-}" != "None" ]]; then
+        ynh_app_setting_set --key=nextcloud_password --value="$nextcloud_password"
+        nc_password_set=1
+    fi
+    set -o xtrace
+}
 validate__whoopy_folders() { docs_check_folders; }
 
 # Defined for show only: a getter makes its field look changed on every save.
@@ -69,14 +109,14 @@ ynh_app_config_show() {
         source=${folder_source[$label]}
         if [ "$source" = nextcloud ]; then
             set +o xtrace
-            nc_password=$(ynh_app_setting_get --key=nextcloud_token)
-            if [ -z "$nc_password" ] || [ "$(ynh_app_setting_get --key=nextcloud_token_user)" != "$docs_user" ]; then
-                found="the app password is made when the source is saved."
+            nc_password=$(ynh_app_setting_get --key=nextcloud_password)
+            if [ -z "$nc_password" ]; then
+                found="no app password is saved: make one in Nextcloud and paste it above."
             else
                 case $(docs_nextcloud_code "${path#nextcloud:}" "$nc_password") in
                     207) found="can be read." ;;
-                    404) found="no such folder in the account of $docs_user." ;;
-                    401) found="Nextcloud refuses the app password: save the source again to make another." ;;
+                    404) found="no such folder in the account of $nc_account." ;;
+                    401) found="Nextcloud refuses the app password: make another and paste it above." ;;
                     *) found="Nextcloud does not answer." ;;
                 esac
             fi
@@ -131,8 +171,16 @@ ynh_app_config_apply() {
         ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
     fi
     local key
+    # A new app password is in the settings already; the units need it.
+    if [ "${nc_password_set:-0}" = 1 ]; then
+        docs_configure
+        ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
+            --wait_until="Uvicorn running on" --timeout=60
+        return
+    fi
     for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_only syncthing_skip \
-        local_enabled local_folders local_only local_skip nextcloud_enabled nextcloud_folders nextcloud_only nextcloud_skip; do
+        local_enabled local_folders local_only local_skip nextcloud_enabled nextcloud_account nextcloud_folders \
+        nextcloud_only nextcloud_skip; do
         if [ "${changed[$key]:-}" = "true" ]; then
             docs_configure
             ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
