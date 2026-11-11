@@ -34,6 +34,7 @@ fi
 
 ynh_script_progression "Updating configuration files..."
 docs_configure
+docs_set_logo
 
 ynh_script_progression "Starting the tool server..."
 docs_start

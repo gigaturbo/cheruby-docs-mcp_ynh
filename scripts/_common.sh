@@ -363,3 +363,14 @@ docs_stop() {
     ynh_systemctl --service="$app" --action="stop"
     systemctl stop "$app-embed" --quiet 2>/dev/null || true
 }
+
+# The app's logo, shown by the webadmin and the portal, set only while it has
+# none, so a logo chosen in the webadmin survives upgrades. PNG only.
+docs_set_logo() {
+    yunohost tools shell -c "
+from yunohost.permission import user_permission_info
+from yunohost.user import user_permission_update as update_tile
+if not user_permission_info('$app.main').get('logo_hash'):
+    update_tile('$app.main', logo=open('$YNH_APP_BASEDIR/conf/logo.png', 'rb'))
+"
+}

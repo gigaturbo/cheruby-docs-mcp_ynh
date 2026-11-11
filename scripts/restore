@@ -16,6 +16,7 @@ docs_build_llama
 ynh_script_progression "Restoring configuration files..."
 docs_clear_index
 docs_configure
+docs_set_logo
 
 ynh_script_progression "Starting the tool server..."
 docs_start
