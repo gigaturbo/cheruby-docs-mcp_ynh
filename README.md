@@ -1,3 +1,5 @@
+<p align="center"><img src="doc/logo.svg" width="160" alt="Cheruby Docs"></p>
+
 # Cheruby Docs for YunoHost
 
 Read-only MCP tools that let AI agents list, find, read and search by meaning
