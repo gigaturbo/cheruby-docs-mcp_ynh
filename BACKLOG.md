@@ -84,12 +84,6 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-### T-P-1 · the installed server reads only its folders
-
-`todo` `playtest` `filed 2026-11-10`
-
-The index unit's timeout changed (B-P-1). Last result at `1fa9784` on 2026-11-16: pass.
-
 ### T-P-5 · Nextcloud folders are read through Nextcloud only
 
 `todo` `playtest` `filed 2026-11-10`
@@ -98,6 +92,7 @@ The client stops after one refusal and the panel skips a known-refused password 
 
 ## Closed
 
+- `T-P-1` done `playtest` 2026-11-16 at `bf59279` · on 0.6.1: 401 without a token; Nextcloud, Syncthing, the other Syncthing folders, `docs.env` and `/etc/shadow` out of the tool server's reach; its code and index read-only even to root; the embedding unit sees `bin/` and `model/` only, `/slots` 501; an index run without the old `RuntimeMaxSec` warning
 - `B-M-2` closed 2026-11-16 · a revoked app password was tried again by the panel, the indexer and the server until Nextcloud held back every login from loopback; now one refusal stops the tries until a new password, and a 429 is named
 - `B-P-1` closed 2026-11-16 · `RuntimeMaxSec` is ignored for a oneshot unit, so a stuck run blocked the timer; `TimeoutStartSec=6h` fails it, checked on a throwaway unit
 - `T-P-4` done `playtest` 2026-11-16 at `c52e3c7` · its upgrade steps are moot, no old settings left; on a throwaway local folder: Syncthing's choices are its three folders, a 600 file counted as 1 unreadable, `*.pdf` left out hid a PDF from list, read, find and search while the index still held it, Documents' PDFs untouched, Local storage turned off took its folder out, the next run dropped it; "Nothing has changed" no longer holds, since the app password field always looks changed
