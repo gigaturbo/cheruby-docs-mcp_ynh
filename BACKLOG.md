@@ -13,29 +13,7 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
-### B-P-1 · a stuck index run is never stopped
-
-`open` `medium` `filed 2026-11-10`
-
-`index.service` is `Type=oneshot` with `TimeoutStartSec=infinity`, and
-systemd ignores `RuntimeMaxSec=6h` for a oneshot unit (`systemd-analyze
-verify` says so on systemd 252). A run that hangs blocks the timer for good,
-while the unit's comment says it fails after 6 hours.
-
-**Fix:** `TimeoutStartSec=6h` and no `RuntimeMaxSec`.
-
-### B-M-2 · a revoked app password gets loopback throttled by Nextcloud
-
-`open` `medium` `filed 2026-11-16`
-
-With a revoked app password, the panel, the indexer and the tool server
-keep logging in. After 11 failures Nextcloud throttled every login from
-127.0.0.1, other apps' included, and answered 429, which the panel shows
-as "Nextcloud does not answer". `occ security:bruteforce:reset 127.0.0.1`
-cleared it.
-
-**Fix:** say 429 as Nextcloud throttling this server, with the reset
-command; after a 401, stop logging in until a new password is saved.
+Nothing open.
 
 ## Features
 
@@ -106,10 +84,22 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-Nothing open.
+### T-P-1 · the installed server reads only its folders
+
+`todo` `playtest` `filed 2026-11-10`
+
+The index unit's timeout changed (B-P-1). Last result at `1fa9784` on 2026-11-16: pass.
+
+### T-P-5 · Nextcloud folders are read through Nextcloud only
+
+`todo` `playtest` `filed 2026-11-10`
+
+The client stops after one refusal and the panel skips a known-refused password (B-M-2). Last result at `3df4e18` on 2026-11-16: pass. Owed as well: after a revoke, `occ security:bruteforce:attempts 127.0.0.1` stays at 1 or 2 across an index run and two panel opens.
 
 ## Closed
 
+- `B-M-2` closed 2026-11-16 · a revoked app password was tried again by the panel, the indexer and the server until Nextcloud held back every login from loopback; now one refusal stops the tries until a new password, and a 429 is named
+- `B-P-1` closed 2026-11-16 · `RuntimeMaxSec` is ignored for a oneshot unit, so a stuck run blocked the timer; `TimeoutStartSec=6h` fails it, checked on a throwaway unit
 - `T-P-4` done `playtest` 2026-11-16 at `c52e3c7` · its upgrade steps are moot, no old settings left; on a throwaway local folder: Syncthing's choices are its three folders, a 600 file counted as 1 unreadable, `*.pdf` left out hid a PDF from list, read, find and search while the index still held it, Documents' PDFs untouched, Local storage turned off took its folder out, the next run dropped it; "Nothing has changed" no longer holds, since the app password field always looks changed
 - `B-P-2` closed 2026-11-16 · the panel said "could not be checked" for every folder on disk: `find` fails when it starts in YunoHost's root-only working folder; it now starts from `/`
 - `T-M-2` done `playtest` 2026-11-16 at `3df4e18` · after a restore and a full rebuild, the same 5 of 7 documents in the top 5 as on 2026-11-11, the same two missed (F-M-12), 0.2 s a search
@@ -119,7 +109,7 @@ Nothing open.
 - `T-P-6` done `playtest` 2026-11-16 at `1fa9784` · "Custom" shows its field; `0 3 * * *` refused for the quiet hours 01-06 and `34 6-24 * * *` for hour 24; quiet hours over the current hour skipped it in the next run and made a start by hand log "no run now", while Run now ran; Rebuild stopped a run, dropped the working copy and kept search on the published index, then a run from zero indexed 312 files in 33 min; a stopped run counts as a success with `SuccessExitStatus=SIGTERM` and a failure without (a throwaway unit, since an unchanged run takes 1.3 s)
 - `T-M-3` done `playtest` 2026-11-16 at `1fa9784` · with the Whoopy token both write tools offered on the two writable folders; in Nextcloud a folder made, a file created, replaced and read back, the old version kept whole; on disk, in a group-writable test folder, a new folder 2770 and file 660 in the folder's group, a file the group cannot change refused, one it can replaced keeping owner and mode, synced to two devices; `.pdf`, hidden names, `..`, unknown folders refused, and a Nextcloud label marked under Syncthing refused at save; inside the unit only Documents writable, even to root
 - `T-P-1` done `playtest` 2026-11-16 at `1fa9784` · 401 without a token; the tool server sees only its code, its index and Documents, not Nextcloud, Syncthing, the other Syncthing folders, the env files, `settings.yml`, `/etc/shadow`, PHP sessions or `/mnt`; the embedding unit sees `bin/` and `model/` only, `/slots` 501; the indexer writes in its index folder only
-- `T-M-1` done `spec` 2026-11-16 at `1fa9784` · `tests/check_server.py` 125 of 125, writes, quiet hours and too-long passages included
+- `T-M-1` done `spec` 2026-11-16 at `3df5d21` · `tests/check_server.py` 129 of 129, writes, quiet hours, refusals and throttling included
 - `B-M-1` closed 2026-11-16 · four music scores past the model's 2048 tokens failed for good; a refused text is now embedded by its start, and a file failed by the embedding server retried, which indexed all four
 - `F-M-11` done `large` 2026-11-16 · `write_file` and `create_folder` in the folders marked writable per source, never a delete, never through a link or a hard link, never the last 2 GB; disk folders mounted read-write only when writable; receive-only Syncthing folders and the multimedia and backup shares stay read-only; the panel says what cannot be changed, Nextcloud's through its permissions
 - `F-P-1` done `medium` 2026-11-16 · index schedule as presets or cron, trimmed of quiet hours (01-06 by default) at which a run also stops; Index runs in the panel with its status, Run now and Rebuild
