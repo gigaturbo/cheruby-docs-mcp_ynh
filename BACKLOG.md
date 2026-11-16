@@ -88,6 +88,13 @@ is 312 bytes, its wool part two French lines ("version laine : 100g savon,
 citation under "Publications", out of the top 10, below CVs that list papers
 too. Only a model that reads query and passage together links them.
 
+**Bench (2026-11-16, llama-server b12223 on the Pi, indexer idle):** the
+fused top N, one per file and page, sent as `<file name>\n<text[:chars]>`.
+The publications PDF is 28th fused, so N must be 30. jina-reranker-v2-base-multilingual
+Q8_0 at 30 × 300 characters: 9 of 9 in the top 5, MRR 0.87, 3.7 s mean,
+4.4 s slowest; at 30 × 600, the same MRR in 7.3 s. bge-reranker-v2-m3
+Q8_0 at 30 × 300: 8 of 9, MRR 0.76, 11.9 s. Chosen: jina at 30 × 300.
+
 ### F-M-14 · passages cut by the document's structure, with their headings
 
 `todo` `medium` `filed 2026-11-16` `needs: F-M-13`
