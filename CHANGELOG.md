@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.6.2
+
+- "Whoopy access" is picked from the open folders instead of typed, so a mistyped label can no longer be saved.
+
 ## 0.6.1
 
 - An index run stuck past 6 hours now fails, so the timer starts the next one.
