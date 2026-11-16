@@ -82,23 +82,11 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-### T-P-6 · the index runs on the chosen schedule, from the panel
-
-`todo` `playtest` `filed 2026-11-12`
-
-F-P-1's live check: each schedule on the timer, quiet hours, "Run now", "Rebuild" during a run, and the status against the journal. Partly run 2026-11-16 before `ca4c4ed`'s change for B-M-1: "Custom" shows its field, "Run now" ran (14:38, 388 unchanged, status done); `0 3 * * *` refused for the quiet hours, `34 6-24 * * *` refused (hour 24); with quiet hours 14-16 at 14:56, the next run skipped them, a start by hand logged "quiet hours 14-16: no run now", "Run now" ran; at 15:01 "Rebuild" stopped a run and dropped the working copy, the published index stayed for search, and a run from zero started at 15:02, but the stop counted as a failure and pinged healthchecks.io; `1fa9784` makes a stop a success, owed: Rebuild again, no failure ping.
-
 ### T-M-2 · search finds documents by meaning
 
 `todo` `playtest` `filed 2026-11-10`
 
 The indexer now writes a status file and `publish` takes the user's base path. Last result at `f3a3628` on 2026-11-11: 5 of 7 documents in the top 5. Re-run 2026-11-16 after a full rebuild (15:02 to 15:35, 312 indexed), before `ca4c4ed`'s change for B-M-1: the same 5 of 7, the same two missed (F-M-12), 0.2 s a search.
-
-### T-P-2 · backup and restore keep the tokens
-
-`todo` `playtest` `filed 2026-11-10`
-
-`docs_configure` now writes the timer and the read-write mounts. Last result at `ee29bbd` on 2026-11-11: pass.
 
 ### T-P-3 · the Whoopy token, from the panel, stays out of the logs
 
@@ -120,6 +108,8 @@ The panel gained the index section, two buttons and the writable fields. Last re
 
 ## Closed
 
+- `T-P-2` done `playtest` 2026-11-16 at `fbbb555` · nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
+- `T-P-6` done `playtest` 2026-11-16 at `1fa9784` · "Custom" shows its field; `0 3 * * *` refused for the quiet hours 01-06 and `34 6-24 * * *` for hour 24; quiet hours over the current hour skipped it in the next run and made a start by hand log "no run now", while Run now ran; Rebuild stopped a run, dropped the working copy and kept search on the published index, then a run from zero indexed 312 files in 33 min; a stopped run counts as a success with `SuccessExitStatus=SIGTERM` and a failure without (a throwaway unit, since an unchanged run takes 1.3 s)
 - `T-M-3` done `playtest` 2026-11-16 at `1fa9784` · with the Whoopy token both write tools offered on the two writable folders; in Nextcloud a folder made, a file created, replaced and read back, the old version kept whole; on disk, in a group-writable test folder, a new folder 2770 and file 660 in the folder's group, a file the group cannot change refused, one it can replaced keeping owner and mode, synced to two devices; `.pdf`, hidden names, `..`, unknown folders refused, and a Nextcloud label marked under Syncthing refused at save; inside the unit only Documents writable, even to root
 - `T-P-1` done `playtest` 2026-11-16 at `1fa9784` · 401 without a token; the tool server sees only its code, its index and Documents, not Nextcloud, Syncthing, the other Syncthing folders, the env files, `settings.yml`, `/etc/shadow`, PHP sessions or `/mnt`; the embedding unit sees `bin/` and `model/` only, `/slots` 501; the indexer writes in its index folder only
 - `T-M-1` done `spec` 2026-11-16 at `1fa9784` · `tests/check_server.py` 125 of 125, writes, quiet hours and too-long passages included
