@@ -24,6 +24,19 @@ while the unit's comment says it fails after 6 hours.
 
 **Fix:** `TimeoutStartSec=6h` and no `RuntimeMaxSec`.
 
+### B-M-2 · a revoked app password gets loopback throttled by Nextcloud
+
+`open` `medium` `filed 2026-11-16`
+
+With a revoked app password, the panel, the indexer and the tool server
+keep logging in. After 11 failures Nextcloud throttled every login from
+127.0.0.1, other apps' included, and answered 429, which the panel shows
+as "Nextcloud does not answer". `occ security:bruteforce:reset 127.0.0.1`
+cleared it.
+
+**Fix:** say 429 as Nextcloud throttling this server, with the reset
+command; after a 401, stop logging in until a new password is saved.
+
 ## Features
 
 ### F-P-3 · Whoopy access picked from the open folders
@@ -93,20 +106,13 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-### T-M-2 · search finds documents by meaning
-
-`todo` `playtest` `filed 2026-11-10`
-
-The indexer now writes a status file and `publish` takes the user's base path. Last result at `f3a3628` on 2026-11-11: 5 of 7 documents in the top 5. Re-run 2026-11-16 after a full rebuild (15:02 to 15:35, 312 indexed), before `ca4c4ed`'s change for B-M-1: the same 5 of 7, the same two missed (F-M-12), 0.2 s a search.
-
-### T-P-4 · the upgrade keeps the folders, and the panel's sources choose them
-
-`todo` `playtest` `filed 2026-11-10`
-
-`docs_collect_folders` and `docs_default_settings` gained the writable marks and the schedule. Last result at `4a7b472` on 2026-11-10: pass.
+Nothing open.
 
 ## Closed
 
+- `T-P-4` done `playtest` 2026-11-16 at `c52e3c7` · its upgrade steps are moot, no old settings left; on a throwaway local folder: Syncthing's choices are its three folders, a 600 file counted as 1 unreadable, `*.pdf` left out hid a PDF from list, read, find and search while the index still held it, Documents' PDFs untouched, Local storage turned off took its folder out, the next run dropped it; "Nothing has changed" no longer holds, since the app password field always looks changed
+- `B-P-2` closed 2026-11-16 · the panel said "could not be checked" for every folder on disk: `find` fails when it starts in YunoHost's root-only working folder; it now starts from `/`
+- `T-M-2` done `playtest` 2026-11-16 at `3df4e18` · after a restore and a full rebuild, the same 5 of 7 documents in the top 5 as on 2026-11-11, the same two missed (F-M-12), 0.2 s a search
 - `T-P-5` done `playtest` 2026-11-16 at `3df4e18` · an app password revoked in Nextcloud cut Notes off, and a new one pasted in the panel brought it back; neither app password in the new lines of `yunohost-cli.log` nor the 33 operation files since the restore
 - `T-P-3` done `playtest` 2026-11-16 at `3df4e18` · "New token" made a 48-character token, which the panel shows and the server loaded; Whoopy got 401 until it held that token, then 200; "Whoopy access" narrowed to two folders then one; a label that is not a folder refused at save; the token in no new line of `yunohost-cli.log` nor the operation logs
 - `T-P-2` done `playtest` 2026-11-16 at `fbbb555` · nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
