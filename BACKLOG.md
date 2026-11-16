@@ -81,18 +81,12 @@ candidates. When it does not answer, search keeps the fused order and says
 so. Results grouped by file, the best passage standing for it, so one CV
 cannot fill the list. Measured with F-M-13 before and after.
 
-### F-M-13 · a scored run of the search queries
-
-`todo` `small` `filed 2026-11-16`
-
-T-M-2 is judged by eye from search output, so a ranking change cannot be
-compared with the one before.
-
-**Do:** `tests/eval_search.py`: calls `search_documents` on a running server
-for each query of a JSON file kept outside the repository (the queries name
-the user's own files), each with the file or files it should find, and
-prints each one's rank and time, the count in the top 5 and the mean
-reciprocal rank. The token is read from a file, never an argument.
+**Baseline (F-M-13, 2026-11-16):** 7 of 9 in the top 5, mean reciprocal
+rank 0.71, 0.1 s a search. Both misses are short texts: the washing note
+is 312 bytes, its wool part two French lines ("version laine : 100g savon,
+4L eau") that never say "by hand"; the publications PDF is one bioRxiv
+citation under "Publications", out of the top 10, below CVs that list papers
+too. Only a model that reads query and passage together links them.
 
 ### F-M-14 · passages cut by the document's structure, with their headings
 
@@ -107,8 +101,9 @@ into the keyword index.
 paragraphs, to about 600 to 900 characters; prefix each passage with
 `<file name> > <heading> > <subheading>`, embedded and keyword-indexed
 alike. A version of the cutting rules joins `DOCS_EMBED_MODEL`, so a change
-redoes the index. Pass: F-M-13 no worse on any query, and the wool section
-of the washing note in the top 5.
+redoes the index. Pass: F-M-13 no worse on any query, and better on
+longer documents added to its queries: neither of T-M-2's misses is in a
+long file, so this item alone does not fix them.
 
 ### F-M-15 · cleaner text from PDF, HTML and XML
 
@@ -139,6 +134,7 @@ Nothing open.
 
 ## Closed
 
+- `F-M-13` done `small` 2026-11-16 · `tests/eval_search.py` scores `search_documents` on a running server against a private query set, rank and time per query, top 5 count and mean reciprocal rank
 - `T-P-3` done `playtest` 2026-11-16 at `40e8365` · on 0.6.2, "Whoopy access" offers Documents and Notes; Notes alone saved and Whoopy saw only Notes; cleared, all folders open again
 - `F-P-3` done `small` 2026-11-16 · "Whoopy access" picked from the open folders, a saved label no longer open kept among the choices to be removed
 - `T-P-5` done `playtest` 2026-11-16 at `071063a` · on 0.6.1, a revoked app password: one index run noted it refused and asked Nextcloud nothing more, the panel said it was refused, Nextcloud's failed logins from 127.0.0.1 stayed at 0; a new password saved: the mark cleared, Notes read and indexed, the panel says it can be read and is writable; the new password in no new line of `yunohost-cli.log`, the save's operation log or the journal

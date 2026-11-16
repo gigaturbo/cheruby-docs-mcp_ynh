@@ -24,6 +24,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   and its runs, health pings and the Whoopy token.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
   in `scripts/_common.sh`.
+- `tests/eval_search.py`: scores search on a running server against
+  a private set of queries (T-M-2).
 - `tests/check_server.py`: the offline check, on throwaway folders, with a
   stand-in embedding server and a stand-in Nextcloud.
 
