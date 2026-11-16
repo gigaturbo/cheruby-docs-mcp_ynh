@@ -43,6 +43,12 @@ its search prefixes kept in the code. A change downloads the model,
 restarts the embedding unit and re-indexes everything (`DOCS_EMBED_MODEL`).
 F-M-10's remote must serve the same model.
 
+**Candidate (2026-11-16):** jina-embeddings-v5-text-nano-retrieval (212M,
+CC-BY-NC-4.0), smaller than EmbeddingGemma, last-token pooling on upstream
+llama.cpp. Scored with F-M-13 against EmbeddingGemma, with the time of a
+full index. v5-text-small (677M) would double the index time; v5-omni
+embeds images but gives no text to search or read.
+
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -55,6 +61,13 @@ through Whoopy on loopback, with a key of its own allowed that model only;
 one wake a night, none when nothing waits. Pages rendered with `pypdfium2`
 from the locked wheels. The read text is kept by file fingerprint, so a new
 embedding model does not redo it.
+
+**Models to compare (2026-11-16):** qwen3-vl and qwen3.5-9B through
+Ollama, on the same pages, by the text read. jina-ocr-v1 only if both read
+poorly: it is not in Ollama (Transformers with `trust_remote_code`, or
+vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
+which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
+CC-BY-NC-4.0.
 
 ### F-M-14 · passages cut by the document's structure, with their headings
 
