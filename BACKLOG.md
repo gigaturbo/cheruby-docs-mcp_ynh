@@ -71,6 +71,68 @@ are indexed.
 applied, run on the Pi on loopback like the embedding unit. Pass: T-M-2's
 seven queries all in the top 5, and a search still answers in a few seconds.
 
+**Plan (2026-11-16):** the embedding server reads about 500 tokens a second
+on the Pi, so 30 of today's 1600-character passages (14,000 tokens) would
+take 30 s or more to rerank. After F-M-14's shorter passages, a
+`cheruby-docs-mcp-rerank.service` copied from the embedding unit, with
+llama-server `--reranking` (b12223 has `/v1/rerank`): jina-reranker-v2-base-multilingual
+(278M) measured first against bge-reranker-v2-m3 (568M), on about 20
+candidates. When it does not answer, search keeps the fused order and says
+so. Results grouped by file, the best passage standing for it, so one CV
+cannot fill the list. Measured with F-M-13 before and after.
+
+### F-M-13 · a scored run of the search queries
+
+`todo` `small` `filed 2026-11-16`
+
+T-M-2 is judged by eye from search output, so a ranking change cannot be
+compared with the one before.
+
+**Do:** `tests/eval_search.py`: calls `search_documents` on a running server
+for each query of a JSON file kept outside the repository (the queries name
+the user's own files), each with the file or files it should find, and
+prints each one's rank and time, the count in the top 5 and the mean
+reciprocal rank. The token is read from a file, never an argument.
+
+### F-M-14 · passages cut by the document's structure, with their headings
+
+`todo` `medium` `filed 2026-11-16` `needs: F-M-13`
+
+`passages()` joins all the text into one line, then cuts it every 1600
+characters, so a section shares a passage with its neighbours and its
+vector is an average of them. The file name goes into the vector but not
+into the keyword index.
+
+**Do:** cut at headings (Markdown `#`, Word and ODT heading styles), then at
+paragraphs, to about 600 to 900 characters; prefix each passage with
+`<file name> > <heading> > <subheading>`, embedded and keyword-indexed
+alike. A version of the cutting rules joins `DOCS_EMBED_MODEL`, so a change
+redoes the index. Pass: F-M-13 no worse on any query, and the wool section
+of the washing note in the top 5.
+
+### F-M-15 · cleaner text from PDF, HTML and XML
+
+`todo` `medium` `filed 2026-11-16` `needs: F-M-13`
+
+HTML and XML are indexed with their tags. PDF text keeps each page's
+header, footer and page number, words split at line ends, and ligatures
+that keyword search does not match.
+
+**Do:** tags stripped with `html.parser` for indexing; in PDFs, lines found
+on most pages dropped, `-\n` joined, NFKC applied. Compare pypdfium2 with
+pypdf on the same PDFs (read failures, time, text order); swap only on a
+clear gain. `read_file` keeps showing the file as it is.
+
+### F-M-16 · more formats searchable
+
+`todo` `small` `filed 2026-11-16`
+
+Only text files, PDF, docx and odt are read.
+
+**Do:** pptx, odp, xlsx, ods, epub and eml, read like `office_text` from
+their XML or with the standard library, no new wheel. Listed by
+`read_file` and the index alike.
+
 ## Tests
 
 Nothing open.
