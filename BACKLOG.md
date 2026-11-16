@@ -56,45 +56,6 @@ one wake a night, none when nothing waits. Pages rendered with `pypdfium2`
 from the locked wheels. The read text is kept by file fingerprint, so a new
 embedding model does not redo it.
 
-### F-M-12 · rank search results by how well they answer the query
-
-`todo` `medium` `filed 2026-11-11`
-
-Search fuses the embedding ranking and the keyword ranking (RRF), and
-nothing judges the passages against the query itself. T-M-2 on 2026-11-11
-found 5 of 7 documents in the top 5: the CVs came above the publications
-list for "list of scientific papers I authored", and the wool section of
-the washing note never came up for "how to wash wool by hand". Both files
-are indexed.
-
-**Do:** a ranking step on the fused top 30 or so, before the limit is
-applied, run on the Pi on loopback like the embedding unit. Pass: T-M-2's
-seven queries all in the top 5, and a search still answers in a few seconds.
-
-**Plan (2026-11-16):** the embedding server reads about 500 tokens a second
-on the Pi, so 30 of today's 1600-character passages (14,000 tokens) would
-take 30 s or more to rerank. After F-M-14's shorter passages, a
-`cheruby-docs-mcp-rerank.service` copied from the embedding unit, with
-llama-server `--reranking` (b12223 has `/v1/rerank`): jina-reranker-v2-base-multilingual
-(278M) measured first against bge-reranker-v2-m3 (568M), on about 20
-candidates. When it does not answer, search keeps the fused order and says
-so. Results grouped by file, the best passage standing for it, so one CV
-cannot fill the list. Measured with F-M-13 before and after.
-
-**Baseline (F-M-13, 2026-11-16):** 7 of 9 in the top 5, mean reciprocal
-rank 0.71, 0.1 s a search. Both misses are short texts: the washing note
-is 312 bytes, its wool part two French lines ("version laine : 100g savon,
-4L eau") that never say "by hand"; the publications PDF is one bioRxiv
-citation under "Publications", out of the top 10, below CVs that list papers
-too. Only a model that reads query and passage together links them.
-
-**Bench (2026-11-16, llama-server b12223 on the Pi, indexer idle):** the
-fused top N, one per file and page, sent as `<file name>\n<text[:chars]>`.
-The publications PDF is 28th fused, so N must be 30. jina-reranker-v2-base-multilingual
-Q8_0 at 30 × 300 characters: 9 of 9 in the top 5, MRR 0.87, 3.7 s mean,
-4.4 s slowest; at 30 × 600, the same MRR in 7.3 s. bge-reranker-v2-m3
-Q8_0 at 30 × 300: 8 of 9, MRR 0.76, 11.9 s. Chosen: jina at 30 × 300.
-
 ### F-M-14 · passages cut by the document's structure, with their headings
 
 `todo` `medium` `filed 2026-11-16` `needs: F-M-13`
@@ -141,6 +102,9 @@ Nothing open.
 
 ## Closed
 
+- `T-P-1` done `playtest` 2026-11-16 at `f2cab55` · on 0.7.0: 401 without a token; the tool server sees Documents only under Syncthing, not Nextcloud, PHP sessions, the env files or `/etc/shadow`, its code and index read-only; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
+- `T-M-2` done `playtest` 2026-11-16 at `f2cab55` · on 0.7.0 with `tests/eval_search.py`: 9 of 9 in the top 5, mean reciprocal rank 0.87, 3.8 s a search, 4.1 s at most, against 7 of 9, 0.71 and 0.1 s before
+- `F-M-12` done `medium` 2026-11-16 · the fused top 30, by file name and first 300 characters, reordered by jina-reranker-v2-base-multilingual (CC-BY-NC-4.0) in its own unit, the best passage per file; bge-reranker-v2-m3 (8 of 9, 12 s) and Qwen3-Reranker-0.6B (8 of 9, 37 s) measured and set aside; the fused order kept, and said, when it fails
 - `F-M-13` done `small` 2026-11-16 · `tests/eval_search.py` scores `search_documents` on a running server against a private query set, rank and time per query, top 5 count and mean reciprocal rank
 - `T-P-3` done `playtest` 2026-11-16 at `40e8365` · on 0.6.2, "Whoopy access" offers Documents and Notes; Notes alone saved and Whoopy saw only Notes; cleared, all folders open again
 - `F-P-3` done `small` 2026-11-16 · "Whoopy access" picked from the open folders, a saved label no longer open kept among the choices to be removed
