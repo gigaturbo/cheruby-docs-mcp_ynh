@@ -17,18 +17,6 @@ Nothing open.
 
 ## Features
 
-### F-P-3 · Whoopy access picked from the open folders
-
-`wip` `small` `filed 2026-11-16`
-
-"Whoopy access" takes typed labels, and a wrong one is refused at save.
-The web admin shows that refusal only in its history strip, so the save
-seems to do nothing.
-
-**Do:** offer the open folders' labels as its choices, with a getter
-defined for `show` only, as for Syncthing's folders. Built in 0.6.2, with
-a saved label no longer open kept among the choices; owes T-P-3.
-
 ### F-M-10 · first index embedded through Whoopy on the desktop's GPU
 
 `todo` `medium` `filed 2026-11-10` `needs: F-P-1`
@@ -85,14 +73,12 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-### T-P-3 · the Whoopy token, from the panel, stays out of the logs
-
-`todo` `playtest` `filed 2026-11-10`
-
-"Whoopy access" now offers the open folders as choices (F-P-3). Last result at `3df4e18` on 2026-11-16: pass.
+Nothing open.
 
 ## Closed
 
+- `T-P-3` done `playtest` 2026-11-16 at `40e8365` · on 0.6.2, "Whoopy access" offers Documents and Notes; Notes alone saved and Whoopy saw only Notes; cleared, all folders open again
+- `F-P-3` done `small` 2026-11-16 · "Whoopy access" picked from the open folders, a saved label no longer open kept among the choices to be removed
 - `T-P-5` done `playtest` 2026-11-16 at `071063a` · on 0.6.1, a revoked app password: one index run noted it refused and asked Nextcloud nothing more, the panel said it was refused, Nextcloud's failed logins from 127.0.0.1 stayed at 0; a new password saved: the mark cleared, Notes read and indexed, the panel says it can be read and is writable; the new password in no new line of `yunohost-cli.log`, the save's operation log or the journal
 - `T-P-1` done `playtest` 2026-11-16 at `bf59279` · on 0.6.1: 401 without a token; Nextcloud, Syncthing, the other Syncthing folders, `docs.env` and `/etc/shadow` out of the tool server's reach; its code and index read-only even to root; the embedding unit sees `bin/` and `model/` only, `/slots` 501; an index run without the old `RuntimeMaxSec` warning
 - `B-M-2` closed 2026-11-16 · a revoked app password was tried again by the panel, the indexer and the server until Nextcloud held back every login from loopback; now one refusal stops the tries until a new password, and a 429 is named
