@@ -178,7 +178,7 @@ name = "Cheruby Docs"
         ask = "Folders"
         type = "tags"
         optional = true
-        help = "Labels of the folders opened above, such as Documents. Empty opens all of them."
+        help = "Picked from the folders opened above, as saved: save a source first to pick its new folders. Empty opens all of them."
         # Checked on the tags joined by commas, not tag by tag.
         pattern.regexp = '^[A-Za-z0-9][A-Za-z0-9_.-]*(,[A-Za-z0-9][A-Za-z0-9_.-]*)*$'
         pattern.error = "Folder labels, such as Documents"

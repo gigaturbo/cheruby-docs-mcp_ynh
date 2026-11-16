@@ -101,6 +101,12 @@ if [ "${1:-}" = "show" ]; then
         jq -cn --arg v "$(ynh_app_setting_get --key=syncthing_folders)" --arg c "$(docs_syncthing_folders | cut -f1)" \
             '{value: $v, choices: ($c | split("\n") | map(select(length > 0)))}'
     }
+    # The open folders' labels, and any saved one no longer open, so it shows and can be taken out.
+    get__whoopy_folders() {
+        docs_collect_folders
+        jq -cn --arg v "$(ynh_app_setting_get --key=whoopy_folders)" --arg c "$(printf '%s\n' "${!folder_path[@]}" | sort)" \
+            '{value: $v, choices: ($c | split("\n") + ($v | split(",")) | map(select(length > 0)) | unique)}'
+    }
 fi
 
 # Each source's status says, per folder, what the app cannot read, checked as
