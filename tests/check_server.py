@@ -6,7 +6,8 @@ Builds two users' folders in a temporary directory, one of alice's served by
 a stand-in Nextcloud, indexes them without filters against a stand-in
 embedding server, starts the tool server with filters on a loopback port,
 then calls each tool and re-runs the indexer with the filters, then after a
-move, an edit and a deletion, then with Nextcloud changed, down and refusing.
+move, an edit and a deletion, then with Nextcloud changed, down and refusing,
+then writes in the writable folders, on disk and in Nextcloud.
 The stand-in embedder hashes words into vectors: it checks the wiring, not
 the quality of the search. Needs the package's dependencies only.
 Prints one line per check and exits 1 if any fails.
@@ -67,7 +68,9 @@ def tiny_pdf(text):
 class FakeEmbedder(BaseHTTPRequestHandler):
     """/health, and /v1/embeddings giving each text the normalised sum of its words' hashes.
 
-    A text containing "panne" gets a 500, to see the server fall back on keywords.
+    A text containing "panne" gets a 500, to see the server fall back on keywords,
+    and one holding "♪" and longer than 600 characters, as a text past the
+    model's tokens would.
     """
 
     def do_GET(self):
@@ -77,7 +80,7 @@ class FakeEmbedder(BaseHTTPRequestHandler):
     def do_POST(self):
         texts = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"]
         EMBEDDED.extend(texts)
-        if any("panne" in t for t in texts):
+        if any("panne" in t or ("♪" in t and len(t) > 600) for t in texts):
             self.send_response(500)
             self.end_headers()
             return
@@ -99,8 +102,9 @@ class FakeEmbedder(BaseHTTPRequestHandler):
 
 class FakeNextcloud(BaseHTTPRequestHandler):
     """WebDAV on DAV["root"] as alice's account, at /dav/files/alice: PROPFIND
-    at depth 0 or 1, and GET. A folder's ETag changes with anything below it,
-    as Nextcloud's does. Every request goes to DAV_LOG as (method, depth, path).
+    at depth 0 or 1, GET, PUT and MKCOL. A folder's ETag changes with anything
+    below it, as Nextcloud's does. Every request goes to DAV_LOG as (method,
+    depth, path).
     """
 
     base = "/dav/files/alice"
@@ -112,8 +116,9 @@ class FakeNextcloud(BaseHTTPRequestHandler):
         inner = "".join(f"{n}:{self.etag(os.path.join(real, n))}" for n in sorted(os.listdir(real)))
         return hashlib.sha256(inner.encode()).hexdigest()[:16]
 
-    def target(self):
-        """The real path asked for, or None after an answer was sent."""
+    def target(self, exists=True):
+        """The real path asked for, or None after an answer was sent. With
+        exists false, the path may be missing but its folder must not be."""
         path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
         DAV_LOG.append((self.command, self.headers.get("Depth", ""), path[len(self.base):].rstrip("/") or "/"))
         if DAV["down"] or (DAV["fail"] and path.startswith(self.base + DAV["fail"])):
@@ -125,8 +130,8 @@ class FakeNextcloud(BaseHTTPRequestHandler):
             self.end_headers()
             return None
         real = os.path.join(DAV["root"], path[len(self.base):].strip("/"))
-        if not path.startswith(self.base) or not os.path.exists(real):
-            self.send_response(404)
+        if not path.startswith(self.base) or not os.path.exists(real if exists else os.path.dirname(real)):
+            self.send_response(404 if exists else 409)
             self.end_headers()
             return None
         return real
@@ -167,6 +172,28 @@ class FakeNextcloud(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def do_PUT(self):
+        data = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        real = self.target(exists=False)
+        if real is None:
+            return
+        existed = os.path.exists(real)
+        with open(real, "wb") as f:
+            f.write(data)
+        self.send_response(204 if existed else 201)
+        self.end_headers()
+
+    def do_MKCOL(self):
+        real = self.target(exists=False)
+        if real is None:
+            return
+        if os.path.exists(real):
+            self.send_response(405)
+        else:
+            os.mkdir(real)
+            self.send_response(201)
+        self.end_headers()
+
     def __getattr__(self, name):
         # Any other method, such as PUT or DELETE, is logged and refused.
         if name.startswith("do_"):
@@ -178,17 +205,18 @@ class FakeNextcloud(BaseHTTPRequestHandler):
 
 
 def write_folders(path, folders):
-    """The folders file: {user: {label: (root, only, skip)}}, a root in
+    """The folders file: {user: {label: (root, only, skip[, writable])}}, a root in
     Nextcloud written as nextcloud:<path in the account>."""
-    def entry(root, only, skip):
+    def entry(root, only, skip, writable=False):
         where = {"nextcloud": root[len("nextcloud:"):]} if root.startswith("nextcloud:") else {"path": root}
-        return {**where, "only": only, "skip": skip}
+        return {**where, "only": only, "skip": skip, **({"writable": True} if writable else {})}
     with open(path, "w") as f:
         json.dump({user: {label: entry(*e) for label, e in entries.items()} for user, entries in folders.items()}, f)
 
 
 def build(base):
-    """alice: Documents and Notes, filtered, and Cloud in Nextcloud. bob: Papiers.
+    """alice: Documents and Notes, filtered, and Cloud in Nextcloud, Notes and
+    Cloud writable. bob: Papiers.
     Returns the env for the server; the folders file without filters is for
     the first index run."""
     docs, notes, papiers = (os.path.join(base, d) for d in ("docs", "notes", "papiers"))
@@ -226,6 +254,7 @@ def build(base):
     os.symlink(".stversions/old.md", f"{docs}/vieux.md")
     os.symlink("Brouillons", f"{docs}/Pub")
     os.symlink("Brouillons/draft.md", f"{docs}/alias.md")
+    os.symlink(base, f"{notes}/dehors")
     os.utime(f"{notes}/courses.md", (946_000_000, 946_000_000))  # 1999-12-24
     os.makedirs(f"{base}/index")
     DAV["root"] = f"{base}/nextcloud"
@@ -240,11 +269,11 @@ def build(base):
     with open(f"{base}/nextcloud/Partage/Sous dossier/plan d'été.pdf", "wb") as f:
         f.write(tiny_pdf("Plan du jardin partage"))
     folders = {"alice": {"Documents": (docs, [], ["brouillons", "/Documents/*.tmp.md"]),
-                         "Notes": (notes, ["*.md"], []),
-                         "Cloud": ("nextcloud:/Partage", [], ["vieux"])},
+                         "Notes": (notes, ["*.md"], [], True),
+                         "Cloud": ("nextcloud:/Partage", [], ["vieux"], True)},
                "ju": {"Papiers": (papiers, [], [])}}
     write_folders(f"{base}/folders.json", folders)
-    write_folders(f"{base}/open.json", {user: {label: (p, [], []) for label, (p, _, _) in entries.items()}
+    write_folders(f"{base}/open.json", {user: {label: (e[0], [], []) for label, e in entries.items()}
                                         for user, entries in folders.items()})
     write_folders(f"{base}/documents.json", {"alice": {"Documents": folders["alice"]["Documents"]},
                                              "ju": folders["ju"]})
@@ -299,9 +328,10 @@ def error_with(needle):
 CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
-    ("four tools listed", lambda: call("tools/list"), lambda r: r[1] == "list_folder find_files read_file search_documents"),
-    ("alice sees her three folders", lambda: tool("list_folder"),
-     lambda r: r == ("ok", "dir  Documents/\ndir  Notes/\ndir  Cloud/")),
+    ("six tools listed", lambda: call("tools/list"),
+     lambda r: r[1] == "list_folder find_files read_file search_documents write_file create_folder"),
+    ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
+     lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
     ("bob cannot reach alice's", lambda: tool("read_file", token=BOB, path="Notes/courses.md"), error_with("no folder named")),
     ("alice cannot reach bob's", lambda: tool("read_file", path="Papiers/bob.md"), error_with("no folder named")),
@@ -357,7 +387,7 @@ CHECKS = [
     ("search bad date refused", lambda: tool("search_documents", query="x", after="hier"), error_with("not a date")),
     ("bob's search sees only his", lambda: tool("search_documents", token=BOB, query="loyer bob"),
      lambda r: r[0] == "ok" and "Papiers/bob.md" in r[1] and "Documents" not in r[1]),
-    ("gateway sees only the folders it opens", lambda: tool("list_folder", token=GATEWAY), lambda r: r == ("ok", "dir  Notes/")),
+    ("gateway sees only the folders it opens", lambda: tool("list_folder", token=GATEWAY), lambda r: r == ("ok", "dir  Notes/ (writable)")),
     ("gateway cannot read the others", lambda: tool("read_file", token=GATEWAY, path="Documents/bail.pdf"),
      error_with("no folder named")),
     ("gateway search uses the user's index, its folders only", lambda: tool("search_documents", token=GATEWAY, query="loyer tomates"),
@@ -445,7 +475,13 @@ def index_checks(base, env, first):
             pass
     run_indexer(env)
     left = sorted(os.listdir(f"{base}/index"))
-    yield "a removed user's index goes", left, left == ["alice.sqlite", "alice.work.sqlite", "ju.sqlite", "ju.work.sqlite"]
+    yield "a removed user's index goes", left, left == ["alice.sqlite", "alice.status.json", "alice.work.sqlite",
+                                                        "ju.sqlite", "ju.status.json", "ju.work.sqlite"]
+    with open(f"{base}/index/alice.status.json") as f:
+        status = json.load(f)
+    yield "the status file says how the run ended", status, status["result"] == "done" and status["ended"] \
+        and status["run"] == {"unchanged": status["files"]["indexed"] + status["files"].get("needs_ocr", 0)
+                              + status["files"].get("failed", 0) + status["files"].get("empty", 0)}
 
     DAV_LOG.clear()
     run_indexer(env)
@@ -482,6 +518,100 @@ def index_checks(base, env, first):
     methods = {m for m, _, _ in DAV_LOG}
     yield "Nextcloud is only read", methods, methods <= {"PROPFIND", "GET"}
 
+    hour = time.localtime().tm_hour
+    quiet = {**env, "DOCS_QUIET_HOURS": f"{hour:02d}-{(hour + 1) % 24:02d}"}
+    out = run_indexer(quiet)
+    yield "no run in the quiet hours", out, "quiet hours" in out and "alice:" not in out
+    open(f"{base}/index/run-now", "w").close()
+    out = run_indexer(quiet)
+    yield "Run now ignores them, once", out, "alice:" in out and not os.path.exists(f"{base}/index/run-now")
+    sys.path.insert(0, "conf")
+    import docs_index
+    import httpx2
+    users, rules, _ = docs_index.load_folders(env["DOCS_FOLDERS_FILE"])
+    db = docs_index.connect(f"{base}/index/alice.work.sqlite")
+    with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
+        counts, _ = docs_index.index_user(db, users["alice"], rules["alice"], docs_index.Nextcloud.from_env(env),
+                                          client, env["DOCS_EMBED_MODEL"], f"{base}/index/alice", quiet["DOCS_QUIET_HOURS"])
+    db.close()
+    yield "a run stops when the quiet hours begin, its index kept", counts, \
+        counts == {"paused": 1} and statuses(base).get("Notes/liste.md") == "indexed"
+    with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
+        rows = docs_index.embed(client, ["court", "♪ " * 1000, "autre"])
+    yield "a text too long for the model is embedded by its start", rows.shape, rows.shape == (3, 64)
+
+
+def write_checks(base):
+    """write_file on disk and in Nextcloud, after the index checks, which count the files."""
+    notes = f"{base}/notes"
+    result = tool("write_file", path="Notes/idees.md", content="Planter des fèves")
+    yield "a file is created", result, ok_with("Created Notes/idees.md")(result)
+    result = tool("read_file", path="Notes/idees.md")
+    yield "and read back", result, ok_with("Planter des fèves")(result)
+    mode = oct(os.stat(f"{notes}/idees.md").st_mode & 0o777)
+    yield "it is 660, in its folder's group", mode, mode == "0o660" \
+        and os.stat(f"{notes}/idees.md").st_gid == os.stat(notes).st_gid
+    os.symlink(f"{base}/secret.md", f"{notes}/lien.md")
+    os.link(f"{base}/secret.md", f"{notes}/double.md")
+    os.chmod(f"{notes}/long.md", 0o640)
+    result = tool("write_file", path="Notes/long.md", content="remplacé")
+    with open(f"{notes}/long.md") as f:
+        text = f.read()
+    yield "a file is replaced in place", (result, text), ok_with("Replaced Notes/long.md")(result) \
+        and text == "remplacé" and oct(os.stat(f"{notes}/long.md").st_mode & 0o777) == "0o640"
+    result = tool("write_file", path="Notes/Jardin/2026/semis.md", content="mars")
+    yield "missing folders are made", result, ok_with("Created Notes/Jardin/2026/semis.md")(result) \
+        and oct(os.stat(f"{notes}/Jardin").st_mode & 0o777) == "0o770"
+    result = tool("write_file", token=GATEWAY, path="Notes/passerelle.md", content="ok")
+    yield "the gateway writes in the folders it opens", result, ok_with("Created")(result)
+    for name, path, needle in [("a read-only folder refuses", "Documents/x.md", "Documents is read-only"),
+                               ("another user's folder refuses", "Papiers/x.md", "no folder named"),
+                               ("only text is written", "Notes/x.pdf", "only text files"),
+                               ("the filters refuse what they leave out", "Notes/x.txt", "filters leave this name out"),
+                               (".. refused", "Notes/../secret.md", "not allowed"),
+                               ("a hidden name refused", "Notes/.cache.md", "not allowed"),
+                               ("no write through a link", "Notes/dehors/x.md", "is a file or a link"),
+                               ("a link is not replaced", "Notes/lien.md", "is a link"),
+                               ("a hard link is not replaced", "Notes/double.md", "hard links"),
+                               ("a folder needs a file name", "Notes", "name something inside"),
+                               ("a folder is not replaced", "Notes/Jardin", "only text files")]:
+        result = tool("write_file", path=path, content="x")
+        yield name, result, error_with(needle)(result)
+    result = tool("write_file", token=BOB, path="Papiers/x.md", content="x")
+    yield "bob's folder is read-only", result, error_with("Papiers is read-only")(result)
+    with open(f"{base}/secret.md") as f:
+        secret = f.read()
+    yield "nothing landed outside", secret, secret == "outside every folder" and not os.path.exists(f"{base}/x.md") \
+        and not os.path.exists(f"{base}/docs/x.md")
+    result = tool("create_folder", path="Notes/Projets/2027")
+    yield "a folder is created with those above it", result, ok_with("Created Notes/Projets/2027/")(result) \
+        and os.path.isdir(f"{notes}/Projets/2027") and oct(os.stat(f"{notes}/Projets/2027").st_mode & 0o777) == "0o770"
+    result = tool("create_folder", path="Notes/Projets/2027")
+    yield "an existing folder is left as it is", result, ok_with("already exists")(result)
+    for name, path, needle in [("no folder in a read-only folder", "Documents/Neuf", "Documents is read-only"),
+                               ("no folder through a link", "Notes/dehors/x", "is a file or a link"),
+                               ("no folder in place of a file", "Notes/idees.md", "is a file or a link"),
+                               ("no hidden folder", "Notes/.cache", "not allowed")]:
+        result = tool("create_folder", path=path)
+        yield name, result, error_with(needle)(result)
+    DAV_LOG.clear()
+    result = tool("create_folder", path="Cloud/Archives/2026")
+    yield "a Nextcloud folder is created", result, ok_with("Created Cloud/Archives/2026/")(result) \
+        and os.path.isdir(f"{base}/nextcloud/Partage/Archives/2026")
+    result = tool("create_folder", path="Cloud/Vieux/x")
+    yield "Nextcloud's filters refuse a folder too", result, error_with("filters leave this name out")(result)
+    result = tool("write_file", path="Cloud/Sous dossier/Neuf/note.md", content="dans le nuage")
+    yield "a Nextcloud file is created with its folder", result, ok_with("Created Cloud/Sous dossier/Neuf/note.md")(result)
+    with open(f"{base}/nextcloud/Partage/Sous dossier/Neuf/note.md") as f:
+        text = f.read()
+    yield "it is in the account", text, text == "dans le nuage"
+    result = tool("write_file", path="Cloud/compte-rendu.md", content="nouveau texte")
+    yield "a Nextcloud file is replaced", result, ok_with("Replaced Cloud/compte-rendu.md")(result)
+    result = tool("write_file", path="Cloud/Vieux/x.md", content="x")
+    yield "Nextcloud's filters refuse too", result, error_with("filters leave this name out")(result)
+    methods = {m for m, _, _ in DAV_LOG}
+    yield "Nextcloud is never asked to delete or move", methods, methods <= {"PROPFIND", "GET", "PUT", "MKCOL"}
+
 
 def main():
     embedder = ThreadingHTTPServer(("127.0.0.1", EMBED_PORT), FakeEmbedder)
@@ -491,7 +621,8 @@ def main():
     with tempfile.TemporaryDirectory() as base:
         env = build(base)
         first = run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/open.json"})
-        server = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], env=env,
+        # The unit's UMask.
+        server = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], env=env, umask=0o007,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             for _ in range(50):
@@ -502,6 +633,7 @@ def main():
                     time.sleep(0.2)
             results = [(name, *(lambda r: (r, passes(r)))(run())) for name, run, passes in CHECKS]
             results += list(index_checks(base, env, first))
+            results += list(write_checks(base))
             refused = subprocess.run([*PYTHON, "conf/cheruby_docs_mcp.py"], capture_output=True, text=True,
                                      env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
             results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],

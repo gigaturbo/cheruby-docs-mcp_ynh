@@ -7,6 +7,10 @@ root-600 env file, which holds no MCP token:
     DOCS_INDEX_DIR          where each user's index is written
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
     DOCS_EMBED_MODEL        the model's identity; when it changes, everything is redone
+    DOCS_QUIET_HOURS        optional, such as 01-06: no run in these hours, and one
+                            still going stops when they begin. A file run-now in
+                            the index folder, left by the panel's Run now, lifts
+                            this for one run.
 
 Each run walks the folders and redoes only the files whose size or dates
 changed; a moved file keeps its passages, a deleted one loses them, and so do
@@ -23,7 +27,11 @@ OCR and hold no passage. Paths are stored as the tools show them
 The indexer works on <user>.work.sqlite and publishes a finished copy as
 <user>.sqlite every ten minutes and at the end, so the tool server, which only
 reads, never sees a write half done. It imports connect() and
-QUERY_PROMPT from here.
+QUERY_PROMPT from here. Deleting the working copy makes the next run start
+from zero; search goes on with the published one until its first publish.
+
+<user>.status.json, for the config panel: when the last run started and
+ended, how it ended, what it did, and the index's files by status.
 """
 
 import hashlib
@@ -50,6 +58,7 @@ OVERLAP_CHARS = 200
 MAX_FILE_CHARS = 300_000
 MAX_FETCH_BYTES = 64_000_000
 BATCH = 8
+MIN_EMBED_CHARS = 200
 PUBLISH_EVERY_S = 600
 
 SCHEMA = """
@@ -115,13 +124,24 @@ def file_pages(f, suffix):
     return ([(0, text)] if text.strip() else []), 0
 
 
+def vectors(client, texts):
+    """Raw vectors for texts, in order. A text the server refuses, as one past
+    the model's 2048 tokens (music notation takes several a character), is
+    embedded by its first half, down to MIN_EMBED_CHARS."""
+    resp = client.post("/v1/embeddings", json={"input": texts})
+    if resp.status_code == 500 and len(texts) > 1:
+        return [v for t in texts for v in vectors(client, [t])]
+    if resp.status_code == 500 and len(texts[0]) > MIN_EMBED_CHARS:
+        return vectors(client, [texts[0][:len(texts[0]) // 2]])
+    resp.raise_for_status()
+    return [d["embedding"] for d in sorted(resp.json()["data"], key=lambda d: d["index"])]
+
+
 def embed(client, texts):
     """Unit vectors for texts, in order, as float32 rows."""
     rows = []
     for i in range(0, len(texts), BATCH):
-        resp = client.post("/v1/embeddings", json={"input": texts[i:i + BATCH]})
-        resp.raise_for_status()
-        rows += [d["embedding"] for d in sorted(resp.json()["data"], key=lambda d: d["index"])]
+        rows += vectors(client, texts[i:i + BATCH])
     matrix = numpy.asarray(rows, dtype=numpy.float32)
     return matrix / numpy.linalg.norm(matrix, axis=1, keepdims=True)
 
@@ -185,19 +205,45 @@ def index_file(db, client, item, f, digest):
     return status
 
 
-def publish(db, path):
-    """Copy the working index to path in one step, stamped with the time."""
-    db.execute("INSERT OR REPLACE INTO meta VALUES ('updated', ?)", (time.strftime("%Y-%m-%d %H:%M"),))
-    db.commit()
-    dest = sqlite3.connect(path + ".tmp")
-    db.backup(dest)
-    dest.close()
+def write_status(base, **fields):
+    """Merge fields into <base>.status.json in one step."""
+    path = base + ".status.json"
+    try:
+        with open(path, encoding="utf-8") as f:
+            status = json.load(f)
+    except (OSError, ValueError):
+        status = {}
+    status.update(fields)
+    with open(path + ".tmp", "w", encoding="utf-8") as f:
+        json.dump(status, f)
     os.replace(path + ".tmp", path)
 
 
-def index_user(db, folders, rules, nextcloud, client, model, published):
+def publish(db, base):
+    """Copy the working index to <base>.sqlite in one step, stamped with the
+    time, and its files by status to the status file."""
+    db.execute("INSERT OR REPLACE INTO meta VALUES ('updated', ?)", (time.strftime("%Y-%m-%d %H:%M"),))
+    db.commit()
+    dest = sqlite3.connect(base + ".sqlite.tmp")
+    db.backup(dest)
+    dest.close()
+    os.replace(base + ".sqlite.tmp", base + ".sqlite")
+    write_status(base, files=dict(db.execute("SELECT status, count(*) FROM files GROUP BY status")))
+
+
+def quiet_now(quiet):
+    """Whether the hour is within quiet hours "<from>-<to>", to excluded."""
+    if not quiet:
+        return False
+    a, b = (int(h) % 24 for h in quiet.split("-"))
+    hour = time.localtime().tm_hour
+    return a <= hour < b if a < b else hour >= a or hour < b
+
+
+def index_user(db, folders, rules, nextcloud, client, model, base, quiet=""):
     """Bring one user's index in line with their folders. Returns ({outcome: count},
-    {labels Nextcloud did not list})."""
+    {labels Nextcloud did not list}). Stops at the quiet hours with what it has
+    done published; counts then holds "paused"."""
     meta = dict(db.execute("SELECT key, value FROM meta"))
     if meta.get("model") != model:
         db.executescript("DELETE FROM passages; DELETE FROM files;")
@@ -214,14 +260,21 @@ def index_user(db, folders, rules, nextcloud, client, model, published):
     tree = Folders(folders, rules, nextcloud, cache)
     found, unreachable = walk(tree)
     # What Nextcloud did not list is kept as it was, neither dropped nor taken as moved.
-    known = {r[0]: r[1:] for r in db.execute("SELECT path, id, size, mtime_ns, ctime_ns, sha256 FROM files")
+    known = {r[0]: r[1:] for r in db.execute("SELECT path, id, size, mtime_ns, ctime_ns, sha256, error FROM files")
              if not any(r[0].startswith(u + "/") for u in unreachable)}
     gone = {row[4]: row[0] for path, row in known.items() if path not in found}
     reused, counts, last_publish = set(), {}, time.monotonic()
     for shown, item in sorted(found.items()):
+        # The rest waits for the next run, which skips what this one did.
+        if quiet_now(quiet):
+            counts["paused"] = 1
+            publish(db, base)
+            return counts, unreachable
         row = known.get(shown)
         try:
-            if row and row[1:4] == (item.size, item.mtime_ns, item.ctime_ns):
+            # A file failed by the embedding server, not by its content, is tried again.
+            if row and row[1:4] == (item.size, item.mtime_ns, item.ctime_ns) \
+                    and not (row[5] or "").startswith("HTTPStatusError"):
                 outcome = "unchanged"
             else:
                 with tree.open(item, MAX_FETCH_BYTES) as f:
@@ -257,7 +310,7 @@ def index_user(db, folders, rules, nextcloud, client, model, published):
         db.commit()
         counts[outcome] = counts.get(outcome, 0) + 1
         if time.monotonic() - last_publish > PUBLISH_EVERY_S:
-            publish(db, published)
+            publish(db, base)
             last_publish = time.monotonic()
     for path, row in known.items():
         if path not in found and row[0] not in reused:
@@ -268,7 +321,7 @@ def index_user(db, folders, rules, nextcloud, client, model, published):
         db.execute("DELETE FROM nextcloud_folders")
     db.executemany("INSERT OR REPLACE INTO nextcloud_folders VALUES (?, ?)",
                    [(path, json.dumps(listing)) for path, listing in tree.listed.items()])
-    publish(db, published)
+    publish(db, base)
     return counts, unreachable
 
 
@@ -285,26 +338,45 @@ def wait_ready(client):
 
 
 def main():
-    users, rules = load_folders(os.environ["DOCS_FOLDERS_FILE"])
+    users, rules, _ = load_folders(os.environ["DOCS_FOLDERS_FILE"])
     nextcloud = Nextcloud.from_env(os.environ)
     needs_nextcloud(users, nextcloud)
     index_dir = os.environ["DOCS_INDEX_DIR"]
+    quiet = os.environ.get("DOCS_QUIET_HOURS", "")
+    try:
+        os.remove(os.path.join(index_dir, "run-now"))
+        quiet = ""
+    except FileNotFoundError:
+        pass
+    if quiet_now(quiet):
+        # A timer catching up after a stop: the next run outside them will do.
+        print(f"quiet hours {quiet}: no run now.", flush=True)
+        return
     broken = []
     with httpx2.Client(base_url=os.environ["DOCS_EMBED_URL"], timeout=300) as client:
         wait_ready(client)
         for user, folders in sorted(users.items()):
             base = os.path.join(index_dir, user)
             db = connect(base + ".work.sqlite")
+            write_status(base, started=time.strftime("%Y-%m-%d %H:%M"), ended=None, result="running", run={}, error=None)
             try:
                 counts, unreachable = index_user(db, folders, rules[user], nextcloud, client,
-                                                 os.environ["DOCS_EMBED_MODEL"], base + ".sqlite")
-                print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files"), flush=True)
+                                                 os.environ["DOCS_EMBED_MODEL"], base, quiet)
+                paused = counts.pop("paused", 0)
+                print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files")
+                      + (f", paused for the quiet hours {quiet}" if paused else ""), flush=True)
+                write_status(base, ended=time.strftime("%Y-%m-%d %H:%M"),
+                             result="failed" if unreachable else "paused" if paused else "done",
+                             run=counts, error=f"Nextcloud did not list {', '.join(sorted(unreachable))}." if unreachable else None)
                 if unreachable:
                     broken.append(user)
             except httpx2.TransportError:
+                write_status(base, ended=time.strftime("%Y-%m-%d %H:%M"), result="failed",
+                             error="the embedding server stopped answering.")
                 raise
             except Exception as e:  # one user's broken index must not stop the others
                 print(f"{user}: index failed: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+                write_status(base, ended=time.strftime("%Y-%m-%d %H:%M"), result="failed", error=f"{type(e).__name__}: {e}"[:300])
                 broken.append(user)
             finally:
                 db.close()

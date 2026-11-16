@@ -2,10 +2,12 @@
 
 The folders file and its filters, which names stay hidden, how a folder on
 disk or in Nextcloud is listed and read, and how text comes out of a file.
-Nothing here writes. Errors a user should see are ValueError; Nextcloud's
-are NextcloudError, an OSError.
+Only Folders.write writes, for the tool server, in the folders marked
+writable. Errors a user should see are ValueError; Nextcloud's are
+NextcloudError, an OSError.
 """
 
+import errno
 import io
 import json
 import logging
@@ -26,6 +28,8 @@ from pypdf import PdfReader
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 MAX_XML_BYTES = 20_000_000
+# A write never leaves the disk, shared with everything else, fuller than this.
+MIN_FREE_BYTES = 2_000_000_000
 TEXT_SUFFIXES = {".md", ".txt", ".csv", ".json", ".vcf", ".ics", ".xml", ".html", ".htm", ".yml", ".yaml", ".log"}
 OFFICE_MEMBERS = {".docx": "word/document.xml", ".odt": "content.xml"}
 IMAGE_FORMATS = {".jpg": "jpeg", ".jpeg": "jpeg", ".png": "png", ".webp": "webp", ".gif": "gif"}
@@ -41,18 +45,20 @@ def needs_nextcloud(folders, nextcloud):
 
 
 def load_folders(path):
-    """({user: {label: root}}, {user: {label: (only, skip)}}) from the folders file.
+    """({user: {label: root}}, {user: {label: (only, skip)}}, {user: {writable labels}})
+    from the folders file.
 
     The file is {user: {label: {"path": ..., "only": [...], "skip": [...]}}},
     written by the package from the config panel's sources; a Nextcloud
-    folder has "nextcloud": <path in the account> in place of "path". A root
-    is a real path, or NEXTCLOUD and the account path ("" for all of it).
+    folder has "nextcloud": <path in the account> in place of "path", and a
+    writable one "writable": true. A root is a real path, or NEXTCLOUD and
+    the account path ("" for all of it).
     """
     with open(path, encoding="utf-8") as f:
         data = json.load(f)
-    folders, rules = {}, {}
+    folders, rules, writable = {}, {}, {}
     for user, entries in data.items():
-        folders[user], rules[user] = {}, {}
+        folders[user], rules[user], writable[user] = {}, {}, set()
         for label, entry in entries.items():
             if not label or "/" in label or hidden(label):
                 sys.exit(f"{path}: bad folder label {label!r}.")
@@ -62,7 +68,9 @@ def load_folders(path):
                 folders[user][label] = os.path.realpath(entry["path"])
             rules[user][label] = tuple([p.lower().strip("/") for p in entry.get(key, []) if p.strip("/")]
                                        for key in ("only", "skip"))
-    return folders, rules
+            if entry.get("writable"):
+                writable[user].add(label)
+    return folders, rules, writable
 
 
 def matches(pattern, parts):
@@ -157,8 +165,14 @@ PROPFIND = (b'<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourc
             b'<d:getcontentlength/><d:getlastmodified/><d:getetag/></d:prop></d:propfind>')
 
 
+def quote(path):
+    """A path in the account as a URL path, relative to its WebDAV root."""
+    return "/".join(urllib.parse.quote(p, safe="") for p in path.split("/") if p)
+
+
 class Nextcloud:
-    """One Nextcloud account over WebDAV. Read-only: it sends PROPFIND and GET, nothing else.
+    """One Nextcloud account over WebDAV. It sends PROPFIND and GET, and PUT
+    and MKCOL for Folders.write only: never DELETE, MOVE or COPY.
 
     url is the account's WebDAV root as reached, such as
     https://127.0.0.1/remote.php/dav/files/<user>; host, when set, is the name
@@ -181,9 +195,8 @@ class Nextcloud:
 
     def list(self, path, depth):
         """[Entry] of path then, at depth 1, what it holds; None when it does not exist."""
-        quoted = "/".join(urllib.parse.quote(p, safe="") for p in path.split("/") if p)
         try:
-            resp = self.client.request("PROPFIND", quoted, content=PROPFIND, extensions=self.extensions,
+            resp = self.client.request("PROPFIND", quote(path), content=PROPFIND, extensions=self.extensions,
                                        headers={"Depth": str(depth), "Content-Type": "application/xml"})
         except httpx2.HTTPError as e:
             raise NextcloudError(f"Nextcloud did not answer: {e}") from None
@@ -216,10 +229,9 @@ class Nextcloud:
 
     def get(self, path, limit):
         """The bytes of a file, refused past limit."""
-        quoted = "/".join(urllib.parse.quote(p, safe="") for p in path.split("/") if p)
         data = bytearray()
         try:
-            with self.client.stream("GET", quoted, extensions=self.extensions) as resp:
+            with self.client.stream("GET", quote(path), extensions=self.extensions) as resp:
                 if resp.status_code == 404:
                     raise FileNotFoundError(path)
                 if resp.status_code != 200:
@@ -231,6 +243,27 @@ class Nextcloud:
         except httpx2.HTTPError as e:
             raise NextcloudError(f"Nextcloud did not answer: {e}") from None
         return bytes(data)
+
+    def send(self, method, path, data, expected):
+        """The status of a PUT or MKCOL, one of expected; a refusal is a ValueError."""
+        try:
+            resp = self.client.request(method, quote(path), content=data, extensions=self.extensions)
+        except httpx2.HTTPError as e:
+            raise NextcloudError(f"Nextcloud did not answer: {e}") from None
+        if resp.status_code == 401:
+            raise NextcloudRefused("Nextcloud refused the app password.")
+        if resp.status_code == 403:
+            raise ValueError("Nextcloud does not let the app's account change it.")
+        if resp.status_code not in expected:
+            raise NextcloudError(f"Nextcloud answered {resp.status_code}.")
+        return resp.status_code
+
+
+def group(fd, parent):
+    """Gives what fd opens its parent folder's group, unless a setgid folder did already."""
+    gid = os.fstat(parent).st_gid
+    if os.fstat(fd).st_gid != gid:
+        os.fchown(fd, -1, gid)
 
 
 class Item(NamedTuple):
@@ -347,6 +380,102 @@ class Folders:
             yield item
             if item.is_dir and not item.link:
                 yield from self.walk(item)
+
+    def write(self, label, parts, data):
+        """Write data to the file at label/parts, creating it and its missing
+        folders, or replacing it; returns "created" or "replaced". With data
+        None, make the folder at label/parts and those above it; returns
+        "created" or "exists". Never through a link, never in place of a
+        folder. The caller checks that the
+        folder is writable and that parts holds no "..", no hidden name.
+
+        On disk, what it creates takes its folder's group, and with the
+        unit's UMask=0007 mode 660 or 770, so the folder's owner can change
+        it; a replaced file keeps its owner and mode. Refused when the disk
+        would be left with less than MIN_FREE_BYTES.
+        """
+        root, shown = self.roots[label], "/".join([label, *parts])
+        if not kept(self.rules, shown, data is None):
+            raise ValueError("the folder's filters leave this name out, so it could not be read back.")
+        if root.startswith(NEXTCLOUD):
+            where = [p for p in root[len(NEXTCLOUD):].split("/") if p] + parts
+            base = len(where) - len(parts)
+            made = False
+            for n in range(base + 1, len(where) + (data is None)):
+                entries = self.nextcloud.list("/".join(where[:n]), 0)
+                made = entries is None
+                if made:
+                    self.nextcloud.send("MKCOL", "/".join(where[:n]), None, (201,))
+                elif not entries[0].is_dir:
+                    raise ValueError(f"{'/'.join([label, *parts[:n - base]])} is a file.")
+            if data is None:
+                return "created" if made else "exists"
+            here = self.nextcloud.list("/".join(where), 0)
+            if here and here[0].is_dir:
+                raise ValueError("is a folder.")
+            return "created" if self.nextcloud.send("PUT", "/".join(where), data, (201, 204)) == 201 else "replaced"
+        # Each folder is opened from the one above it, never by its path, so
+        # no link swapped in on the way is followed.
+        d = os.open(root, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            made = False
+            for n, name in enumerate(parts if data is None else parts[:-1], 1):
+                try:
+                    os.mkdir(name, 0o770, dir_fd=d)
+                    made = True
+                except FileExistsError:
+                    made = False
+                try:
+                    inner = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC, dir_fd=d)
+                except OSError as e:
+                    if e.errno in (errno.ENOTDIR, errno.ELOOP):
+                        raise ValueError(f"{'/'.join([label, *parts[:n]])} is a file or a link.") from None
+                    raise
+                if made:
+                    try:
+                        group(inner, d)
+                    except OSError:
+                        os.close(inner)
+                        os.rmdir(name, dir_fd=d)
+                        raise
+                os.close(d)
+                d = inner
+            if data is None:
+                return "created" if made else "exists"
+            free = os.fstatvfs(d)
+            if free.f_bavail * free.f_frsize < len(data) + MIN_FREE_BYTES:
+                raise ValueError("the disk is nearly full; nothing was written.")
+            # Never through a link; O_NONBLOCK so a pipe cannot hang the open.
+            flags = os.O_WRONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC
+            try:
+                fd = os.open(parts[-1], flags | os.O_CREAT | os.O_EXCL, 0o660, dir_fd=d)
+                try:
+                    group(fd, d)
+                except OSError:
+                    os.close(fd)
+                    os.unlink(parts[-1], dir_fd=d)
+                    raise
+                outcome = "created"
+            except FileExistsError:
+                try:
+                    fd = os.open(parts[-1], flags, dir_fd=d)
+                except OSError as e:
+                    if e.errno == errno.ELOOP:
+                        raise ValueError("is a link; it is not replaced.") from None
+                    raise
+                outcome = "replaced"
+        finally:
+            os.close(d)
+        with os.fdopen(fd, "wb") as f:
+            st = os.fstat(fd)
+            if not stat.S_ISREG(st.st_mode):
+                raise ValueError("is not a plain file.")
+            # A hard link could be a file outside the folder.
+            if st.st_nlink > 1:
+                raise ValueError("has other names (hard links); it is not replaced.")
+            f.truncate()
+            f.write(data)
+        return outcome
 
     def open(self, item, limit):
         """A binary file to read the Item from. A Nextcloud file is fetched whole, up to limit."""

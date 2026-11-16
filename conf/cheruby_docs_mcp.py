@@ -1,4 +1,4 @@
-"""MCP server: list, find, read and search one user's homelab folders, read-only.
+"""MCP server: list, find, read and search one user's homelab folders, and write in those marked writable.
 
 Run by cheruby-docs-mcp.service. Settings come from its root-600 env file:
 
@@ -20,11 +20,14 @@ A token is one user's, with all or some of that user's folders; the gateway
 token searches that user's index. Paths in and out of the tools start with a
 folder's label, never with a real path.
 
-Nothing here writes, and Nextcloud is only asked to list and send files. A
-path is refused if it climbs out of its folder, follows a link out of it, or
-names a hidden file (Syncthing's .stfolder, .stversions); one the folder's
-filters leave out is not found. The unit adds the outer wall: the process
-sees only these folders on disk and the index, read-only.
+Only write_file and create_folder write, and only in the folders the
+folders file marks writable: they create a folder, or create or replace a
+text file, never delete anything, never through a link. Nextcloud is asked to list and send files, and for those
+folders to store one. A path is refused if it climbs out of its folder,
+follows a link out of it, or names a hidden file (Syncthing's .stfolder,
+.stversions); one the folder's filters leave out is not found. The unit adds
+the outer wall: the process sees only these folders on disk and the index,
+read-only but for the writable folders.
 
 The tools are served at /mcp over Streamable HTTP, stateless.
 """
@@ -60,6 +63,7 @@ MAX_PDF_PAGES = 20
 MAX_IMAGE_BYTES = 4_000_000
 MAX_FETCH_BYTES = 64_000_000
 MAX_RESULTS = 10
+MAX_WRITE_BYTES = 2_000_000
 RRF_K = 60
 
 
@@ -86,7 +90,7 @@ def load_users(environ, folders):
     return users
 
 
-FOLDERS, RULES = load_folders(os.environ["DOCS_FOLDERS_FILE"])
+FOLDERS, RULES, WRITABLE = load_folders(os.environ["DOCS_FOLDERS_FILE"])
 USERS = load_users(os.environ, FOLDERS)
 NEXTCLOUD = Nextcloud.from_env(os.environ)
 needs_nextcloud(FOLDERS, NEXTCLOUD)
@@ -96,9 +100,10 @@ logging.getLogger("httpx2").setLevel(logging.WARNING)
 
 mcp = MCPServer(
     "docs",
-    instructions="The user's own files, read-only. To find a document by what it says, "
+    instructions="The user's own files. To find a document by what it says, "
     "use search_documents; by its name, find_files; to browse, list_folder. Then read_file. "
-    "Paths start with a folder name such as Documents/. Cite the paths you used.",
+    "Paths start with a folder name such as Documents/. Cite the paths you used."
+    + (" Folders listed as writable also take write_file and create_folder; the others are read-only." if any(WRITABLE.values()) else ""),
 )
 
 
@@ -161,7 +166,8 @@ async def list_folder(ctx: Context, path: str = "") -> str:
     # Off the event loop: a Nextcloud that hangs must not stall the other requests.
     folder = await asyncio.to_thread(resolve, ctx, path)
     if folder is None:
-        return "\n".join(f"dir  {label}/" for label in folders_of(ctx))
+        return "\n".join(f"dir  {label}/" + (" (writable)" if label in WRITABLE[user_of(ctx)] else "")
+                         for label in folders_of(ctx))
     if not folder.is_dir:
         raise ToolError(f"{path}: is a file; read it with read_file.")
     try:
@@ -404,6 +410,72 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
         date = datetime.fromtimestamp(mtime_ns / 1e9).strftime("%Y-%m-%d")
         blocks.append(f"--- {where_in} ({date}) ---\n{text}")
     return head + "\n\n".join(blocks)
+
+
+def writable_parts(ctx, path):
+    """The parts of a path in a folder this token may write in, or a ToolError."""
+    parts = split(path)
+    if any(p == ".." or hidden(p) or "\0" in p for p in parts):
+        raise ToolError(f"{path}: hidden names and .. are not allowed.")
+    writable = [label for label in folders_of(ctx) if label in WRITABLE[user_of(ctx)]]
+    if len(parts) < 2:
+        raise ToolError(f"{path or '(empty)'}: name something inside a writable folder: {', '.join(writable) or 'none'}.")
+    if parts[0] not in folders_of(ctx):
+        raise ToolError(f"{path}: no folder named {parts[0]!r}. Writable folders: {', '.join(writable) or 'none'}.")
+    if parts[0] not in writable:
+        raise ToolError(f"{parts[0]} is read-only. Writable folders: {', '.join(writable) or 'none'}.")
+    return parts
+
+
+def write(ctx, path, content):
+    """What write_file returns, or, with content None, create_folder; or a ToolError."""
+    parts = writable_parts(ctx, path)
+    data = None
+    if content is not None:
+        suffix = os.path.splitext(parts[-1])[1].lower()
+        if suffix not in TEXT_SUFFIXES:
+            raise ToolError(f"{path}: only text files can be written: {', '.join(sorted(TEXT_SUFFIXES))}.")
+        data = content.encode("utf-8")
+        if len(data) > MAX_WRITE_BYTES:
+            raise ToolError(f"{path}: the content is larger than {human(MAX_WRITE_BYTES)}.")
+    try:
+        outcome = folders(ctx).write(parts[0], parts[1:], data)
+    except ValueError as e:
+        raise ToolError(f"{path}: {e}") from None
+    except OSError as e:
+        # strerror leaves the real path out of the message.
+        raise ToolError(f"{path}: {e.strerror + '.' if e.strerror else e}") from None
+    shown = "/".join(parts)
+    if outcome == "exists":
+        return f"{shown}/ already exists."
+    if data is None:
+        return f"Created {shown}/."
+    return f"{outcome.capitalize()} {shown}, {human(len(data))}."
+
+
+async def write_file(ctx: Context, path: str, content: str) -> str:
+    """Write a text file in a folder listed as writable: create it, with any
+    missing folders, or replace it whole. Nothing is ever deleted.
+
+    path: such as "Notes/Recettes/pain.md". Text files only (.md, .txt, .csv...).
+    content: the whole new text of the file, UTF-8.
+    """
+    return await asyncio.to_thread(write, ctx, path, content)
+
+
+async def create_folder(ctx: Context, path: str) -> str:
+    """Create a folder, with any missing folders above it, in a folder listed
+    as writable. A folder that exists already is left as it is.
+
+    path: such as "Notes/Recettes/Pains".
+    """
+    return await asyncio.to_thread(write, ctx, path, None)
+
+
+# Offered only where a folder takes them.
+if any(WRITABLE.values()):
+    mcp.tool()(write_file)
+    mcp.tool()(create_folder)
 
 
 class RequireToken:
