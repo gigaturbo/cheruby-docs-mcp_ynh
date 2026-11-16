@@ -1,0 +1,53 @@
+[Unit]
+Description=Cheruby Docs: reranking model for search results (__APP__)
+After=network.target
+
+[Service]
+Type=simple
+User=__APP__
+Group=__APP__
+# Four slots: the 30 candidates of a search are scored side by side. Lower
+# priority than every other app; the model takes about 0.4 GB. No slot monitor:
+# it would show any local process the passages being ranked.
+ExecStart=__INSTALL_DIR__/bin/llama-server --model __INSTALL_DIR__/model/__RERANK_MODEL_FILE__ --reranking \
+    --host 127.0.0.1 --port __PORT_RERANK__ --ctx-size 8192 --parallel 4 \
+    --batch-size 2048 --ubatch-size 2048 --threads 4 --no-webui --no-slots
+Nice=10
+CPUWeight=20
+MemoryMax=1G
+
+IPAddressAllow=localhost
+IPAddressDeny=any
+RestrictAddressFamilies=AF_INET AF_INET6
+
+# It reads its binary and model, nothing else.
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/www:ro
+BindReadOnlyPaths=__INSTALL_DIR__/bin __INSTALL_DIR__/model
+InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
+
+UMask=077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

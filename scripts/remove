@@ -11,12 +11,13 @@ systemctl stop "$app-index.service" --quiet 2>/dev/null || true
 ynh_config_remove_systemd "$app-index"
 ynh_safe_rm "/etc/systemd/system/$app-ping@.service"
 
-for service in "$app" "$app-embed"; do
+for service in "$app" "$app-embed" "$app-rerank"; do
     if ynh_hide_warnings yunohost service status "$service" >/dev/null; then
         yunohost service remove "$service"
     fi
 done
 ynh_config_remove_systemd "$app-embed"
+ynh_config_remove_systemd "$app-rerank"
 ynh_config_remove_systemd
 
 # The install dir and the user go with the manifest's resources; the index

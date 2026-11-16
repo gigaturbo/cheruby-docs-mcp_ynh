@@ -1,6 +1,6 @@
 [Unit]
 Description=Cheruby Docs: MCP tools on users' folders (__APP__)
-Wants=__APP__-embed.service
+Wants=__APP__-embed.service __APP__-rerank.service
 After=network.target __APP__-embed.service
 
 [Service]

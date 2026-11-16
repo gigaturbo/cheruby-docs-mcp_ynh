@@ -22,11 +22,11 @@ architectures = ["arm64"]
 multi_instance = false
 ldap = false
 sso = false
-# The model (330 MB), llama-server and the venv; the index grows with the folders.
-disk = "1G"
+# The two models (640 MB), llama-server and the venv; the index grows with the folders.
+disk = "1500M"
 # Compiling llama-server.
 ram.build = "1500M"
-ram.runtime = "800M"
+ram.runtime = "1200M"
 
 [install]
     [install.docs_user]
@@ -59,6 +59,15 @@ ram.runtime = "800M"
     extract = false
     rename = "embeddinggemma-300M-Q8_0.gguf"
 
+    # jina-reranker-v2-base-multilingual, which orders search results by how well
+    # they answer the query, at a fixed revision. Its licence is CC-BY-NC-4.0:
+    # non-commercial use only.
+    [resources.sources.rerank_model]
+    url = "https://huggingface.co/gpustack/jina-reranker-v2-base-multilingual-GGUF/resolve/09a0e5b9f3d193a4f1e771ba6ceccdf1153d3a9a/jina-reranker-v2-base-multilingual-Q8_0.gguf"
+    sha256 = "4dba405265ce8f00a4c6fa29d483585c11f5020ff37d61a1161c4e9be6348c18"
+    extract = false
+    rename = "jina-reranker-v2-base-multilingual-Q8_0.gguf"
+
     [resources.system_user]
 
     [resources.install_dir]
@@ -75,6 +84,7 @@ ram.runtime = "800M"
     [resources.ports]
     main.default = 8770
     embed.default = 8771
+    rerank.default = 8774
 
     # To build llama-server.
     [resources.apt]

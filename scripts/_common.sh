@@ -3,6 +3,7 @@
 # Shared steps between install, upgrade and restore.
 
 model_file="embeddinggemma-300M-Q8_0.gguf"
+rerank_model_file="jina-reranker-v2-base-multilingual-Q8_0.gguf"
 
 # Settings with no install question. Defaults only: an upgrade keeps whatever
 # the config panel has since set.
@@ -281,8 +282,8 @@ docs_build_fingerprint() {
         | sha256sum | cut -d' ' -f1
 }
 
-# llama-server built from the pinned source for this processor, and the model
-# beside it. Takes about 8 minutes; the build folder goes once the binary is out.
+# llama-server built from the pinned source for this processor, and the
+# embedding and reranking models beside it. Takes about 8 minutes; the build folder goes once the binary is out.
 docs_build_llama() {
     local src
     src=$(mktemp -d)
@@ -295,12 +296,14 @@ docs_build_llama() {
 
     ynh_safe_rm "$install_dir/model"
     ynh_setup_source --dest_dir="$install_dir/model" --source_id="model"
+    ynh_setup_source --dest_dir="$install_dir/model" --source_id="rerank_model"
     ynh_app_setting_set --key=llama_fingerprint --value="$(docs_llama_fingerprint)"
 }
 
 # What the binary and the model depend on, the build flags included.
 docs_llama_fingerprint() {
     { ynh_read_manifest "resources.sources.llama_cpp.sha256"; ynh_read_manifest "resources.sources.model.sha256"
+      ynh_read_manifest "resources.sources.rerank_model.sha256"
       declare -f docs_build_llama; } | sha256sum | cut -d' ' -f1
 }
 
@@ -309,7 +312,8 @@ docs_llama_fingerprint() {
 docs_check_downloads() {
     local url
     for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://github.com/ \
-        "$(ynh_read_manifest "resources.sources.model.url")"; do
+        "$(ynh_read_manifest "resources.sources.model.url")" \
+        "$(ynh_read_manifest "resources.sources.rerank_model.url")"; do
         curl --silent --show-error --head --location --output /dev/null --max-time 15 "$url" \
             || ynh_die "$url cannot be reached; nothing was changed. Retry the upgrade later."
     done
@@ -429,6 +433,7 @@ docs_configure() {
         echo "DOCS_FOLDERS_FILE=$install_dir/folders.json"
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
+        echo "DOCS_RERANK_URL=http://127.0.0.1:$port_rerank"
         token=$(ynh_app_setting_get --key="token_$docs_user")
         token=${token:-$(ynh_string_random --length=48)}
         ynh_app_setting_set --key="token_$docs_user" --value="$token"
@@ -458,6 +463,7 @@ docs_configure() {
 
     ynh_config_add_systemd
     ynh_config_add_systemd --service="$app-embed" --template="embed.service"
+    ynh_config_add_systemd --service="$app-rerank" --template="rerank.service"
     # Started by its timer only, so written, not enabled.
     ynh_config_add --template="index.service" --destination="/etc/systemd/system/$app-index.service"
     docs_write_timer
@@ -465,11 +471,14 @@ docs_configure() {
     systemctl daemon-reload
     yunohost service add "$app" --description="Cheruby Docs, MCP tools on users' folders"
     yunohost service add "$app-embed" --description="Cheruby Docs, embedding model for the search index"
+    yunohost service add "$app-rerank" --description="Cheruby Docs, reranking model for search results"
 }
 
 # The embedding server first: the tool server and the indexer call it. It
-# answers /health once its model is loaded.
+# answers /health once its model is loaded. Search goes on without the
+# reranking server, so nothing waits for it.
 docs_start() {
+    ynh_systemctl --service="$app-rerank" --action="restart"
     ynh_systemctl --service="$app-embed" --action="restart"
     local i
     for i in $(seq 1 60); do
@@ -477,6 +486,9 @@ docs_start() {
         [ "$i" = 60 ] && ynh_die "The embedding server did not answer within two minutes: journalctl -u $app-embed"
         sleep 2
     done
+    # Started beside the embedding server, so loaded by now when it works.
+    curl --silent --fail --output /dev/null "http://127.0.0.1:$port_rerank/health" \
+        || ynh_print_warn "The reranking server does not answer yet; search runs in a rougher order until it does: journalctl -u $app-rerank"
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="Uvicorn running on" --timeout=60
     docs_start_timer
@@ -583,7 +595,7 @@ docs_clear_index() {
 docs_stop() {
     systemctl stop "$app-index.timer" "$app-index.service" --quiet 2>/dev/null || true
     ynh_systemctl --service="$app" --action="stop"
-    systemctl stop "$app-embed" --quiet 2>/dev/null || true
+    systemctl stop "$app-embed" "$app-rerank" --quiet 2>/dev/null || true
 }
 
 # The app's logo, shown by the webadmin and the portal, set only while it has

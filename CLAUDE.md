@@ -16,7 +16,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 - `conf/docs_index.py`: the indexer, and the index format the server reads.
 - `conf/docs_files.py`: what both know about the folders, their filters
   and their files.
-- `conf/systemd.service`, `embed.service`, `index.service`, `index.timer`:
+- `conf/systemd.service`, `embed.service`, `rerank.service`, `index.service`, `index.timer`:
   the sandboxed units.
 - `conf/requirements.in` → `conf/requirements.txt`: the hash-locked wheels.
   The re-lock command is at the top of `requirements.in`.
@@ -31,11 +31,13 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 
 ## Architecture
 
-- **Three units, one user** `cheruby-docs-mcp`, all on loopback:
+- **Four units, one user** `cheruby-docs-mcp`, all on loopback:
   - `cheruby-docs-mcp.service`, the tool server (uvicorn). Whoopy reaches it
     with one token, chosen in the config panel: one user, some of their folders.
   - `cheruby-docs-mcp-embed.service`, llama-server with EmbeddingGemma 300M,
     built from source at install.
+  - `cheruby-docs-mcp-rerank.service`, the same llama-server with
+    jina-reranker-v2 (non-commercial licence): it orders search results.
   - `cheruby-docs-mcp-index.service`, run by its timer on the schedule
     chosen in the panel, or by "Run now": walks the folders, updates the
     user's search index and writes `<user>.status.json` for the panel.
