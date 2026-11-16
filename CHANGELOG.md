@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.1
+
+- An index run stuck past 6 hours now fails, so the timer starts the next one.
+- A Nextcloud app password refused once is not tried again until a new one is saved: each failed login made Nextcloud hold back logins from every app on the server. When it does, the panel says so and how to clear it.
+- The panel checks again whether the app can read each folder on disk; it said "could not be checked" for all of them.
+
 ## 0.6.0
 
 - "Writable folders" per source, and a `write_file` tool that creates or replaces a text file in them, never deletes. Never through a link, never a file with other hard links, never the last 2 GB of the disk; the panel says what a folder's group cannot change.
