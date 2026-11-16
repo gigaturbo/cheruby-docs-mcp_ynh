@@ -4,7 +4,7 @@
 
 Builds two users' folders in a temporary directory, one of alice's served by
 a stand-in Nextcloud, indexes them without filters against a stand-in
-embedding server, starts the tool server with filters on a loopback port,
+embedding server, starts the tool server, with a stand-in reranker, with filters on a loopback port,
 then calls each tool and re-runs the indexer with the filters, then after a
 move, an edit and a deletion, then with Nextcloud changed, down and refusing,
 then writes in the writable folders, on disk and in Nextcloud.
@@ -33,6 +33,8 @@ import httpx
 ALICE, BOB, GATEWAY = "b" * 40, "j" * 40, "g" * 40
 PORT = 18770
 EMBED_PORT = 18771
+RERANK_PORT = 18774
+RERANK = {"favour": None, "down": False, "docs": []}
 DAV_PORT = 18773
 DAV_PASSWORD = "n" * 72
 DAV_LOG = []
@@ -98,6 +100,40 @@ class FakeEmbedder(BaseHTTPRequestHandler):
 
     def log_message(self, *args):
         pass
+
+
+class FakeReranker(BaseHTTPRequestHandler):
+    """/v1/rerank keeping the order it is given, but for the documents holding
+    RERANK["favour"], which go first; a 500 while RERANK["down"]. The
+    documents sent go to RERANK["docs"]."""
+
+    def do_POST(self):
+        docs = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["documents"]
+        RERANK["docs"] = docs
+        if RERANK["down"]:
+            self.send_response(500)
+            self.end_headers()
+            return
+        favour = RERANK["favour"]
+        results = [{"index": i, "relevance_score": (10 if favour and favour in d else 0) - i / 100}
+                   for i, d in enumerate(docs)]
+        body = json.dumps({"results": results[::-1]}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+def reranked(favour=None, down=False, **arguments):
+    """A search with the stand-in reranker set as given, and the documents it got."""
+    RERANK.update(favour=favour, down=down, docs=[])
+    try:
+        return (*tool("search_documents", **arguments), RERANK["docs"])
+    finally:
+        RERANK.update(favour=None, down=False)
 
 
 class FakeNextcloud(BaseHTTPRequestHandler):
@@ -289,6 +325,7 @@ def build(base):
         "DOCS_INDEX_DIR": f"{base}/index",
         "DOCS_EMBED_URL": f"http://127.0.0.1:{EMBED_PORT}",
         "DOCS_EMBED_MODEL": "fake-64",
+        "DOCS_RERANK_URL": f"http://127.0.0.1:{RERANK_PORT}",
         "DOCS_FOLDERS_FILE": f"{base}/folders.json",
         "DOCS_TOKEN_alice": ALICE,
         "DOCS_TOKEN_ju": BOB,
@@ -383,8 +420,17 @@ CHECKS = [
     ("search before a date", lambda: tool("search_documents", query="pain lait tomates", before="2000-01-01"),
      lambda r: r[0] == "ok" and "Notes/courses.md" in r[1] and "long.md" not in r[1]),
     ("search limit kept", lambda: tool("search_documents", query="loyer jardin pain", limit=2), lambda r: r[1].count("--- ") == 2),
-    ("one passage per page", lambda: tool("search_documents", query="jardin tomates", limit=10),
-     lambda r: r[0] == "ok" and r[1].count("--- Notes/long.md ") == 1),
+    ("one passage per file", lambda: tool("search_documents", query="jardin tomates", limit=10),
+     lambda r: r[0] == "ok" and r[1].count("--- Notes/long.md") == 1),
+    ("the reranker orders the results", lambda: reranked("courses.md", query="loyer augmente"),
+     lambda r: r[0] == "ok" and r[1].split("\n--- ")[1].startswith("Notes/courses.md")),
+    ("the reranker gets each candidate's file name and start", lambda: reranked(query="loyer augmente"),
+     lambda r: r[2] and any(d.startswith("bail.pdf\nLoyer augmente") for d in r[2])
+     and all(len(d.split("\n", 1)[1]) <= 300 for d in r[2])),
+    ("the reranker sees only the token's folders", lambda: reranked(token=GATEWAY, query="loyer augmente tomates"),
+     lambda r: r[2] and not any(d.startswith(("bail.pdf", "lettre.docx")) or "Loyer augmente" in d for d in r[2])),
+    ("search goes on without the reranker", lambda: reranked(down=True, query="loyer augmente"),
+     ok_with("ranking by relevance is unavailable", "--- Documents/bail.pdf")),
     ("search leaves hidden out", lambda: tool("search_documents", query="hidden", limit=10),
      lambda r: r[0] == "ok" and ".st" not in r[1] and ".hidden" not in r[1]),
     ("search refuses ..", lambda: tool("search_documents", query="x", path="Notes/.."), error_with("not allowed")),
@@ -636,6 +682,8 @@ def write_checks(base):
 def main():
     embedder = ThreadingHTTPServer(("127.0.0.1", EMBED_PORT), FakeEmbedder)
     threading.Thread(target=embedder.serve_forever, daemon=True).start()
+    reranker = ThreadingHTTPServer(("127.0.0.1", RERANK_PORT), FakeReranker)
+    threading.Thread(target=reranker.serve_forever, daemon=True).start()
     nextcloud = ThreadingHTTPServer(("127.0.0.1", DAV_PORT), FakeNextcloud)
     threading.Thread(target=nextcloud.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:

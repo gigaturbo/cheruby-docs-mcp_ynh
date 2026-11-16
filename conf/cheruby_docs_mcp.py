@@ -11,6 +11,7 @@ Run by cheruby-docs-mcp.service. Settings come from its root-600 env file:
     DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
     DOCS_INDEX_DIR          where docs_index.py keeps <user>.sqlite, read here only
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
+    DOCS_RERANK_URL         optional: the reranking server, e.g. http://127.0.0.1:8774
     DOCS_NEXTCLOUD_URL      when a folder is in Nextcloud: the user's WebDAV root,
     DOCS_NEXTCLOUD_HOST     the name Nextcloud answers to,
     DOCS_NEXTCLOUD_USER     the account and
@@ -55,6 +56,7 @@ BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
 PORT = int(os.environ.get("DOCS_PORT", "8770"))
 INDEX_DIR = os.environ.get("DOCS_INDEX_DIR", "")
 EMBED_URL = os.environ.get("DOCS_EMBED_URL", "")
+RERANK_URL = os.environ.get("DOCS_RERANK_URL", "")
 
 MAX_LIST = 300
 MAX_FOUND = 50
@@ -65,6 +67,11 @@ MAX_FETCH_BYTES = 64_000_000
 MAX_RESULTS = 10
 MAX_WRITE_BYTES = 2_000_000
 RRF_K = 60
+# Measured on the Pi (F-M-12): the 30 best of the fusion, each by its start,
+# put the expected file in the top 5 for every test query in about 4 s.
+RERANK_CANDIDATES = 30
+RERANK_CHARS = 300
+RERANK_TIMEOUT_S = 20
 
 
 def load_users(environ, folders):
@@ -329,6 +336,21 @@ async def embed_query(query):
     return vector / numpy.linalg.norm(vector)
 
 
+async def rerank(query, candidates):
+    """Indexes of candidates, (path, page, mtime_ns, text) rows, most relevant to
+    the query first; None when the reranking server does not answer."""
+    docs = [f"{os.path.basename(path)}\n{text[:RERANK_CHARS]}" for path, _, _, text in candidates]
+    try:
+        async with httpx2.AsyncClient(timeout=RERANK_TIMEOUT_S) as client:
+            resp = await client.post(f"{RERANK_URL}/v1/rerank", json={"query": query, "documents": docs})
+            resp.raise_for_status()
+        scored = sorted(resp.json()["results"], key=lambda r: -r["relevance_score"])
+        order = [r["index"] for r in scored if isinstance(r["index"], int) and 0 <= r["index"] < len(docs)]
+    except (httpx2.HTTPError, ValueError, KeyError, TypeError):
+        return None
+    return order + [i for i in range(len(docs)) if i not in order]
+
+
 def day(text, name):
     try:
         return datetime.strptime(text, "%Y-%m-%d").timestamp() * 1e9
@@ -342,11 +364,11 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
     """Find passages of documents by what they say, in the user's words.
 
     Searches by meaning and by keywords, so "the letter about the rent increase"
-    finds a letter that never uses those words. Returns the best passages, each
-    with its file, page and date; read more with read_file.
+    finds a letter that never uses those words. Returns the best passage of
+    each of the best files, with its page and date; read more with read_file.
     path: limit the search to one folder, such as "Documents/Logement".
     after, before: the file's date, as 2025-03-31.
-    limit: how many passages, 1 to 10.
+    limit: how many files, 1 to 10.
     Scans and images are not searchable yet; find them with find_files.
     """
     query = query.strip()
@@ -394,16 +416,29 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
             f"WHERE p.id IN ({','.join('?' * len(ids))})", ids)}
     finally:
         db.close()
-    # Overlapping passages of one page would crowd out other documents: the best one stands for it.
-    seen, best = set(), []
+    # Overlapping passages of one page are one candidate, its best one.
+    seen, pages = set(), []
     for pid in ids:
         if rows[pid][:2] not in seen:
             seen.add(rows[pid][:2])
+            pages.append(pid)
+    order = None
+    if RERANK_URL and len(pages) > 1:
+        order = await rerank(query, [rows[pid] for pid in pages[:RERANK_CANDIDATES]])
+        if order is not None:
+            pages = [pages[i] for i in order] + pages[RERANK_CANDIDATES:]
+    # The best passage stands for its file, so one long document cannot fill the list.
+    files, best = set(), []
+    for pid in pages:
+        if rows[pid][0] not in files:
+            files.add(rows[pid][0])
             best.append(pid)
     ids = best[:max(1, min(limit, MAX_RESULTS))]
     head = f"[index updated {meta.get('updated', '?')}]\n"
     if vector is None:
         head += "[search by meaning is unavailable; keyword matches only]\n"
+    if RERANK_URL and len(pages) > 1 and order is None:
+        head += "[ranking by relevance is unavailable; results in a rougher order]\n"
     head += "\n"
     if not ids:
         return head + f"Nothing matches {query!r}."
