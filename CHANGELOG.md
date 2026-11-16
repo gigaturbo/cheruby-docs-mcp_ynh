@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.0
+
+- Search orders its results by how well they answer the question, with a reranking model run on the server, and shows the best passage of each file. On the author's test queries, 9 of 9 expected documents come in the top 5, against 7 before, in about 4 seconds a search. The model, jina-reranker-v2-base-multilingual, is for non-commercial use only.
+- When the reranking model does not answer, search still answers, in a rougher order, and says so.
+
 ## 0.6.2
 
 - "Whoopy access" is picked from the open folders instead of typed, so a mistyped label can no longer be saved.
