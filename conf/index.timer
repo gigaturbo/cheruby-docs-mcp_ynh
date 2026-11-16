@@ -1,9 +1,9 @@
 [Unit]
-Description=Cheruby Docs: refresh the search index hourly (__APP__)
+Description=Cheruby Docs: refresh the search index (__APP__)
 
 [Timer]
-# Off the hour, away from the hourly snapshots.
-OnCalendar=*:20
+# Chosen in the config panel (docs_write_timer).
+OnCalendar=__ON_CALENDAR__
 Persistent=true
 
 [Install]

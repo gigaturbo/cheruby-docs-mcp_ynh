@@ -2,8 +2,9 @@
 
 # Cheruby Docs for YunoHost
 
-Read-only MCP tools that let AI agents list, find, read and search by meaning
-one user's folders on the server. Meant to sit behind an MCP gateway.
+MCP tools that let AI agents list, find, read and search by meaning one
+user's folders on the server, and write text files in the folders marked
+writable. Meant to sit behind an MCP gateway.
 
 ## Tools
 
@@ -12,7 +13,12 @@ one user's folders on the server. Meant to sit behind an MCP gateway.
 - `read_file(path, ...)`: text and Markdown by character range, PDF by page,
   Word and OpenDocument, and images as pictures.
 - `search_documents(query, path, after, before, limit)`: passages by meaning
-  and keywords, from an index rebuilt every hour.
+  and keywords, from an index refreshed on the schedule chosen in the panel.
+- `write_file(path, content)`: creates a text file, with its missing folders,
+  or replaces one, in a writable folder. Offered only when a folder is
+  writable; it never deletes.
+- `create_folder(path)`: creates a folder, with those above it, in a
+  writable folder.
 
 Paths start with a folder's label, such as `Documents/Factures`.
 
@@ -36,6 +42,21 @@ Each source also has "Only these files" and "Leave out" patterns, such as
 found, read or searched. Under each source, the panel shows which folders hold
 files the app cannot read.
 
+"Writable folders", per source, lists the folders the agents may write in.
+A change to a Syncthing folder goes to every device, and its old content
+survives only on the devices with File Versioning on; a receive-only folder
+stays read-only. A folder on disk needs its files changeable by its group,
+and the panel says which are not. The multimedia and backup shares always
+stay read-only. A Nextcloud folder needs a
+login allowed to change it; Nextcloud keeps the old versions.
+
+Under "Search index", the index is refreshed every hour, every 6 hours,
+every night, never, or on a custom schedule in cron's five fields, and
+never in the quiet hours (01 to 06 by default, around the backups): no run
+starts then, and one still going stops and carries on at the next run. "Index runs" shows how the last run ended, what the
+index holds and when the next run comes, with "Run now" and "Rebuild",
+which makes the next run read every file again.
+
 The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
 
 The gateway gets its own token, shown in the config panel under "Whoopy
@@ -45,5 +66,6 @@ replaces it. The user also has a token of their own, on all the folders, read
 with `yunohost app setting cheruby-docs-mcp token_<user>`.
 
 The service joins each folder's group to read the folders on disk, so their
-files must be group-readable. Everything else on the server stays hidden from it, and it
+files must be group-readable. It sees the folders read-only, but for the
+writable ones. Everything else on the server stays hidden from it, and it
 can reach nothing but loopback.

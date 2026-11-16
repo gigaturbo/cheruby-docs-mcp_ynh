@@ -21,6 +21,8 @@ EnvironmentFile=__INSTALL_DIR__/index.env
 # sandbox, which blocks the socket systemctl talks through.
 ExecStartPre=+/bin/systemctl start --no-block __APP__-ping@start.service
 ExecStart=__INSTALL_DIR__/venv/bin/python -E -s -B __INSTALL_DIR__/docs_index.py
+# Stopped on purpose (Rebuild, an upgrade) is not a failed run: no failure ping.
+SuccessExitStatus=SIGTERM
 
 # The first run embeds every passage, about a second each, and yields the CPU
 # to everything. A run stuck past 6 hours fails, so the timer can start again;

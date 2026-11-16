@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.6.0
+
+- "Writable folders" per source, and a `write_file` tool that creates or replaces a text file in them, never deletes. Never through a link, never a file with other hard links, never the last 2 GB of the disk; the panel says what a folder's group cannot change.
+- A `create_folder` tool beside `write_file`.
+- The index runs every hour, every 6 hours, every night, never, or on a custom cron schedule, chosen in the panel, never in the quiet hours set there; a run still going stops when they begin and the next one carries on.
+- "Index runs" in the panel: how the last run ended, what the index holds, the next run, and "Run now" and "Rebuild" buttons.
+
 ## 0.5.0
 
 - A Nextcloud source: folders of a Nextcloud account, shares from others included, read through Nextcloud with an app password made there and pasted in the panel. The account can be another login than the user, given read-only shares.

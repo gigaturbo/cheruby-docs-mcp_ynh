@@ -19,7 +19,7 @@ validate__healthcheck_url() {
 docs_check_folders() {
     local message="" wanted
     docs_collect_folders
-    message=$(head -n 1 <<< "$folder_error")
+    message=$(head -n 1 <<< "$folder_error$write_error")
     local -a picked=()
     IFS=, read -ra picked <<< "${whoopy_folders:-}"
     for wanted in "${picked[@]}"; do
@@ -36,6 +36,9 @@ validate__local_enabled() { docs_check_folders; }
 validate__local_folders() { docs_check_folders; }
 validate__nextcloud_enabled() { docs_check_folders; }
 validate__nextcloud_folders() { docs_check_folders; }
+validate__syncthing_writable() { docs_check_folders; }
+validate__local_writable() { docs_check_folders; }
+validate__nextcloud_writable() { docs_check_folders; }
 
 # A pasted app password, or the saved one with a new login, must open the
 # account. An empty password field comes as "" or "None": it keeps the saved one.
@@ -46,7 +49,7 @@ docs_check_nextcloud() {
     password=${nextcloud_password:-}
     [[ "$password" != "" && "$password" != "None" ]] || password=$(ynh_app_setting_get --key=nextcloud_password)
     code=000
-    [ -z "$password" ] || code=$(docs_nextcloud_code "" "$password")
+    [ -z "$password" ] || code=$(docs_nextcloud_code "" "$password" | cut -d' ' -f1)
     password=""
     set -o xtrace
     case $code in
@@ -78,6 +81,19 @@ set__nextcloud_password() {
 }
 validate__whoopy_folders() { docs_check_folders; }
 
+# The schedule and the quiet hours must leave a time to run.
+validate__index_calendar() {
+    [ "${index_schedule:-hourly}" != never ] || return 0
+    [ -z "$(docs_calendar "$(docs_index_cron)" "${index_quiet:-}")" ] || return 0
+    if [ "${index_schedule:-}" = custom ] && [ -z "$(docs_calendar "$(docs_index_cron)" "")" ]; then
+        echo "Not a cron schedule: minute 0-59, hour 0-23, day 1-31, month 1-12, weekday 0-7 or sun-sat, and not both a day and a weekday. Such as 20 6-23 * * *."
+    else
+        echo "The quiet hours leave this schedule no time to run."
+    fi
+}
+validate__index_schedule() { validate__index_calendar; }
+validate__index_quiet() { validate__index_calendar; }
+
 # Defined for show only: a getter makes its field look changed on every save.
 if [ "${1:-}" = "show" ]; then
     get__syncthing_folders() {
@@ -92,9 +108,9 @@ fi
 # the trace goes to yunohost-cli.log, which nothing redacts.
 ynh_app_config_show() {
     _ynh_app_config_show
-    local source label path group ignore found line nc_password
+    local source label path group ignore found line nc_password code="" perms=""
     local -A status=() ignores=()
-    while IFS=$'\t' read -r label path ignore; do
+    while IFS=$'\t' read -r label path ignore _; do
         ignores[$path]=$ignore
     done < <(docs_syncthing_folders)
     docs_collect_folders
@@ -104,16 +120,24 @@ ynh_app_config_show() {
         [[ "$line" == Nextcloud* ]] && source=nextcloud
         [ -n "$line" ] && status[$source]+="- **Left out**: $line"$'\n'
     done <<< "$folder_error"
+    while IFS= read -r line; do
+        source=local
+        [[ "$line" == Syncthing* ]] && source=syncthing
+        [[ "$line" == Nextcloud* ]] && source=nextcloud
+        [ -n "$line" ] && status[$source]+="- **Read-only**: $line"$'\n'
+    done <<< "$write_error"
     for label in $(printf '%s\n' "${!folder_path[@]}" | sort); do
         path=${folder_path[$label]}
         source=${folder_source[$label]}
         if [ "$source" = nextcloud ]; then
             set +o xtrace
+            code=""
             nc_password=$(ynh_app_setting_get --key=nextcloud_password)
             if [ -z "$nc_password" ]; then
                 found="no app password is saved: make one in Nextcloud and paste it above."
             else
-                case $(docs_nextcloud_code "${path#nextcloud:}" "$nc_password") in
+                read -r code perms < <(docs_nextcloud_code "${path#nextcloud:}" "$nc_password")
+                case $code in
                     207) found="can be read." ;;
                     404) found="no such folder in the account of $nc_account." ;;
                     401) found="Nextcloud refuses the app password: make another and paste it above." ;;
@@ -122,6 +146,13 @@ ynh_app_config_show() {
             fi
             nc_password=""
             set -o xtrace
+            if [ -n "${folder_writable[$label]:-}" ] && [ "$code" = 207 ]; then
+                if [[ "$perms" == *C*K* || "$perms" == *K*C* ]]; then
+                    found+=" Writable: Nextcloud lets $nc_account add and change files here."
+                else
+                    found+=" Marked writable, but Nextcloud lets $nc_account only read it, as in a read-only share: nothing can be written."
+                fi
+            fi
             status[$source]+="- **$label**: $found"$'\n'
             continue
         fi
@@ -141,6 +172,15 @@ ynh_app_config_show() {
                 status[$source]+="$found files or folders cannot be read; the group $group needs to read them."
             fi
         fi
+        if [ -n "${folder_writable[$label]:-}" ]; then
+            found=$(setpriv --reuid="$app" --regid="$app" --groups="$group" \
+                find "$path" \( -name '.*' -prune \) -o ! -writable -print 2>/dev/null | wc -l)
+            if [ "$found" -eq 0 ]; then
+                status[$source]+=" Writable: the app can change every file."
+            else
+                status[$source]+=" Writable, but the app cannot change $found files or folders: as root, chmod -R g+w '$path' lets the group $group change them."
+            fi
+        fi
         if [ "$source" = "syncthing" ] && [ "${ignores[$path]:-}" != "true" ]; then
             status[$source]+=" Syncthing keeps the permissions of the devices it syncs from: turn on Ignore Permissions for this folder, or they may undo a fix."
         fi
@@ -150,11 +190,34 @@ ynh_app_config_show() {
         ynh_return "${source}_status: $(jq -cn --arg a "${status[$source]:-No folder open.}" '{ask: $a}')"
     done
 
+    ynh_return "index_status: $(jq -cn --arg a "$(docs_index_status)" '{ask: $a}')"
+
     set +o xtrace
     ynh_return "whoopy_token:"
     ynh_return "  value: '$(ynh_app_setting_get --key=whoopy_token)'"
     ynh_return "  help: 'Address for Whoopy: http://127.0.0.1:$port/mcp'"
     set -o xtrace
+}
+
+# Whether a run is going, how the last one ended, what the index holds and
+# when the next run comes, from the status file docs_index.py writes.
+docs_index_status() {
+    local state next file="$data_dir/$docs_user.status.json"
+    state=$(systemctl is-active "$app-index.service" || true)
+    next=$(systemctl show "$app-index.timer" -p NextElapseUSecRealtime --value)
+    [[ -n "$next" && "$next" != n/a ]] || next="none: the schedule is never."
+    { cat "$file" 2>/dev/null || echo '{"result": "none"}'; } | jq -r --arg state "$state" --arg next "$next" --arg unit "$app-index" '
+        def said: to_entries | map("\(.value) \({needs_ocr: "waiting for OCR"}[.key] // .key)") | join(", ");
+        [ if $state == "activating" then "- **Running now**\(if .result == "running" then ", since \(.started)" else "" end)."
+          elif .result == "none" then "- **No run yet.**"
+          elif .result == "running" then "- **Last run**: started \(.started), stopped before the end: journalctl -u \($unit)."
+          elif .result == "done" then "- **Last run**: \(.started) to \(.ended), done."
+          elif .result == "paused" then "- **Last run**: \(.started) to \(.ended), paused for the quiet hours; the next run carries on."
+          else "- **Last run**: \(.started) to \(.ended), failed: \(.error // "journalctl -u \($unit)")" end,
+          (if $state != "activating" and (.run // {}) != {} then "- **It did**: \(.run | said)." else empty end),
+          "- **The index holds**: \(if (.files // {}) == {} then "no file yet" else .files | said end).",
+          "- **Next run**: \($next)"
+        ] | join("\n")'
 }
 
 # The ping unit reads ping.env at each run: nothing to restart for it.
@@ -170,6 +233,12 @@ ynh_app_config_apply() {
         ynh_safe_rm "$data_dir/${old[docs_user]}.work.sqlite"
         ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
     fi
+    # The quiet hours also go to the indexer, through index.env.
+    if [ "${changed[index_schedule]:-}" = "true" ] || [ "${changed[index_calendar]:-}" = "true" ] \
+        || [ "${changed[index_quiet]:-}" = "true" ]; then
+        docs_configure
+        docs_start_timer
+    fi
     local key
     # A new app password is in the settings already; the units need it.
     if [ "${nc_password_set:-0}" = 1 ]; then
@@ -179,8 +248,8 @@ ynh_app_config_apply() {
         return
     fi
     for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_only syncthing_skip \
-        local_enabled local_folders local_only local_skip nextcloud_enabled nextcloud_account nextcloud_folders \
-        nextcloud_only nextcloud_skip; do
+        syncthing_writable local_enabled local_folders local_only local_skip local_writable nextcloud_enabled \
+        nextcloud_account nextcloud_folders nextcloud_only nextcloud_skip nextcloud_writable; do
         if [ "${changed[$key]:-}" = "true" ]; then
             docs_configure
             ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
@@ -198,6 +267,27 @@ run__new_token() {
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="Uvicorn running on" --timeout=60
     ynh_print_info "A new token is in the panel. Paste it in Whoopy: the old one no longer works."
+}
+
+run__run_index() {
+    if [ "$(systemctl is-active "$app-index.service")" = activating ]; then
+        ynh_print_info "A run is already going. Its progress is under Index runs."
+        return
+    fi
+    # Read and removed by the indexer: this run ignores the quiet hours.
+    touch "$data_dir/run-now"
+    chown "$app:$app" "$data_dir/run-now"
+    systemctl start --no-block "$app-index.service"
+    ynh_print_info "A run has started. Reopen the panel to see its progress under Index runs."
+}
+
+# The working copy goes; the published one stays for search until the next
+# run replaces it.
+run__rebuild_index() {
+    systemctl stop "$app-index.service"
+    ynh_safe_rm "$data_dir/$docs_user.work.sqlite"
+    ynh_safe_rm "$data_dir/$docs_user.work.sqlite-journal"
+    ynh_print_info "The index was dropped: the next run reads every file again. Press Run now to start it."
 }
 
 ynh_app_config_run "$1"

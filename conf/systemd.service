@@ -1,5 +1,5 @@
 [Unit]
-Description=Cheruby Docs: read-only MCP tools on users' folders (__APP__)
+Description=Cheruby Docs: MCP tools on users' folders (__APP__)
 Wants=__APP__-embed.service
 After=network.target __APP__-embed.service
 
@@ -7,8 +7,8 @@ After=network.target __APP__-embed.service
 Type=simple
 User=__APP__
 Group=__APP__
-# Each folder's group, so its group-readable files can be read. Everything
-# else those groups could read is hidden below.
+# Each folder's group, so its group-readable files can be read, and changed
+# in a writable folder. Everything else those groups could read is hidden below.
 SupplementaryGroups=__GROUPS__
 
 # Tokens, the Nextcloud app password, folders and index settings. Root 600,
@@ -25,17 +25,20 @@ IPAddressAllow=localhost
 IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6
 
-# The process sees the configured folders on disk, the index and its own code, read-only, and
-# none of what the joined groups could otherwise read: Nextcloud's and
-# Syncthing's code and config under /var/www, PHP sessions under /var/lib,
-# their logs and caches.
+# The process sees the configured folders on disk, the index and its own
+# code, read-only but for the folders marked writable, and none of what the
+# joined groups could otherwise read: Nextcloud's and Syncthing's code and
+# config under /var/www, PHP sessions under /var/lib, their logs and caches.
 ProtectSystem=strict
 ProtectHome=tmpfs
 TemporaryFileSystem=/var/www:ro
-BindReadOnlyPaths=__INSTALL_DIR__ __DATA_DIR__ __BIND_PATHS__
+# First: both options fill one list, and an empty BindPaths= empties it.
+BindPaths=__WRITE_PATHS__
+BindReadOnlyPaths=__INSTALL_DIR__ __DATA_DIR__ __READ_PATHS__
 InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
 
-UMask=077
+# What write_file creates is 660 or 770, so the folder's group can change it.
+UMask=0007
 NoNewPrivileges=true
 PrivateTmp=true
 PrivateDevices=true
