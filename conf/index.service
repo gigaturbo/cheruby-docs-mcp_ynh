@@ -26,9 +26,9 @@ SuccessExitStatus=SIGTERM
 
 # The first run embeds every passage, about a second each, and yields the CPU
 # to everything. A run stuck past 6 hours fails, so the timer can start again;
-# the next run resumes from the working copy.
-TimeoutStartSec=infinity
-RuntimeMaxSec=6h
+# the next run resumes from the working copy. TimeoutStartSec, not
+# RuntimeMaxSec, which systemd ignores for a oneshot unit.
+TimeoutStartSec=6h
 Nice=19
 CPUWeight=10
 MemoryMax=512M
