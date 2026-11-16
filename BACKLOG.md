@@ -26,6 +26,17 @@ while the unit's comment says it fails after 6 hours.
 
 ## Features
 
+### F-P-3 · Whoopy access picked from the open folders
+
+`todo` `small` `filed 2026-11-16`
+
+"Whoopy access" takes typed labels, and a wrong one is refused at save.
+The web admin shows that refusal only in its history strip, so the save
+seems to do nothing.
+
+**Do:** offer the open folders' labels as its choices, with a getter
+defined for `show` only, as for Syncthing's folders.
+
 ### F-M-10 · first index embedded through Whoopy on the desktop's GPU
 
 `todo` `medium` `filed 2026-11-10` `needs: F-P-1`
@@ -88,26 +99,16 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 The indexer now writes a status file and `publish` takes the user's base path. Last result at `f3a3628` on 2026-11-11: 5 of 7 documents in the top 5. Re-run 2026-11-16 after a full rebuild (15:02 to 15:35, 312 indexed), before `ca4c4ed`'s change for B-M-1: the same 5 of 7, the same two missed (F-M-12), 0.2 s a search.
 
-### T-P-3 · the Whoopy token, from the panel, stays out of the logs
-
-`todo` `playtest` `filed 2026-11-10`
-
-The panel gained the index section, two buttons and the writable fields. Last result at `f3a3628` on 2026-11-11: pass.
-
 ### T-P-4 · the upgrade keeps the folders, and the panel's sources choose them
 
 `todo` `playtest` `filed 2026-11-10`
 
 `docs_collect_folders` and `docs_default_settings` gained the writable marks and the schedule. Last result at `4a7b472` on 2026-11-10: pass.
 
-### T-P-5 · Nextcloud folders are read through Nextcloud only
-
-`todo` `playtest` `filed 2026-11-10`
-
-`Nextcloud` now sends PUT and MKCOL for writable folders, and the panel's Nextcloud status says when one is writable. Last result at `ee29bbd` on 2026-11-11: pass.
-
 ## Closed
 
+- `T-P-5` done `playtest` 2026-11-16 at `3df4e18` · an app password revoked in Nextcloud cut Notes off, and a new one pasted in the panel brought it back; neither app password in the new lines of `yunohost-cli.log` nor the 33 operation files since the restore
+- `T-P-3` done `playtest` 2026-11-16 at `3df4e18` · "New token" made a 48-character token, which the panel shows and the server loaded; Whoopy got 401 until it held that token, then 200; "Whoopy access" narrowed to two folders then one; a label that is not a folder refused at save; the token in no new line of `yunohost-cli.log` nor the operation logs
 - `T-P-2` done `playtest` 2026-11-16 at `fbbb555` · nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
 - `T-P-6` done `playtest` 2026-11-16 at `1fa9784` · "Custom" shows its field; `0 3 * * *` refused for the quiet hours 01-06 and `34 6-24 * * *` for hour 24; quiet hours over the current hour skipped it in the next run and made a start by hand log "no run now", while Run now ran; Rebuild stopped a run, dropped the working copy and kept search on the published index, then a run from zero indexed 312 files in 33 min; a stopped run counts as a success with `SuccessExitStatus=SIGTERM` and a failure without (a throwaway unit, since an unchanged run takes 1.3 s)
 - `T-M-3` done `playtest` 2026-11-16 at `1fa9784` · with the Whoopy token both write tools offered on the two writable folders; in Nextcloud a folder made, a file created, replaced and read back, the old version kept whole; on disk, in a group-writable test folder, a new folder 2770 and file 660 in the folder's group, a file the group cannot change refused, one it can replaced keeping owner and mode, synced to two devices; `.pdf`, hidden names, `..`, unknown folders refused, and a Nextcloud label marked under Syncthing refused at save; inside the unit only Documents writable, even to root
