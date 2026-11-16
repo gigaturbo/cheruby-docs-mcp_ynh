@@ -1,9 +1,10 @@
 # CLAUDE.md
 
 A YunoHost package for an MCP tool server that lets one user's AI agents
-list, find, read and search by meaning that user's homelab folders,
-read-only, behind the Whoopy AI gateway. The folders come from sources
-(Syncthing, local storage, Nextcloud) chosen in the config panel.
+list, find, read and search by meaning that user's homelab folders, and
+write text files in those marked writable, behind the Whoopy AI gateway.
+The folders come from sources (Syncthing, local storage, Nextcloud) chosen
+in the config panel.
 
 The host's own `CLAUDE.md` still applies, and its rules win: installing or
 upgrading this app touches a running service, so ask first. Durable
@@ -19,7 +20,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   the sandboxed units.
 - `conf/requirements.in` → `conf/requirements.txt`: the hash-locked wheels.
   The re-lock command is at the top of `requirements.in`.
-- `config_panel.toml`, `scripts/config`: health pings and the Whoopy token.
+- `config_panel.toml`, `scripts/config`: the sources, the index schedule
+  and its runs, health pings and the Whoopy token.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
   in `scripts/_common.sh`.
 - `tests/check_server.py`: the offline check, on throwaway folders, with a
@@ -32,8 +34,9 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
     with one token, chosen in the config panel: one user, some of their folders.
   - `cheruby-docs-mcp-embed.service`, llama-server with EmbeddingGemma 300M,
     built from source at install.
-  - `cheruby-docs-mcp-index.service`, run hourly by its timer: walks the
-    folders and updates the user's search index.
+  - `cheruby-docs-mcp-index.service`, run by its timer on the schedule
+    chosen in the panel, or by "Run now": walks the folders, updates the
+    user's search index and writes `<user>.status.json` for the panel.
 - **Code and secrets** in `/var/www/cheruby-docs-mcp`, root-owned, group
   read-only: the venv, the Python modules, `bin/llama-server`, `model/`,
   `folders.json` (the folders and their filters), `docs.env` (root 600, the
@@ -43,11 +46,13 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   `/home/yunohost.app/cheruby-docs-mcp`, rebuilt from the folders, never
   backed up. The settings are the rest: `docs_user`, each source's
   `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
-  `nextcloud_account`, `nextcloud_password` and `whoopy_*`; configure renders `folders.json`, the env files and the units
-  from them.
+  `<source>_writable`, `nextcloud_account`, `nextcloud_password`,
+  `index_schedule`, `index_calendar`, `index_quiet` and `whoopy_*`; configure renders `folders.json`, the
+  env files and the units from them.
 - **The token picks the user**, and the unit joins each folder's group to
-  read it, with everything else those groups could read hidden. Nextcloud's
-  folders are read through Nextcloud over loopback, never on disk.
+  read it, and to change it when it is writable and mounted read-write,
+  with everything else those groups could read hidden. Nextcloud's folders
+  are read and written through Nextcloud over loopback, never on disk.
 
 ## Commands
 
