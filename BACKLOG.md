@@ -19,14 +19,15 @@ Nothing open.
 
 ### F-P-3 · Whoopy access picked from the open folders
 
-`todo` `small` `filed 2026-11-16`
+`wip` `small` `filed 2026-11-16`
 
 "Whoopy access" takes typed labels, and a wrong one is refused at save.
 The web admin shows that refusal only in its history strip, so the save
 seems to do nothing.
 
 **Do:** offer the open folders' labels as its choices, with a getter
-defined for `show` only, as for Syncthing's folders.
+defined for `show` only, as for Syncthing's folders. Built in 0.6.2, with
+a saved label no longer open kept among the choices; owes T-P-3.
 
 ### F-M-10 · first index embedded through Whoopy on the desktop's GPU
 
@@ -84,7 +85,11 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-Nothing open.
+### T-P-3 · the Whoopy token, from the panel, stays out of the logs
+
+`todo` `playtest` `filed 2026-11-10`
+
+"Whoopy access" now offers the open folders as choices (F-P-3). Last result at `3df4e18` on 2026-11-16: pass.
 
 ## Closed
 
@@ -96,7 +101,6 @@ Nothing open.
 - `B-P-2` closed 2026-11-16 · the panel said "could not be checked" for every folder on disk: `find` fails when it starts in YunoHost's root-only working folder; it now starts from `/`
 - `T-M-2` done `playtest` 2026-11-16 at `3df4e18` · after a restore and a full rebuild, the same 5 of 7 documents in the top 5 as on 2026-11-11, the same two missed (F-M-12), 0.2 s a search
 - `T-P-5` done `playtest` 2026-11-16 at `3df4e18` · an app password revoked in Nextcloud cut Notes off, and a new one pasted in the panel brought it back; neither app password in the new lines of `yunohost-cli.log` nor the 33 operation files since the restore
-- `T-P-3` done `playtest` 2026-11-16 at `3df4e18` · "New token" made a 48-character token, which the panel shows and the server loaded; Whoopy got 401 until it held that token, then 200; "Whoopy access" narrowed to two folders then one; a label that is not a folder refused at save; the token in no new line of `yunohost-cli.log` nor the operation logs
 - `T-P-2` done `playtest` 2026-11-16 at `fbbb555` · nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
 - `T-P-6` done `playtest` 2026-11-16 at `1fa9784` · "Custom" shows its field; `0 3 * * *` refused for the quiet hours 01-06 and `34 6-24 * * *` for hour 24; quiet hours over the current hour skipped it in the next run and made a start by hand log "no run now", while Run now ran; Rebuild stopped a run, dropped the working copy and kept search on the published index, then a run from zero indexed 312 files in 33 min; a stopped run counts as a success with `SuccessExitStatus=SIGTERM` and a failure without (a throwaway unit, since an unchanged run takes 1.3 s)
 - `T-M-3` done `playtest` 2026-11-16 at `1fa9784` · with the Whoopy token both write tools offered on the two writable folders; in Nextcloud a folder made, a file created, replaced and read back, the old version kept whole; on disk, in a group-writable test folder, a new folder 2770 and file 660 in the folder's group, a file the group cannot change refused, one it can replaced keeping owner and mode, synced to two devices; `.pdf`, hidden names, `..`, unknown folders refused, and a Nextcloud label marked under Syncthing refused at save; inside the unit only Documents writable, even to root
