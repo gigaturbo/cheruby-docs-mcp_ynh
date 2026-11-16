@@ -2,7 +2,7 @@
 
 A YunoHost app on the homelab that lets each user's AI agents, through the
 Whoopy gateway, list, find, read and then search by meaning that user's own
-folders, without writing anything and without waking the desktop.
+folders, and write only where the user allows, without waking the desktop.
 
 ## Categories
 
@@ -25,18 +25,6 @@ while the unit's comment says it fails after 6 hours.
 **Fix:** `TimeoutStartSec=6h` and no `RuntimeMaxSec`.
 
 ## Features
-
-### F-P-1 · indexing controls and status in the panel
-
-`todo` `medium` `filed 2026-11-10`
-
-The index runs hourly with no way to start, rebuild, slow or stop it, and
-its progress is only in the journal.
-
-**Do:** a schedule (off, hourly, every 6 h, nightly) that writes the timer's
-`OnCalendar`; a "Run now" button (start without waiting); a "Rebuild" button
-(drop the index, the next run starts from zero); a read-only status from a
-file the indexer writes: last run, files indexed, waiting and failed.
 
 ### F-M-10 · first index embedded through Whoopy on the desktop's GPU
 
@@ -63,17 +51,6 @@ pinned in the manifest by commit and sha256 so a restore can fetch it, and
 its search prefixes kept in the code. A change downloads the model,
 restarts the embedding unit and re-indexes everything (`DOCS_EMBED_MODEL`).
 F-M-10's remote must serve the same model.
-
-### F-M-11 · write files in the folders marked writable
-
-`todo` `large` `filed 2026-11-10` `needs: F-M-9`
-
-The tools only read.
-
-**Do:** a "Writable folders" field per source, and a write tool for those
-folders only, never a delete. Disk folders become writable mounts in the unit, group-writable with setgid directories;
-a Syncthing folder needs file versioning on before it can be `rw`, since a
-change syncs to every device. Nextcloud writes go through WebDAV `PUT`.
 
 ### F-M-6 · read scans and images into the search index
 
@@ -105,17 +82,52 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
+### T-P-6 · the index runs on the chosen schedule, from the panel
+
+`todo` `playtest` `filed 2026-11-12`
+
+F-P-1's live check: each schedule on the timer, quiet hours, "Run now", "Rebuild" during a run, and the status against the journal. Partly run 2026-11-16 before `ca4c4ed`'s change for B-M-1: "Custom" shows its field, "Run now" ran (14:38, 388 unchanged, status done); `0 3 * * *` refused for the quiet hours, `34 6-24 * * *` refused (hour 24); with quiet hours 14-16 at 14:56, the next run skipped them, a start by hand logged "quiet hours 14-16: no run now", "Run now" ran; at 15:01 "Rebuild" stopped a run and dropped the working copy, the published index stayed for search, and a run from zero started at 15:02, but the stop counted as a failure and pinged healthchecks.io; `1fa9784` makes a stop a success, owed: Rebuild again, no failure ping.
+
+### T-M-2 · search finds documents by meaning
+
+`todo` `playtest` `filed 2026-11-10`
+
+The indexer now writes a status file and `publish` takes the user's base path. Last result at `f3a3628` on 2026-11-11: 5 of 7 documents in the top 5. Re-run 2026-11-16 after a full rebuild (15:02 to 15:35, 312 indexed), before `ca4c4ed`'s change for B-M-1: the same 5 of 7, the same two missed (F-M-12), 0.2 s a search.
+
+### T-P-2 · backup and restore keep the tokens
+
+`todo` `playtest` `filed 2026-11-10`
+
+`docs_configure` now writes the timer and the read-write mounts. Last result at `ee29bbd` on 2026-11-11: pass.
+
+### T-P-3 · the Whoopy token, from the panel, stays out of the logs
+
+`todo` `playtest` `filed 2026-11-10`
+
+The panel gained the index section, two buttons and the writable fields. Last result at `f3a3628` on 2026-11-11: pass.
+
+### T-P-4 · the upgrade keeps the folders, and the panel's sources choose them
+
+`todo` `playtest` `filed 2026-11-10`
+
+`docs_collect_folders` and `docs_default_settings` gained the writable marks and the schedule. Last result at `4a7b472` on 2026-11-10: pass.
+
+### T-P-5 · Nextcloud folders are read through Nextcloud only
+
+`todo` `playtest` `filed 2026-11-10`
+
+`Nextcloud` now sends PUT and MKCOL for writable folders, and the panel's Nextcloud status says when one is writable. Last result at `ee29bbd` on 2026-11-11: pass.
+
 ## Closed
 
-- `T-P-3` done `playtest` 2026-11-11 at `f3a3628` · narrowed in the panel to two folders then to `Notes`, then a new token: it lists, finds and searches `Notes` only and is told `Documents` does not exist; the token from before gets 401; no gateway token, user token or Nextcloud password in the 50 new lines of `yunohost-cli.log` or the 4 operations' logs
-- `T-P-1` done `playtest` 2026-11-11 at `f3a3628` · 401 without the token; with it, Documents and Notes listed and read, `..` refused; the tool server sees in `/var/www` its own code only, in `/home/yunohost.app` its index (read-only) and the Syncthing folder, and cannot read `settings.yml`, `docs.env`, `index.env` or `/etc/shadow`; the embedding unit sees `bin/` and `model/` only, `/slots` answers 501; the indexer writes in its index folder only
-- `T-M-2` done `playtest` 2026-11-11 at `f3a3628` · after a full rebuild, 5 of 7 documents in the top 5, French and English: the washing recipe, the btrfs note, the Dell invoice, the garden-centre CV and the bread note; missed: the publications list (CVs ranked above it) and the wool section of the washing note
-- `T-P-2` done `playtest` 2026-11-11 at `ee29bbd` · backup, remove, restore: the user token, the gateway token and the Nextcloud app password came back with the same fingerprints, the ping and source settings the same, the service still without `nextcloud`; no token answered 401; no secret in the new lines of `yunohost-cli.log` or the backup, remove and restore logs; old kernel kept with `apt-mark manual`. Notes then failed: the app password had been revoked in Nextcloud meanwhile
-- `T-P-5` done `playtest` 2026-11-11 at `ee29bbd` · the service no longer joins `nextcloud`; a pasted app password saved and a wrong one refused at save; list, find, read and search on `Notes` through Nextcloud, one PROPFIND for an unchanged account (the `occ` build passed the same at `b7823bb`); the password in no new line of `yunohost-cli.log`, the operation logs or the journal
+- `T-M-3` done `playtest` 2026-11-16 at `1fa9784` · with the Whoopy token both write tools offered on the two writable folders; in Nextcloud a folder made, a file created, replaced and read back, the old version kept whole; on disk, in a group-writable test folder, a new folder 2770 and file 660 in the folder's group, a file the group cannot change refused, one it can replaced keeping owner and mode, synced to two devices; `.pdf`, hidden names, `..`, unknown folders refused, and a Nextcloud label marked under Syncthing refused at save; inside the unit only Documents writable, even to root
+- `T-P-1` done `playtest` 2026-11-16 at `1fa9784` · 401 without a token; the tool server sees only its code, its index and Documents, not Nextcloud, Syncthing, the other Syncthing folders, the env files, `settings.yml`, `/etc/shadow`, PHP sessions or `/mnt`; the embedding unit sees `bin/` and `model/` only, `/slots` 501; the indexer writes in its index folder only
+- `T-M-1` done `spec` 2026-11-16 at `1fa9784` · `tests/check_server.py` 125 of 125, writes, quiet hours and too-long passages included
+- `B-M-1` closed 2026-11-16 · four music scores past the model's 2048 tokens failed for good; a refused text is now embedded by its start, and a file failed by the embedding server retried, which indexed all four
+- `F-M-11` done `large` 2026-11-16 · `write_file` and `create_folder` in the folders marked writable per source, never a delete, never through a link or a hard link, never the last 2 GB; disk folders mounted read-write only when writable; receive-only Syncthing folders and the multimedia and backup shares stay read-only; the panel says what cannot be changed, Nextcloud's through its permissions
+- `F-P-1` done `medium` 2026-11-16 · index schedule as presets or cron, trimmed of quiet hours (01-06 by default) at which a run also stops; Index runs in the panel with its status, Run now and Rebuild
 - `F-M-9` done `large` 2026-11-11 · a Nextcloud source read over WebDAV on loopback, PROPFIND and GET only, shares included; an app password made in Nextcloud and pasted in the panel, with an optional other login for read-only shares; the indexer lists only folders whose ETag changed and keeps what Nextcloud does not list; `Notes` moved over from Local storage
-- `T-P-4` done `playtest` 2026-11-10 at `4a7b472` · the upgrade made Documents a Syncthing folder and Notes a local one, dropped `folders` and `whoopy_user`, kept the gateway token and its two folders; the panel listed Syncthing's three folders as choices and counted a 600 file as unreadable; `*.pdf` left out hid PDFs from list, read and a search whose index still held them; local off removed Notes; an unchanged save restarted nothing
 - `F-M-8` done `large` 2026-11-10 · one user, Syncthing and local sources with only/skip patterns, chosen in the config panel with a readability status per folder; links judged by where they lead; the old `folders` setting migrated on upgrade
 - `F-M-7` done `medium` 2026-11-10 · one Whoopy token, for a user and some of their folders, shown in the config panel with its address and a "New token" button; it searches that user's index, its folders only; no token is traced any more, so none reaches `yunohost-cli.log`
 - `F-M-5` done `large` 2026-11-09 · `search_documents` by meaning and keywords on an hourly index (llama-server built on the Pi, EmbeddingGemma 300M, numpy, FTS5): 288 files indexed in 31 min, 10 of 10 test documents in the top 5; healthchecks.io pinged; the model offered through Whoopy as `embeddinggemma` (Whoopy F-P-2)
 - `F-M-4` done `large` 2026-11-09 · list, find and read the author's folders through Whoopy; Claude Code and Hermes Agent each found and read a document with a key of their own
-- `T-M-1` done `spec` 2026-11-10 · `tests/check_server.py`: 66 of 66 pass on the locked wheels, search, indexer, filters and links to filtered paths included
