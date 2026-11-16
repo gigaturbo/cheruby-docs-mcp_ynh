@@ -121,6 +121,10 @@ class FakeNextcloud(BaseHTTPRequestHandler):
         exists false, the path may be missing but its folder must not be."""
         path = urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)
         DAV_LOG.append((self.command, self.headers.get("Depth", ""), path[len(self.base):].rstrip("/") or "/"))
+        if DAV.get("throttle"):
+            self.send_response(429)
+            self.end_headers()
+            return None
         if DAV["down"] or (DAV["fail"] and path.startswith(self.base + DAV["fail"])):
             self.send_response(503)
             self.end_headers()
@@ -517,6 +521,15 @@ def index_checks(base, env, first):
     yield "a wrong app password is said", out, "refused the app password" in out
     methods = {m for m, _, _ in DAV_LOG}
     yield "Nextcloud is only read", methods, methods <= {"PROPFIND", "GET"}
+    DAV_LOG.clear()
+    out = run_indexer({**env, "DOCS_NEXTCLOUD_PASSWORD": "wrong"})
+    yield "a refused password is not tried again", (DAV_LOG, out), DAV_LOG == [] and "not tried again" in out
+    run_indexer(env)
+    yield "a new one is", DAV_LOG[:1], DAV_LOG[:1] == [("PROPFIND", "0", "/Partage")]
+    DAV["throttle"] = True
+    out = run_indexer(env)
+    DAV["throttle"] = False
+    yield "a throttled server is said", out, "bruteforce:reset 127.0.0.1" in out
 
     hour = time.localtime().tm_hour
     quiet = {**env, "DOCS_QUIET_HOURS": f"{hour:02d}-{(hour + 1) % 24:02d}"}
@@ -539,6 +552,13 @@ def index_checks(base, env, first):
     with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
         rows = docs_index.embed(client, ["court", "♪ " * 1000, "autre"])
     yield "a text too long for the model is embedded by its start", rows.shape, rows.shape == (3, 64)
+    nc, DAV_LOG[:] = docs_index.Nextcloud(env["DOCS_NEXTCLOUD_URL"], "", "alice", "wrong"), []
+    for _ in range(3):
+        try:
+            nc.list("Partage", 0)
+        except docs_index.NextcloudError:
+            pass
+    yield "one refusal and the client asks no more", DAV_LOG, len(DAV_LOG) == 1
 
 
 def write_checks(base):

@@ -49,7 +49,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, Folders, Nextcloud, hidden, kept,
                         load_folders, needs_nextcloud, office_text, open_pdf)
-from docs_index import QUERY_PROMPT, connect
+from docs_index import QUERY_PROMPT, connect, read_status
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
 PORT = int(os.environ.get("DOCS_PORT", "8770"))
@@ -94,6 +94,10 @@ FOLDERS, RULES, WRITABLE = load_folders(os.environ["DOCS_FOLDERS_FILE"])
 USERS = load_users(os.environ, FOLDERS)
 NEXTCLOUD = Nextcloud.from_env(os.environ)
 needs_nextcloud(FOLDERS, NEXTCLOUD)
+# The indexer notes a refused password; it is not tried again until a new one restarts the server.
+if NEXTCLOUD and any(read_status(os.path.join(INDEX_DIR, user)).get("nextcloud_refused") == NEXTCLOUD.mark
+                     for user in FOLDERS):
+    NEXTCLOUD.refused = True
 
 # One line per embedding request would fill the journal.
 logging.getLogger("httpx2").setLevel(logging.WARNING)

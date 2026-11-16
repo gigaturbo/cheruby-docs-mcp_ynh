@@ -8,6 +8,7 @@ NextcloudError, an OSError.
 """
 
 import errno
+import hashlib
 import io
 import json
 import logging
@@ -170,9 +171,19 @@ def quote(path):
     return "/".join(urllib.parse.quote(p, safe="") for p in path.split("/") if p)
 
 
+REFUSED = "Nextcloud refused the app password; it is not tried again until a new one is saved in the config panel."
+# Nextcloud counts failed logins per address, and the units all come from 127.0.0.1.
+THROTTLED = ("Nextcloud is holding back logins from this server after failed ones; "
+             "as root, occ security:bruteforce:reset 127.0.0.1 clears it.")
+
+
 class Nextcloud:
     """One Nextcloud account over WebDAV. It sends PROPFIND and GET, and PUT
     and MKCOL for Folders.write only: never DELETE, MOVE or COPY.
+
+    After one refusal it sends nothing more: each failed login counts against
+    every app on loopback. refused carries that across runs through mark, a
+    short hash of the password, kept in the status file by the indexer.
 
     url is the account's WebDAV root as reached, such as
     https://127.0.0.1/remote.php/dav/files/<user>; host, when set, is the name
@@ -184,6 +195,17 @@ class Nextcloud:
         self.client = httpx2.Client(base_url=url.rstrip("/") + "/", auth=(user, password), timeout=60,
                                     headers={"Host": host} if host else {})
         self.extensions = {"sni_hostname": host} if host else {}
+        self.mark = hashlib.sha256(password.encode()).hexdigest()[:16]
+        self.refused = False
+
+    def answer(self, resp):
+        """resp, or NextcloudRefused or NextcloudError for a refused password or a throttled server."""
+        if resp.status_code == 401:
+            self.refused = True
+            raise NextcloudRefused(REFUSED)
+        if resp.status_code == 429:
+            raise NextcloudError(THROTTLED)
+        return resp
 
     @classmethod
     def from_env(cls, environ):
@@ -195,15 +217,15 @@ class Nextcloud:
 
     def list(self, path, depth):
         """[Entry] of path then, at depth 1, what it holds; None when it does not exist."""
+        if self.refused:
+            raise NextcloudRefused(REFUSED)
         try:
             resp = self.client.request("PROPFIND", quote(path), content=PROPFIND, extensions=self.extensions,
                                        headers={"Depth": str(depth), "Content-Type": "application/xml"})
         except httpx2.HTTPError as e:
             raise NextcloudError(f"Nextcloud did not answer: {e}") from None
-        if resp.status_code == 404:
+        if self.answer(resp).status_code == 404:
             return None
-        if resp.status_code == 401:
-            raise NextcloudRefused("Nextcloud refused the app password.")
         if resp.status_code != 207:
             raise NextcloudError(f"Nextcloud answered {resp.status_code}.")
         try:
@@ -229,10 +251,12 @@ class Nextcloud:
 
     def get(self, path, limit):
         """The bytes of a file, refused past limit."""
+        if self.refused:
+            raise NextcloudRefused(REFUSED)
         data = bytearray()
         try:
             with self.client.stream("GET", quote(path), extensions=self.extensions) as resp:
-                if resp.status_code == 404:
+                if self.answer(resp).status_code == 404:
                     raise FileNotFoundError(path)
                 if resp.status_code != 200:
                     raise NextcloudError(f"Nextcloud answered {resp.status_code}.")
@@ -246,13 +270,13 @@ class Nextcloud:
 
     def send(self, method, path, data, expected):
         """The status of a PUT or MKCOL, one of expected; a refusal is a ValueError."""
+        if self.refused:
+            raise NextcloudRefused(REFUSED)
         try:
             resp = self.client.request(method, quote(path), content=data, extensions=self.extensions)
         except httpx2.HTTPError as e:
             raise NextcloudError(f"Nextcloud did not answer: {e}") from None
-        if resp.status_code == 401:
-            raise NextcloudRefused("Nextcloud refused the app password.")
-        if resp.status_code == 403:
+        if self.answer(resp).status_code == 403:
             raise ValueError("Nextcloud does not let the app's account change it.")
         if resp.status_code not in expected:
             raise NextcloudError(f"Nextcloud answered {resp.status_code}.")

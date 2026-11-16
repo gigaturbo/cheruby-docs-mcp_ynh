@@ -205,14 +205,19 @@ def index_file(db, client, item, f, digest):
     return status
 
 
+def read_status(base):
+    """<base>.status.json, or {} when missing or unreadable."""
+    try:
+        with open(base + ".status.json", encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
 def write_status(base, **fields):
     """Merge fields into <base>.status.json in one step."""
     path = base + ".status.json"
-    try:
-        with open(path, encoding="utf-8") as f:
-            status = json.load(f)
-    except (OSError, ValueError):
-        status = {}
+    status = read_status(base)
     status.update(fields)
     with open(path + ".tmp", "w", encoding="utf-8") as f:
         json.dump(status, f)
@@ -342,6 +347,10 @@ def main():
     nextcloud = Nextcloud.from_env(os.environ)
     needs_nextcloud(users, nextcloud)
     index_dir = os.environ["DOCS_INDEX_DIR"]
+    # A password refused before is not tried again: each try counts against loopback.
+    if nextcloud and any(read_status(os.path.join(index_dir, u)).get("nextcloud_refused") == nextcloud.mark
+                         for u in users):
+        nextcloud.refused = True
     quiet = os.environ.get("DOCS_QUIET_HOURS", "")
     try:
         os.remove(os.path.join(index_dir, "run-now"))
@@ -366,6 +375,7 @@ def main():
                 print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files")
                       + (f", paused for the quiet hours {quiet}" if paused else ""), flush=True)
                 write_status(base, ended=time.strftime("%Y-%m-%d %H:%M"),
+                             nextcloud_refused=nextcloud.mark if nextcloud and nextcloud.refused else None,
                              result="failed" if unreachable else "paused" if paused else "done",
                              run=counts, error=f"Nextcloud did not list {', '.join(sorted(unreachable))}." if unreachable else None)
                 if unreachable:

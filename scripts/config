@@ -55,6 +55,7 @@ docs_check_nextcloud() {
     case $code in
         207 | 000) ;;
         401) echo "Nextcloud refuses this app password for $nc_account." ;;
+        429) echo "Nextcloud holds back logins from this server after failed ones: as root, occ security:bruteforce:reset 127.0.0.1, then save again." ;;
         404) echo "Nextcloud has no account $nc_account." ;;
         *) echo "Nextcloud answered $code for $nc_account." ;;
     esac
@@ -135,12 +136,17 @@ ynh_app_config_show() {
             nc_password=$(ynh_app_setting_get --key=nextcloud_password)
             if [ -z "$nc_password" ]; then
                 found="no app password is saved: make one in Nextcloud and paste it above."
+            # Refused before, by the indexer's last run: each new try counts against loopback.
+            elif [ "$(jq -r '.nextcloud_refused // ""' "$data_dir/$docs_user.status.json" 2>/dev/null)" \
+                = "$(printf '%s' "$nc_password" | sha256sum | cut -c1-16)" ]; then
+                found="Nextcloud refused the app password: make another and paste it above."
             else
                 read -r code perms < <(docs_nextcloud_code "${path#nextcloud:}" "$nc_password")
                 case $code in
                     207) found="can be read." ;;
                     404) found="no such folder in the account of $nc_account." ;;
                     401) found="Nextcloud refuses the app password: make another and paste it above." ;;
+                    429) found="Nextcloud holds back logins from this server after failed ones: as root, occ security:bruteforce:reset 127.0.0.1." ;;
                     *) found="Nextcloud does not answer." ;;
                 esac
             fi
