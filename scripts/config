@@ -159,7 +159,9 @@ ynh_app_config_show() {
         group=$(stat -c %G "$path")
         status[$source]+="- **$label**: "
         # A find that fails, as for a path the app cannot reach, reports nothing on stdout.
-        if ! found=$(setpriv --reuid="$app" --regid="$app" --groups="$group" \
+        # From /: find fails when it starts in a folder the app cannot enter, as
+        # YunoHost's root-only working folder.
+        if ! found=$(cd / && setpriv --reuid="$app" --regid="$app" --groups="$group" \
             find "$path" \( -name '.*' -prune \) -o \( ! -readable -o -type d ! -executable \) -print 2>/dev/null); then
             status[$source]+="could not be checked: the app may not reach it, or the group $group may not read part of it."
         elif [ -z "$found" ]; then
@@ -173,7 +175,7 @@ ynh_app_config_show() {
             fi
         fi
         if [ -n "${folder_writable[$label]:-}" ]; then
-            found=$(setpriv --reuid="$app" --regid="$app" --groups="$group" \
+            found=$(cd / && setpriv --reuid="$app" --regid="$app" --groups="$group" \
                 find "$path" \( -name '.*' -prune \) -o ! -writable -print 2>/dev/null | wc -l)
             if [ "$found" -eq 0 ]; then
                 status[$source]+=" Writable: the app can change every file."
