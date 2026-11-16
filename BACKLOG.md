@@ -84,14 +84,11 @@ seven queries all in the top 5, and a search still answers in a few seconds.
 
 ## Tests
 
-### T-P-5 · Nextcloud folders are read through Nextcloud only
-
-`todo` `playtest` `filed 2026-11-10`
-
-The client stops after one refusal and the panel skips a known-refused password (B-M-2). Last result at `3df4e18` on 2026-11-16: pass. Owed as well: after a revoke, `occ security:bruteforce:attempts 127.0.0.1` stays at 1 or 2 across an index run and two panel opens.
+Nothing open.
 
 ## Closed
 
+- `T-P-5` done `playtest` 2026-11-16 at `071063a` · on 0.6.1, a revoked app password: one index run noted it refused and asked Nextcloud nothing more, the panel said it was refused, Nextcloud's failed logins from 127.0.0.1 stayed at 0; a new password saved: the mark cleared, Notes read and indexed, the panel says it can be read and is writable; the new password in no new line of `yunohost-cli.log`, the save's operation log or the journal
 - `T-P-1` done `playtest` 2026-11-16 at `bf59279` · on 0.6.1: 401 without a token; Nextcloud, Syncthing, the other Syncthing folders, `docs.env` and `/etc/shadow` out of the tool server's reach; its code and index read-only even to root; the embedding unit sees `bin/` and `model/` only, `/slots` 501; an index run without the old `RuntimeMaxSec` warning
 - `B-M-2` closed 2026-11-16 · a revoked app password was tried again by the panel, the indexer and the server until Nextcloud held back every login from loopback; now one refusal stops the tries until a new password, and a 429 is named
 - `B-P-1` closed 2026-11-16 · `RuntimeMaxSec` is ignored for a oneshot unit, so a stuck run blocked the timer; `TimeoutStartSec=6h` fails it, checked on a throwaway unit
