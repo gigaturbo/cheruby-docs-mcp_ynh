@@ -30,6 +30,8 @@ allowed that model only. Before using it, it embeds a fixed set of about 20
 passages on both servers and refuses the remote unless every pair has a
 cosine of 0.995 or more, since search still embeds queries on the Pi. When
 Whoopy cannot be reached, the run goes on locally. Never used by the timer.
+The remote must serve the model chosen in the panel (F-P-2): Ollama has
+`embeddinggemma` and `qwen3-embedding:0.6b`, not jina-embeddings-v5-text-nano.
 
 ### F-P-2 · choice of embedding model in the panel
 
