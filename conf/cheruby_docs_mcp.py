@@ -68,9 +68,10 @@ MAX_RESULTS = 10
 MAX_WRITE_BYTES = 2_000_000
 RRF_K = 60
 # Measured on the Pi (F-M-12): the 30 best of the fusion, each by its start,
-# put the expected file in the top 5 for every test query in about 4 s.
+# put the expected file in the top 5 for every test query in about 4 s. A
+# passage starts with its file name and headings (docs_index.passages).
 RERANK_CANDIDATES = 30
-RERANK_CHARS = 300
+RERANK_CHARS = 360
 RERANK_TIMEOUT_S = 20
 
 
@@ -339,7 +340,7 @@ async def embed_query(query):
 async def rerank(query, candidates):
     """Indexes of candidates, (path, page, mtime_ns, text) rows, most relevant to
     the query first; None when the reranking server does not answer."""
-    docs = [f"{os.path.basename(path)}\n{text[:RERANK_CHARS]}" for path, _, _, text in candidates]
+    docs = [text[:RERANK_CHARS] for _, _, _, text in candidates]
     try:
         async with httpx2.AsyncClient(timeout=RERANK_TIMEOUT_S) as client:
             resp = await client.post(f"{RERANK_URL}/v1/rerank", json={"query": query, "documents": docs})

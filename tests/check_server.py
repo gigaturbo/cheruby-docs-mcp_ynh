@@ -288,7 +288,8 @@ def build(base):
     with zipfile.ZipFile(f"{docs}/lettre.docx", "w") as z:
         z.writestr("word/document.xml",
                    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
-                   "<w:body><w:p><w:r><w:t>Madame, </w:t></w:r><w:r><w:t>Monsieur</w:t></w:r></w:p>"
+                   '<w:body><w:p><w:pPr><w:pStyle w:val="Titre1"/></w:pPr><w:r><w:t>Résiliation</w:t></w:r></w:p>'
+                   "<w:p><w:r><w:t>Madame, </w:t></w:r><w:r><w:t>Monsieur</w:t></w:r></w:p>"
                    "<w:p><w:r><w:t>Objet : préavis</w:t></w:r></w:p></w:body></w:document>")
     os.symlink(f"{base}/secret.md", f"{docs}/escape.md")
     os.symlink(".stversions/old.md", f"{docs}/vieux.md")
@@ -410,6 +411,9 @@ CHECKS = [
     ("PDF read by page", lambda: tool("read_file", path="Documents/bail.pdf"), ok_with("1 pages", "Loyer augmente")),
     ("PDF page out of range", lambda: tool("read_file", path="Documents/bail.pdf", page=3), error_with("out of range")),
     ("docx paragraphs", lambda: tool("read_file", path="Documents/lettre.docx"), ok_with("Madame, Monsieur\nObjet : préavis")),
+    ("docx headings as Markdown", lambda: tool("read_file", path="Documents/lettre.docx"), ok_with("# Résiliation\nMadame")),
+    ("a short file is one passage, after its name, its headings kept", lambda: tool("search_documents", query="préavis"),
+     ok_with("---\nlettre.docx\nRésiliation\nMadame, Monsieur")),
     ("image comes back as a picture", lambda: tool("read_file", path="Documents/scan.png"), lambda r: r == ("ok", "image/png")),
     ("folder is not a file", lambda: tool("read_file", path="Documents/Factures"), error_with("is a folder")),
     ("search finds a PDF page", lambda: tool("search_documents", query="loyer augmente"),
@@ -426,7 +430,7 @@ CHECKS = [
      lambda r: r[0] == "ok" and r[1].split("\n--- ")[1].startswith("Notes/courses.md")),
     ("the reranker gets each candidate's file name and start", lambda: reranked(query="loyer augmente"),
      lambda r: r[2] and any(d.startswith("bail.pdf\nLoyer augmente") for d in r[2])
-     and all(len(d.split("\n", 1)[1]) <= 300 for d in r[2])),
+     and all(len(d) <= 360 for d in r[2])),
     ("the reranker sees only the token's folders", lambda: reranked(token=GATEWAY, query="loyer augmente tomates"),
      lambda r: r[2] and not any(d.startswith(("bail.pdf", "lettre.docx")) or "Loyer augmente" in d for d in r[2])),
     ("search goes on without the reranker", lambda: reranked(down=True, query="loyer augmente"),
@@ -591,7 +595,8 @@ def index_checks(base, env, first):
     db = docs_index.connect(f"{base}/index/alice.work.sqlite")
     with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
         counts, _ = docs_index.index_user(db, users["alice"], rules["alice"], docs_index.Nextcloud.from_env(env),
-                                          client, env["DOCS_EMBED_MODEL"], f"{base}/index/alice", quiet["DOCS_QUIET_HOURS"])
+                                          client, f"{env['DOCS_EMBED_MODEL']}/passages-{docs_index.PASSAGES_VERSION}",
+                                          f"{base}/index/alice", quiet["DOCS_QUIET_HOURS"])
     db.close()
     yield "a run stops when the quiet hours begin, its index kept", counts, \
         counts == {"paused": 1} and statuses(base).get("Notes/liste.md") == "indexed"
@@ -605,6 +610,26 @@ def index_checks(base, env, first):
         except docs_index.NextcloudError:
             pass
     yield "one refusal and the client asks no more", DAV_LOG, len(DAV_LOG) == 1
+
+    db = docs_index.connect(f"{base}/index/alice.sqlite", read_only=True)
+    model = dict(db.execute("SELECT key, value FROM meta"))["model"]
+    db.close()
+    yield "how passages are cut is part of the index's model", model, model == "fake-64/passages-2"
+    note = "intro\n\n## lessive\n- savon\n- soude\n\n## version laine :\n100g savon\n\n4L eau\n" \
+           "# Shell\n```sh\n# not a heading\n```\n### Sub\ntext"
+    cut = docs_index.passages(note, "Lessive.md")
+    yield "a short note stays one passage, its headings as lines", cut, cut == [
+        "Lessive.md\nintro\nlessive\n- savon - soude\nversion laine :\n100g savon\n4L eau\nShell\n"
+        "```sh # not a heading ```\nSub\ntext"]
+    size, docs_index.PASSAGE_CHARS = docs_index.PASSAGE_CHARS, 40
+    cut = docs_index.passages(note, "Lessive.md")
+    docs_index.PASSAGE_CHARS = size
+    yield "a longer one is cut at its headings, each passage with its trail", cut, cut == [
+        "Lessive.md\nintro", "Lessive.md > lessive\n- savon - soude", "Lessive.md > version laine :\n100g savon\n4L eau",
+        "Lessive.md > Shell\n```sh # not a heading ```\nSub\ntext"]
+    cut = docs_index.passages(" ".join(f"Phrase {n} sur le jardin." for n in range(300)), "long.md")
+    yield "a long paragraph cut near the passage size", [len(p) for p in cut], \
+        len(cut) > 5 and all(len(p) <= docs_index.PASSAGE_CHARS + 20 for p in cut)
 
 
 def write_checks(base):

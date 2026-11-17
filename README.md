@@ -11,9 +11,10 @@ writable. Meant to sit behind an MCP gateway.
 - `list_folder(path)`: a folder's subfolders, then its files with size and date.
 - `find_files(query, path)`: files whose path holds every word, ignoring case and accents.
 - `read_file(path, ...)`: text and Markdown by character range, PDF by page,
-  Word and OpenDocument, and images as pictures.
+  Word and OpenDocument with their headings as Markdown `#` lines, and
+  images as pictures.
 - `search_documents(query, path, after, before, limit)`: the best passage of
-  each matching file, found by meaning and keywords, then ordered by how
+  each matching file, cut at the file's headings and starting with them, found by meaning and keywords, then ordered by how
   well it answers the query. Searches an index refreshed on the schedule
   chosen in the panel.
 - `write_file(path, content)`: creates a text file, with its missing folders,

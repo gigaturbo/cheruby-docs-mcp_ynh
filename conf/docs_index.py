@@ -37,6 +37,7 @@ ended, how it ended, what it did, and the index's files by status.
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import sys
 import time
@@ -52,9 +53,13 @@ from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, Folders, N
 QUERY_PROMPT = "task: search result | query: "
 DOC_PROMPT = "title: {title} | text: {text}"
 
-# About 400 tokens, well under the model's 2048 even at one token a character.
-PASSAGE_CHARS = 1600
-OVERLAP_CHARS = 200
+# About 250 tokens: a section of a note stays its own passage instead of an
+# average of its neighbours. Well under the model's 2048 tokens.
+PASSAGE_CHARS = 900
+OVERLAP_CHARS = 150
+# Joins the model in meta: a change to how passages are cut redoes the index.
+PASSAGES_VERSION = 2
+HEADING = re.compile(r"^(#{1,6})\s+(.+?)[\s#]*$")
 MAX_FILE_CHARS = 300_000
 MAX_FETCH_BYTES = 64_000_000
 BATCH = 8
@@ -93,9 +98,9 @@ def folders_key(folders):
     return json.dumps(folders, sort_keys=True)
 
 
-def passages(text):
-    """Text cut into passages of about PASSAGE_CHARS, overlapping, cut at a sentence or a word."""
-    text = " ".join(text.split())
+def split_long(text):
+    """A paragraph of folded text cut into pieces of about PASSAGE_CHARS,
+    overlapping, at a sentence or else a word."""
     out, start = [], 0
     while start < len(text):
         end = start + PASSAGE_CHARS
@@ -110,6 +115,74 @@ def passages(text):
         space = text.find(" ", cut - OVERLAP_CHARS, cut)
         start = cut - OVERLAP_CHARS if space < 0 else space + 1
     return [p for p in out if p]
+
+
+def sections(text):
+    """[(headings above it, its text)] of a text: a Markdown heading line opens
+    a section, outside code fences, whose "# comment" lines are not headings."""
+    out, trail, lines, fenced = [], [], [], False
+    for line in text.splitlines():
+        if line.lstrip().startswith(("```", "~~~")):
+            fenced = not fenced
+        heading = None if fenced else HEADING.match(line)
+        if heading:
+            out.append((trail, "\n".join(lines)))
+            level = len(heading[1])
+            trail, lines = [h for h in trail if h[0] < level] + [(level, heading[2])], []
+        else:
+            lines.append(line)
+    out.append((trail, "\n".join(lines)))
+    return [([h for _, h in t], body) for t, body in out if body.strip()]
+
+
+def paragraphs(sections, depth):
+    """The text of sections, one folded paragraph a line, with each heading
+    below depth, the first time it appears, as a line of its own."""
+    lines, shown = [], []
+    for trail, body in sections:
+        for n in range(depth, len(trail)):
+            if shown[:n + 1] != trail[:n + 1]:
+                lines.append(trail[n])
+        shown = trail
+        lines += [" ".join(p.split()) for p in re.split(r"\n\s*\n", body) if p.strip()]
+    return lines
+
+
+def passages(text, title):
+    """Text cut into passages of up to about PASSAGE_CHARS, each starting with a
+    line "<title> > <heading> > <subheading>". A file or a section that fits stays
+    whole, so a short note keeps its context; a longer one is cut at its
+    subheadings, and a section without any at its paragraphs."""
+    out = []
+
+    def cut(trail, group):
+        depth = len(trail)
+        head = " > ".join([title, *trail])
+        lines = paragraphs(group, depth)
+        deeper = [s for s in group if len(s[0]) > depth]
+        if len("\n".join(lines)) <= PASSAGE_CHARS or not deeper:
+            chunk = ""
+            for piece in (p for line in lines for p in split_long(line)):
+                if chunk and len(chunk) + 1 + len(piece) > PASSAGE_CHARS:
+                    out.append(f"{head}\n{chunk}")
+                    chunk = ""
+                chunk = f"{chunk}\n{piece}" if chunk else piece
+            if chunk:
+                out.append(f"{head}\n{chunk}")
+            return
+        # Text before the first subheading, then each subheading with what it holds.
+        runs = []
+        for section in group:
+            key = section[0][:depth + 1]
+            if runs and runs[-1][0] == key:
+                runs[-1][1].append(section)
+            else:
+                runs.append((key, [section]))
+        for key, run in runs:
+            cut(key, run)
+
+    cut([], sections(text))
+    return out
 
 
 def file_pages(f, suffix):
@@ -193,7 +266,7 @@ def index_file(db, client, item, f, digest):
             pages, empty = file_pages(f, suffix)
         except Exception as e:  # any reader error: the file is marked, the run goes on
             pages, status, error = [], "failed", f"{type(e).__name__}: {e}"[:300]
-        rows = [(page, text) for page, whole in pages for text in passages(whole)]
+        rows = [(page, text) for page, whole in pages for text in passages(whole, os.path.basename(shown))]
         if status == "indexed" and not rows:
             status = "needs_ocr" if suffix == ".pdf" else "empty"
     vectors = embed(client, [DOC_PROMPT.format(title=os.path.basename(shown), text=t) for _, t in rows]) if rows else []
@@ -370,7 +443,7 @@ def main():
             write_status(base, started=time.strftime("%Y-%m-%d %H:%M"), ended=None, result="running", run={}, error=None)
             try:
                 counts, unreachable = index_user(db, folders, rules[user], nextcloud, client,
-                                                 os.environ["DOCS_EMBED_MODEL"], base, quiet)
+                                                 f"{os.environ['DOCS_EMBED_MODEL']}/passages-{PASSAGES_VERSION}", base, quiet)
                 paused = counts.pop("paused", 0)
                 print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files")
                       + (f", paused for the quiet hours {quiet}" if paused else ""), flush=True)
