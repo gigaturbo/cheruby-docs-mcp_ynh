@@ -45,6 +45,78 @@ EMBEDDED = []
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 
+def write_documents(docs):
+    """One small file of each format document_text reads, besides docx, each with its own words."""
+    ns = 'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" ' \
+         'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' \
+         'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+    rels = '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">{}</Relationships>'
+    shape = '<p:sp><p:nvSpPr><p:cNvPr id="1" name="t"/><p:cNvSpPr/><p:nvPr>{}</p:nvPr></p:nvSpPr>' \
+            '<p:txBody><a:p><a:r><a:t>{}</a:t></a:r></a:p></p:txBody></p:sp>'
+    with zipfile.ZipFile(f"{docs}/cours.pptx", "w") as z:
+        # Listed second, shown first: the order is the presentation's, not the file names'.
+        z.writestr("ppt/presentation.xml", f'<p:presentation {ns}><p:sldIdLst><p:sldId id="256" r:id="rId2"/>'
+                   '<p:sldId id="257" r:id="rId1"/></p:sldIdLst></p:presentation>')
+        z.writestr("ppt/_rels/presentation.xml.rels", rels.format(
+            '<Relationship Id="rId1" Target="slides/slide1.xml"/><Relationship Id="rId2" Target="/ppt/slides/slide2.xml"/>'))
+        z.writestr("ppt/slides/slide2.xml", f'<p:sld {ns}><p:cSld><p:spTree>'
+                   + shape.format('<p:ph type="ctrTitle"/>', "Tournesols") + shape.format("", "Semer en avril")
+                   + "</p:spTree></p:cSld></p:sld>")
+        z.writestr("ppt/slides/slide1.xml", f'<p:sld {ns}><p:cSld><p:spTree>'
+                   + shape.format("", "Arroser le soir") + "</p:spTree></p:cSld></p:sld>")
+    odf = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" ' \
+          'xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" ' \
+          'xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" ' \
+          'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" ' \
+          'xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0"'
+    with zipfile.ZipFile(f"{docs}/mimosa.odp", "w") as z:
+        z.writestr("content.xml", f'<office:document-content {odf}><office:body><office:presentation>'
+                   '<draw:page><draw:frame presentation:class="title"><draw:text-box><text:p>Mimosa</text:p>'
+                   '</draw:text-box></draw:frame><draw:frame><draw:text-box><text:p>Tailler après la floraison</text:p>'
+                   '</draw:text-box></draw:frame><presentation:notes><draw:frame><draw:text-box>'
+                   '<text:p>note secrete orateur</text:p></draw:text-box></draw:frame></presentation:notes></draw:page>'
+                   '</office:presentation></office:body></office:document-content>')
+    with zipfile.ZipFile(f"{docs}/budget.xlsx", "w") as z:
+        z.writestr("xl/workbook.xml", '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+                   'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+                   '<sheet name="Potager" sheetId="1" r:id="rId1"/></sheets></workbook>')
+        z.writestr("xl/_rels/workbook.xml.rels", rels.format(
+            '<Relationship Id="rId1" Target="worksheets/sheet1.xml"/><Relationship Id="rId9" Target="sharedStrings.xml"/>'))
+        z.writestr("xl/sharedStrings.xml", '<sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                   '<si><t>Artichauts</t></si><si><r><t>gra</t></r><r><t>ines</t></r></si></sst>')
+        z.writestr("xl/worksheets/sheet1.xml", '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+                   '<sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1"><v>12.5</v></c>'
+                   '<c r="C1" t="inlineStr"><is><t>euros</t></is></c></row><row r="2"/>'
+                   '<row r="3"><c r="A3" t="s"><v>1</v></c></row></sheetData></worksheet>')
+    with zipfile.ZipFile(f"{docs}/rhubarbe.ods", "w") as z:
+        z.writestr("content.xml", f'<office:document-content {odf}><office:body><office:spreadsheet>'
+                   '<table:table table:name="Récolte"><table:table-row><table:table-cell><text:p>Rhubarbe</text:p>'
+                   '</table:table-cell><table:table-cell table:number-columns-repeated="3"/><table:table-cell>'
+                   '<text:p>3 kg</text:p></table:table-cell></table:table-row>'
+                   '<table:table-row table:number-rows-repeated="1000000"><table:table-cell/></table:table-row>'
+                   '</table:table></office:spreadsheet></office:body></office:document-content>')
+    with zipfile.ZipFile(f"{docs}/lavande.epub", "w") as z:
+        z.writestr("mimetype", "application/epub+zip")
+        z.writestr("META-INF/container.xml", '<container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
+                   '<rootfiles><rootfile full-path="OEBPS/livre.opf"/></rootfiles></container>')
+        z.writestr("OEBPS/livre.opf", '<package xmlns="http://www.idpf.org/2007/opf"><manifest>'
+                   '<item id="c1" href="Texte/chap%201.xhtml"/><item id="c2" href="Texte/chap2.xhtml"/></manifest>'
+                   '<spine><itemref idref="c2"/><itemref idref="c1"/></spine></package>')
+        z.writestr("OEBPS/Texte/chap2.xhtml", '<html><head><title>titre cache</title><style>p {}</style></head>'
+                   '<body><h1>La lavande</h1><p>Elle aime le soleil&nbsp;et   la sécheresse.</p></body></html>')
+        z.writestr("OEBPS/Texte/chap 1.xhtml", '<html><body><h2>Récolte</h2><p>Couper en juillet.</p></body></html>')
+    with open(f"{docs}/glycine.eml", "w") as f:
+        f.write("From: Jardin <jardin@example.org>\nTo: alice@example.org\nSubject: =?utf-8?q?Glycine_=C3=A0_tailler?=\n"
+                "Date: Mon, 16 Nov 2026 09:00:00 +0100\nMIME-Version: 1.0\n"
+                'Content-Type: multipart/mixed; boundary="b"\n\n--b\nContent-Type: multipart/alternative; boundary="c"\n\n'
+                "--c\nContent-Type: text/plain; charset=utf-8\n\nTailler la glycine en août.\n"
+                "--c\nContent-Type: text/html; charset=utf-8\n\n<p>version html</p>\n--c--\n"
+                '--b\nContent-Type: application/pdf\nContent-Disposition: attachment; filename="plan.pdf"\n'
+                "Content-Transfer-Encoding: base64\n\nJVBERg==\n--b--\n")
+    with open(f"{docs}/abime.xlsx", "wb") as f:
+        f.write(b"not a zip")
+
+
 def tiny_pdf(text):
     """A one-page PDF whose page shows text, with a correct cross-reference table."""
     stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
@@ -291,6 +363,7 @@ def build(base):
                    '<w:body><w:p><w:pPr><w:pStyle w:val="Titre1"/></w:pPr><w:r><w:t>Résiliation</w:t></w:r></w:p>'
                    "<w:p><w:r><w:t>Madame, </w:t></w:r><w:r><w:t>Monsieur</w:t></w:r></w:p>"
                    "<w:p><w:r><w:t>Objet : préavis</w:t></w:r></w:p></w:body></w:document>")
+    write_documents(docs)
     os.symlink(f"{base}/secret.md", f"{docs}/escape.md")
     os.symlink(".stversions/old.md", f"{docs}/vieux.md")
     os.symlink("Brouillons", f"{docs}/Pub")
@@ -394,7 +467,7 @@ CHECKS = [
     ("nor read through", lambda: tool("read_file", path="Documents/Pub/draft.md"), error_with("not found")),
     ("a link to a filtered file is not read", lambda: tool("read_file", path="Documents/alias.md"), error_with("not found")),
     ("nor found", lambda: tool("find_files", query="alias"), lambda r: r == ("ok", "Nothing matches 'alias'.")),
-    ("nor the folder link", lambda: tool("find_files", query="pub"), lambda r: r == ("ok", "Nothing matches 'pub'.")),
+    ("nor the folder link", lambda: tool("find_files", query="pub"), lambda r: r[0] == "ok" and "Documents/Pub" not in r[1]),
     ("filter with a path ignores case", lambda: tool("read_file", path="Documents/Factures/Copie.TMP.md"),
      error_with("not found")),
     ("find leaves filtered out", lambda: tool("find_files", query="draft"), lambda r: r == ("ok", "Nothing matches 'draft'.")),
@@ -414,6 +487,24 @@ CHECKS = [
     ("docx headings as Markdown", lambda: tool("read_file", path="Documents/lettre.docx"), ok_with("# Résiliation\nMadame")),
     ("a short file is one passage, after its name, its headings kept", lambda: tool("search_documents", query="préavis"),
      ok_with("---\nlettre.docx\nRésiliation\nMadame, Monsieur")),
+    ("pptx slides in the deck's order, titles as headings", lambda: tool("read_file", path="Documents/cours.pptx"),
+     ok_with("# Slide 1: Tournesols\nSemer en avril\n# Slide 2\nArroser le soir")),
+    ("odp slides without the speaker notes", lambda: tool("read_file", path="Documents/mimosa.odp"),
+     lambda r: ok_with("# Slide 1: Mimosa\nTailler après la floraison")(r) and "secrete" not in r[1]),
+    ("xlsx rows under the sheet's name", lambda: tool("read_file", path="Documents/budget.xlsx"),
+     lambda r: r == ("ok", "# Potager\nArtichauts\t12.5\teuros\ngraines")),
+    ("ods rows, repeated empty ones left out", lambda: tool("read_file", path="Documents/rhubarbe.ods"),
+     lambda r: r == ("ok", "# Récolte\nRhubarbe\t3 kg")),
+    ("epub chapters in reading order, without tags", lambda: tool("read_file", path="Documents/lavande.epub"),
+     lambda r: r == ("ok", "# La lavande\nElle aime le soleil et la sécheresse.\n## Récolte\nCouper en juillet.")),
+    ("eml headers, attachments and plain text", lambda: tool("read_file", path="Documents/glycine.eml"),
+     lambda r: ok_with("# Glycine à tailler\nFrom: Jardin <jardin@example.org>", "Attachments: plan.pdf",
+                       "Tailler la glycine en août.")(r) and "version html" not in r[1]),
+    ("a damaged document is named", lambda: tool("read_file", path="Documents/abime.xlsx"), error_with("damaged")),
+    ("search finds a slide", lambda: tool("search_documents", query="tournesols"), ok_with("--- Documents/cours.pptx")),
+    ("search finds a spreadsheet row", lambda: tool("search_documents", query="rhubarbe"), ok_with("--- Documents/rhubarbe.ods")),
+    ("search finds a book", lambda: tool("search_documents", query="lavande juillet"), ok_with("--- Documents/lavande.epub")),
+    ("search finds an email", lambda: tool("search_documents", query="glycine"), ok_with("--- Documents/glycine.eml")),
     ("image comes back as a picture", lambda: tool("read_file", path="Documents/scan.png"), lambda r: r == ("ok", "image/png")),
     ("folder is not a file", lambda: tool("read_file", path="Documents/Factures"), error_with("is a folder")),
     ("search finds a PDF page", lambda: tool("search_documents", query="loyer augmente"),
@@ -493,7 +584,7 @@ def index_checks(base, env, first):
     yield "prompts sent", EMBEDDED[:1], EMBEDDED and EMBEDDED[0].startswith("title: ") \
         and any(t.startswith("task: search result | query: ") for t in EMBEDDED)
     second = run_indexer(env)
-    yield "re-run drops what the filters leave out", second, "alice: 5 dropped, 8 unchanged" in second
+    yield "re-run drops what the filters leave out", second, "alice: 5 dropped, 15 unchanged" in second
     files = statuses(base)
     yield "filtered files leave the index", sorted(files), \
         not any("Brouillons" in p or "Copie" in p or "photo" in p or "alias" in p for p in files)

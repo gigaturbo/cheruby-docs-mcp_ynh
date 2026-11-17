@@ -48,8 +48,9 @@ import uvicorn
 from mcp.server.mcpserver import Context, Image, MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 
-from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, Folders, Nextcloud, hidden, kept,
-                        load_folders, needs_nextcloud, office_text, open_pdf)
+from docs_files import (IMAGE_FORMATS, TEXT_SUFFIXES, Folders, Nextcloud, hidden, kept, load_folders,
+                        needs_nextcloud)
+from docs_text import DOCUMENT_SUFFIXES, document_text, open_pdf
 from docs_index import QUERY_PROMPT, connect, read_status
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
@@ -272,15 +273,16 @@ def read_item(tree, item, suffix, page, pages, offset, max_chars):
             return Image(data=f.read(), format=IMAGE_FORMATS[suffix])
         if suffix == ".pdf":
             return pdf_text(f, page, pages)
-        if suffix in OFFICE_MEMBERS:
-            return cut(office_text(f, suffix), offset, max_chars)
+        if suffix in DOCUMENT_SUFFIXES:
+            return cut(document_text(f, suffix), offset, max_chars)
         return cut(f.read().decode("utf-8", errors="replace"), offset, max_chars)
 
 
 @mcp.tool()
 async def read_file(ctx: Context, path: str, page: int = 1, pages: int = 5,
                     offset: int = 0, max_chars: int = 8000) -> str | Image:
-    """Read one file: text, Markdown, PDF, Word (.docx), OpenDocument (.odt) or an image.
+    """Read one file: text, Markdown, PDF, Word, Excel, PowerPoint, OpenDocument,
+    EPUB, email (.eml) or an image.
 
     PDFs are read by page: page is the first one, pages how many (1 to 20).
     Other text is read by character: offset is where to start, max_chars how much
@@ -291,7 +293,7 @@ async def read_file(ctx: Context, path: str, page: int = 1, pages: int = 5,
     if item is None or item.is_dir:
         raise ToolError(f"{path or '(empty)'}: is a folder; list it with list_folder.")
     suffix = os.path.splitext(item.shown)[1].lower()
-    if suffix not in IMAGE_FORMATS.keys() | OFFICE_MEMBERS.keys() | TEXT_SUFFIXES | {".pdf"}:
+    if suffix not in IMAGE_FORMATS.keys() | DOCUMENT_SUFFIXES | TEXT_SUFFIXES | {".pdf"}:
         raise ToolError(f"{path}: {suffix or 'this file type'} cannot be read as text.")
     if suffix in IMAGE_FORMATS and item.size > MAX_IMAGE_BYTES:
         raise ToolError(f"{path}: the image is larger than {human(MAX_IMAGE_BYTES)}.")

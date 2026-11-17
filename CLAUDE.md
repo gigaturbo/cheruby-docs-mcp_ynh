@@ -16,6 +16,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 - `conf/docs_index.py`: the indexer, and the index format the server reads.
 - `conf/docs_files.py`: what both know about the folders, their filters
   and their files.
+- `conf/docs_text.py`: the text inside a document, PDF, office, EPUB or
+  email, for both.
 - `conf/systemd.service`, `embed.service`, `rerank.service`, `index.service`, `index.timer`:
   the sandboxed units.
 - `conf/requirements.in` → `conf/requirements.txt`: the hash-locked wheels.

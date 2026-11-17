@@ -46,8 +46,8 @@ import urllib.parse
 import httpx2
 import numpy
 
-from docs_files import (IMAGE_FORMATS, OFFICE_MEMBERS, TEXT_SUFFIXES, Folders, Nextcloud, NextcloudError,
-                        load_folders, needs_nextcloud, office_text, open_pdf)
+from docs_files import IMAGE_FORMATS, TEXT_SUFFIXES, Folders, Nextcloud, NextcloudError, load_folders, needs_nextcloud
+from docs_text import DOCUMENT_SUFFIXES, document_text, open_pdf
 
 # EmbeddingGemma is trained with these prefixes; without them results get worse.
 QUERY_PROMPT = "task: search result | query: "
@@ -190,8 +190,8 @@ def file_pages(f, suffix):
     if suffix == ".pdf":
         pages = [(n, (page.extract_text() or "").strip()) for n, page in enumerate(open_pdf(f).pages, 1)]
         return [(n, t) for n, t in pages if t], sum(1 for _, t in pages if not t)
-    if suffix in OFFICE_MEMBERS:
-        text = office_text(f, suffix)
+    if suffix in DOCUMENT_SUFFIXES:
+        text = document_text(f, suffix)[:MAX_FILE_CHARS]
     else:
         text = f.read(MAX_FILE_CHARS * 4).decode("utf-8", errors="replace")[:MAX_FILE_CHARS]
     return ([(0, text)] if text.strip() else []), 0
@@ -233,7 +233,7 @@ def walk(tree):
     Nextcloud did not list}). Hidden names, links out and what the filters
     leave out are not used."""
     found, unreachable = {}, set()
-    usable = TEXT_SUFFIXES | OFFICE_MEMBERS.keys() | IMAGE_FORMATS.keys() | {".pdf"}
+    usable = TEXT_SUFFIXES | DOCUMENT_SUFFIXES | IMAGE_FORMATS.keys() | {".pdf"}
     for label in tree.roots:
         try:
             top = tree.item(label, [])

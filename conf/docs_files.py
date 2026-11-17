@@ -1,8 +1,8 @@
 """What the tool server and the indexer both know about the users' folders.
 
 The folders file and its filters, which names stay hidden, how a folder on
-disk or in Nextcloud is listed and read, and how text comes out of a file.
-Only Folders.write writes, for the tool server, in the folders marked
+disk or in Nextcloud is listed and read; docs_text reads what is inside
+a file. Only Folders.write writes, for the tool server, in the folders marked
 writable. Errors a user should see are ValueError; Nextcloud's are
 NextcloudError, an OSError.
 """
@@ -11,29 +11,20 @@ import errno
 import hashlib
 import io
 import json
-import logging
 import os
-import re
 import stat
 import sys
 import urllib.parse
-import zipfile
 from email.utils import parsedate_to_datetime
 from fnmatch import fnmatchcase
 from typing import NamedTuple
 from xml.etree import ElementTree
 
 import httpx2
-from pypdf import PdfReader
 
-# pypdf warns on every odd font; the journal needs its errors only.
-logging.getLogger("pypdf").setLevel(logging.ERROR)
-
-MAX_XML_BYTES = 20_000_000
 # A write never leaves the disk, shared with everything else, fuller than this.
 MIN_FREE_BYTES = 2_000_000_000
 TEXT_SUFFIXES = {".md", ".txt", ".csv", ".json", ".vcf", ".ics", ".xml", ".html", ".htm", ".yml", ".yaml", ".log"}
-OFFICE_MEMBERS = {".docx": "word/document.xml", ".odt": "content.xml"}
 IMAGE_FORMATS = {".jpg": "jpeg", ".jpeg": "jpeg", ".png": "png", ".webp": "webp", ".gif": "gif"}
 # A folder in the user's Nextcloud is "nextcloud:<path in the account>" where
 # one on disk is its real path.
@@ -124,48 +115,6 @@ def kept_target(rules, label, root, path, is_dir=False):
         return False
     rel = os.path.relpath(real, root)
     return kept(rules, label if rel == "." else f"{label}/{rel}", is_dir)
-
-
-WORD = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
-ODF_TEXT = "{urn:oasis:names:tc:opendocument:xmlns:text:1.0}"
-# Word names its heading styles in the document's language: Heading1, Titre1.
-HEADING_STYLE = re.compile(r"(?i)^(?:heading|titre)\s*([1-6])$")
-
-
-def heading_level(el):
-    """1 to 6 for a heading paragraph of a docx or odt, else 0."""
-    if el.tag == ODF_TEXT + "h":
-        level = el.get(ODF_TEXT + "outline-level", "1")
-        return min(max(int(level), 1), 6) if level.isdigit() else 1
-    style = el.find(f"{WORD}pPr/{WORD}pStyle")
-    match = style is not None and HEADING_STYLE.match(style.get(WORD + "val", ""))
-    return int(match[1]) if match else 0
-
-
-def office_text(source, suffix):
-    """Paragraphs of a docx or odt, from a path or a binary file, one per line,
-    headings as Markdown "#" lines."""
-    member = OFFICE_MEMBERS[suffix]
-    with zipfile.ZipFile(source) as z:
-        if z.getinfo(member).file_size > MAX_XML_BYTES:
-            raise ValueError("the document's text is too large to read.")
-        root = ElementTree.fromstring(z.read(member))
-    lines = []
-    for el in root.iter():
-        if el.tag.rsplit("}", 1)[-1] in ("p", "h"):
-            text = "".join(el.itertext()).strip()
-            if text:
-                level = heading_level(el)
-                lines.append(f"{'#' * level} {text}" if level else text)
-    return "\n".join(lines)
-
-
-def open_pdf(source):
-    """A PDF from a path or a binary file."""
-    reader = PdfReader(source)
-    if reader.is_encrypted and not reader.decrypt(""):
-        raise ValueError("the PDF is password-protected.")
-    return reader
 
 
 class NextcloudError(OSError):

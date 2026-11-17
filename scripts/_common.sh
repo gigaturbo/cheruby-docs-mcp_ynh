@@ -451,7 +451,7 @@ docs_configure() {
     set -o xtrace
 
     local module
-    for module in cheruby_docs_mcp.py docs_files.py docs_index.py; do
+    for module in cheruby_docs_mcp.py docs_files.py docs_index.py docs_text.py; do
         install -m 644 "$YNH_APP_BASEDIR/conf/$module" "$install_dir/$module"
     done
     chown -R root:"$app" "$install_dir"
