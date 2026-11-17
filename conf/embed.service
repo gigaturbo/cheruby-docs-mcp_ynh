@@ -7,14 +7,14 @@ Type=simple
 User=__APP__
 Group=__APP__
 # Two slots of 2048 tokens: a search is not stuck behind the indexer. Lower
-# priority than every other app; the model takes about 0.7 GB. No slot monitor:
+# priority than every other app; EmbeddingGemma Q8 takes about 0.7 GB. No slot monitor:
 # it would show any local process the passages being embedded.
 ExecStart=__INSTALL_DIR__/bin/llama-server --model __INSTALL_DIR__/model/__MODEL_FILE__ --embeddings \
     --host 127.0.0.1 --port __PORT_EMBED__ --ctx-size 4096 --parallel 2 \
     --batch-size 2048 --ubatch-size 2048 --threads 4 --no-webui --no-slots
 Nice=10
 CPUWeight=20
-MemoryMax=1G
+MemoryMax=__MODEL_MEMORY__
 
 IPAddressAllow=localhost
 IPAddressDeny=any

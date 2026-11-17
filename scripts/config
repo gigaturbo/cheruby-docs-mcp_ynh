@@ -95,6 +95,14 @@ validate__index_calendar() {
 validate__index_schedule() { validate__index_calendar; }
 validate__index_quiet() { validate__index_calendar; }
 
+# Refused before it is saved when the model cannot be downloaded now.
+validate__embed_model() {
+    docs_embed_model
+    curl --silent --fail --head --location --output /dev/null --max-time 15 \
+        "$(ynh_read_manifest "resources.sources.$model_source.url")" \
+        || echo "The model cannot be downloaded now; try again later."
+}
+
 # Defined for show only: a getter makes its field look changed on every save.
 if [ "${1:-}" = "show" ]; then
     get__syncthing_folders() {
@@ -236,6 +244,11 @@ docs_index_status() {
 
 # The ping unit reads ping.env at each run: nothing to restart for it.
 ynh_app_config_apply() {
+    # The new model is fetched before anything is saved: if it fails, saving
+    # the same choice again retries it.
+    if [ "${changed[embed_model]:-}" = "true" ] && [ ! -f "$install_dir/model/$model_file" ]; then
+        ynh_setup_source --dest_dir="$install_dir/model" --source_id="$model_source"
+    fi
     _ynh_app_config_apply
     healthcheck_enabled=$(ynh_app_setting_get --key=healthcheck_enabled)
     healthcheck_url=$(ynh_app_setting_get --key=healthcheck_url)
@@ -246,6 +259,17 @@ ynh_app_config_apply() {
         ynh_safe_rm "$data_dir/${old[docs_user]}.sqlite"
         ynh_safe_rm "$data_dir/${old[docs_user]}.work.sqlite"
         ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
+    fi
+    # A run going on, or one the timer starts before the embedding server
+    # restarts, would mix two models' vectors in one index. docs_start arms
+    # the timer again; the next run sees the new model and reads every file.
+    if [ "${changed[embed_model]:-}" = "true" ]; then
+        systemctl stop "$app-index.timer" "$app-index.service"
+        docs_fetch_model
+        docs_configure
+        docs_start
+        ynh_print_info "The embedding model is $embed_model. The next index run reads every file again; Run now starts it."
+        return
     fi
     # The quiet hours also go to the indexer, through index.env.
     if [ "${changed[index_schedule]:-}" = "true" ] || [ "${changed[index_calendar]:-}" = "true" ] \
@@ -304,4 +328,5 @@ run__rebuild_index() {
     ynh_print_info "The index was dropped: the next run reads every file again. Press Run now to start it."
 }
 
+docs_embed_model
 ynh_app_config_run "$1"

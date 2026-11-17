@@ -2,7 +2,6 @@
 
 # Shared steps between install, upgrade and restore.
 
-model_file="embeddinggemma-300M-Q8_0.gguf"
 rerank_model_file="jina-reranker-v2-base-multilingual-Q8_0.gguf"
 
 # Settings with no install question. Defaults only: an upgrade keeps whatever
@@ -17,6 +16,7 @@ docs_default_settings() {
     ynh_app_setting_set_default --key=index_schedule --value=hourly
     ynh_app_setting_set_default --key=index_calendar --value=""
     ynh_app_setting_set_default --key=index_quiet --value="01-06"
+    ynh_app_setting_set_default --key=embed_model --value=embeddinggemma-300m-q8
     local key
 
     # The app password the 0.5 test build made with occ, now pasted in the panel.
@@ -76,6 +76,7 @@ docs_default_settings() {
         ynh_app_setting_delete --key=folders
         ynh_app_setting_delete --key=whoopy_user
     fi
+    docs_embed_model
 }
 
 # Syncthing's folders, one "<label>\t<path>\t<ignorePerms>\t<type>" per line,
@@ -282,6 +283,37 @@ docs_build_fingerprint() {
         | sha256sum | cut -d' ' -f1
 }
 
+# The embedding model chosen in the panel: its source in the manifest, its
+# file, its family (a key of PROMPTS in docs_index.py) and the memory its
+# server may take. Each GGUF carries its own pooling and end token.
+docs_embed_model() {
+    case "${embed_model:-}" in
+        embeddinggemma-300m-q8) model_source=model model_family=embeddinggemma model_memory=1G ;;
+        embeddinggemma-300m-q4) model_source=model_gemma_q4 model_family=embeddinggemma model_memory=1G ;;
+        jina-embeddings-v5-text-nano-q8) model_source=model_jina_q8 model_family=jina-embeddings-v5-text-nano model_memory=1G ;;
+        jina-embeddings-v5-text-nano-q4) model_source=model_jina_q4 model_family=jina-embeddings-v5-text-nano model_memory=1G ;;
+        qwen3-embedding-0.6b-q8) model_source=model_qwen_q8 model_family=qwen3-embedding model_memory=2G ;;
+        qwen3-embedding-0.6b-q4) model_source=model_qwen_q4 model_family=qwen3-embedding model_memory=2G ;;
+        *)
+            ynh_print_warn "Embedding model: no '${embed_model:-}'; EmbeddingGemma 300M Q8 is used."
+            model_source=model model_family=embeddinggemma model_memory=1G
+            ;;
+    esac
+    model_file=$(ynh_read_manifest "resources.sources.$model_source.rename")
+}
+
+# The chosen embedding model in model/, beside the reranker, before the one it
+# replaces goes, so a failed download leaves the old one in place.
+docs_fetch_model() {
+    local file
+    [ -f "$install_dir/model/$model_file" ] \
+        || ynh_setup_source --dest_dir="$install_dir/model" --source_id="$model_source"
+    for file in "$install_dir"/model/*.gguf; do
+        [ "${file##*/}" = "$model_file" ] || [ "${file##*/}" = "$rerank_model_file" ] || ynh_safe_rm "$file"
+    done
+    ynh_app_setting_set --key=llama_fingerprint --value="$(docs_llama_fingerprint)"
+}
+
 # llama-server built from the pinned source for this processor, and the
 # embedding and reranking models beside it. Takes about 8 minutes; the build folder goes once the binary is out.
 docs_build_llama() {
@@ -295,14 +327,13 @@ docs_build_llama() {
     ynh_safe_rm "$src"
 
     ynh_safe_rm "$install_dir/model"
-    ynh_setup_source --dest_dir="$install_dir/model" --source_id="model"
     ynh_setup_source --dest_dir="$install_dir/model" --source_id="rerank_model"
-    ynh_app_setting_set --key=llama_fingerprint --value="$(docs_llama_fingerprint)"
+    docs_fetch_model
 }
 
-# What the binary and the model depend on, the build flags included.
+# What the binary and the models depend on, the build flags included.
 docs_llama_fingerprint() {
-    { ynh_read_manifest "resources.sources.llama_cpp.sha256"; ynh_read_manifest "resources.sources.model.sha256"
+    { ynh_read_manifest "resources.sources.llama_cpp.sha256"; ynh_read_manifest "resources.sources.$model_source.sha256"
       ynh_read_manifest "resources.sources.rerank_model.sha256"
       declare -f docs_build_llama; } | sha256sum | cut -d' ' -f1
 }
@@ -312,9 +343,9 @@ docs_llama_fingerprint() {
 docs_check_downloads() {
     local url
     for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://github.com/ \
-        "$(ynh_read_manifest "resources.sources.model.url")" \
+        "$(ynh_read_manifest "resources.sources.$model_source.url")" \
         "$(ynh_read_manifest "resources.sources.rerank_model.url")"; do
-        curl --silent --show-error --head --location --output /dev/null --max-time 15 "$url" \
+        curl --silent --show-error --fail --head --location --output /dev/null --max-time 15 "$url" \
             || ynh_die "$url cannot be reached; nothing was changed. Retry the upgrade later."
     done
 }
@@ -412,9 +443,10 @@ docs_configure() {
     fi
     [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder."
 
-    # Changes with the model file or llama.cpp, either of which changes the vectors.
+    # Changes with the model file or llama.cpp, either of which changes the
+    # vectors. The same as before the choice of model, for EmbeddingGemma Q8.
     local model
-    model="$(ynh_read_manifest "resources.sources.model.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_cpp.sha256" | cut -c1-16)"
+    model="$(ynh_read_manifest "resources.sources.$model_source.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_cpp.sha256" | cut -c1-16)"
 
     # The trace stays off while a token is in a variable: it would go to the
     # operation log and, unredacted, to yunohost-cli.log.
@@ -424,6 +456,7 @@ docs_configure() {
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
         echo "DOCS_EMBED_MODEL=$model"
+        echo "DOCS_EMBED_NAME=$model_family"
         echo "DOCS_QUIET_HOURS=${index_quiet:-}"
         [ -z "$nextcloud_env" ] || echo "$nextcloud_env"
     } > "$install_dir/index.env"
@@ -433,6 +466,8 @@ docs_configure() {
         echo "DOCS_FOLDERS_FILE=$install_dir/folders.json"
         echo "DOCS_INDEX_DIR=$data_dir"
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
+        echo "DOCS_EMBED_MODEL=$model"
+        echo "DOCS_EMBED_NAME=$model_family"
         echo "DOCS_RERANK_URL=http://127.0.0.1:$port_rerank"
         token=$(ynh_app_setting_get --key="token_$docs_user")
         token=${token:-$(ynh_string_random --length=48)}

@@ -61,6 +61,12 @@ starts then, and one still going stops and carries on at the next run. "Index ru
 index holds and when the next run comes, with "Run now" and "Rebuild",
 which makes the next run read every file again.
 
+"Embedding model" picks what search compares meanings with: EmbeddingGemma
+300M (the default), jina-embeddings-v5-text-nano or Qwen3-Embedding 0.6B,
+each in a Q8 and a smaller Q4. Only the chosen one is downloaded. A change
+makes the next run read every file again; until then search matches
+keywords only.
+
 The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
 
 The gateway gets its own token, shown in the config panel under "Whoopy
@@ -71,7 +77,7 @@ with `yunohost app setting cheruby-docs-mcp token_<user>`.
 
 Search orders its results with jina-reranker-v2-base-multilingual, which
 the install downloads from Hugging Face. Its licence, CC-BY-NC-4.0, allows
-non-commercial use only. When it does not answer, search still works, in a
+non-commercial use only, as does jina-embeddings-v5-text-nano's. When it does not answer, search still works, in a
 rougher order.
 
 The service joins each folder's group to read the folders on disk, so their
