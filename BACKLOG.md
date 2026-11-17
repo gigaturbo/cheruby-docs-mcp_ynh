@@ -69,23 +69,6 @@ vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
 which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
-### F-M-14 · passages cut by the document's structure, with their headings
-
-`todo` `medium` `filed 2026-11-16` `needs: F-M-13`
-
-`passages()` joins all the text into one line, then cuts it every 1600
-characters, so a section shares a passage with its neighbours and its
-vector is an average of them. The file name goes into the vector but not
-into the keyword index.
-
-**Do:** cut at headings (Markdown `#`, Word and ODT heading styles), then at
-paragraphs, to about 600 to 900 characters; prefix each passage with
-`<file name> > <heading> > <subheading>`, embedded and keyword-indexed
-alike. A version of the cutting rules joins `DOCS_EMBED_MODEL`, so a change
-redoes the index. Pass: F-M-13 no worse on any query, and better on
-longer documents added to its queries: neither of T-M-2's misses is in a
-long file, so this item alone does not fix them.
-
 ### F-M-15 · cleaner text from PDF, HTML and XML
 
 `todo` `medium` `filed 2026-11-16` `needs: F-M-13`
@@ -115,6 +98,7 @@ Nothing open.
 
 ## Closed
 
+- `F-M-14` done `medium` 2026-11-17 · passages up to 900 characters, a file or section that fits kept whole, a longer one cut at its subheadings then paragraphs, each starting with `<file> > <heading>`; Word and ODT headings as `#`; `passages-2` joins the model in `meta`. On 17 queries (4 arXiv papers added in `Documents/Research`): MRR 0.88 against 0.90, 16 of 17 in the top 5 both, the answer in the top passage 6 of 9 both, passages 40% shorter; a section always cut on its own put the wool note 4th, so whole-when-it-fits was kept. Shipped on a tie, for the shorter passages
 - `T-P-1` done `playtest` 2026-11-16 at `f2cab55` · on 0.7.0: 401 without a token; the tool server sees Documents only under Syncthing, not Nextcloud, PHP sessions, the env files or `/etc/shadow`, its code and index read-only; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
 - `T-M-2` done `playtest` 2026-11-16 at `f2cab55` · on 0.7.0 with `tests/eval_search.py`: 9 of 9 in the top 5, mean reciprocal rank 0.87, 3.8 s a search, 4.1 s at most, against 7 of 9, 0.71 and 0.1 s before
 - `F-M-12` done `medium` 2026-11-16 · the fused top 30, by file name and first 300 characters, reordered by jina-reranker-v2-base-multilingual (CC-BY-NC-4.0) in its own unit, the best passage per file; bge-reranker-v2-m3 (8 of 9, 12 s) and Qwen3-Reranker-0.6B (8 of 9, 37 s) measured and set aside; the fused order kept, and said, when it fails
