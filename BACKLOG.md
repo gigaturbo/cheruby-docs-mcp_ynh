@@ -69,25 +69,13 @@ vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
 which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
-### F-M-15 · cleaner text from PDF, HTML and XML
-
-`todo` `medium` `filed 2026-11-16` `needs: F-M-13`
-
-HTML and XML are indexed with their tags. PDF text keeps each page's
-header, footer and page number, words split at line ends, and ligatures
-that keyword search does not match.
-
-**Do:** tags stripped with `html.parser` for indexing; in PDFs, lines found
-on most pages dropped, `-\n` joined, NFKC applied. Compare pypdfium2 with
-pypdf on the same PDFs (read failures, time, text order); swap only on a
-clear gain. `read_file` keeps showing the file as it is.
-
 ## Tests
 
 Nothing open.
 
 ## Closed
 
+- `F-M-15` done `medium` 2026-11-17 · PDFs read with pypdfium2, not pypdf: on 314 PDFs 4 s against 45 s, 1 failure against 2, the same text order, ligatures as letters, but 468 unreadable characters in 11 files against 280 in 9; words cut at a line end joined; a PDF's running headers and footers indexed once, a number matching only at a fixed distance from the page number (420 of 31,928 lines, 30 files, 9% at most); HTML and XML indexed by their text; NFKC left out, PDFium already gives letters. After a full rebuild (35 min, 315 indexed, 1 password-protected PDF failed): 16 of 17 in the top 5, mean reciprocal rank 0.84 against 0.88, 3.7 s a search; the Dell invoice 4th, not 1st, its page now read from the payment terms, under a 2013 computer order form
 - `T-M-2` done `playtest` 2026-11-17 at `dddd300` · on 0.8.0 with F-M-16, after a run that indexed the user's one ods (7 passages) and one xlsx (1): the saved set 16 of 17 in the top 5, mean reciprocal rank 0.88, 3.7 s a search, 4.3 s at most, as after F-M-14; the ods 4th for a query in other words; the xlsx, a table of "HP", "HC" and numbers named ELEC/Feuil1, not in the top 5 for two, too little text to match by meaning. `read_file` gave both, sheets as headings
 - `F-M-16` done `small` 2026-11-17 · pptx, odp, xlsx, ods, epub and eml read by `read_file` and the index, from their XML or with `email`, no new wheel, in a new `docs_text.py` with PDF and Word; slides and sheets as headings, in the document's order, notes left out, 20 MB unpacked at most. On the server, 11 odp, 7 ods, 1 pptx and 1 xlsx all read, 0.08 s at most; no epub or eml there to try
 - `F-M-14` done `medium` 2026-11-17 · passages up to 900 characters, a file or section that fits kept whole, a longer one cut at its subheadings then paragraphs, each starting with `<file> > <heading>`; Word and ODT headings as `#`; `passages-2` joins the model in `meta`. On 17 queries (4 arXiv papers added in `Documents/Research`): MRR 0.88 against 0.90, 16 of 17 in the top 5 both, the answer in the top passage 6 of 9 both, passages 40% shorter; a section always cut on its own put the wool note 4th, so whole-when-it-fits was kept. Shipped on a tie, for the shorter passages
