@@ -11,6 +11,8 @@ Run by cheruby-docs-mcp.service. Settings come from its root-600 env file:
     DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
     DOCS_INDEX_DIR          where docs_index.py keeps <user>.sqlite, read here only
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
+    DOCS_EMBED_MODEL        the model's identity, as the indexer stores it
+    DOCS_EMBED_NAME         the model's family, a key of docs_index.PROMPTS
     DOCS_RERANK_URL         optional: the reranking server, e.g. http://127.0.0.1:8774
     DOCS_NEXTCLOUD_URL      when a folder is in Nextcloud: the user's WebDAV root,
     DOCS_NEXTCLOUD_HOST     the name Nextcloud answers to,
@@ -51,12 +53,14 @@ from mcp.server.mcpserver.exceptions import ToolError
 from docs_files import (IMAGE_FORMATS, TEXT_SUFFIXES, Folders, Nextcloud, hidden, kept, load_folders,
                         needs_nextcloud)
 from docs_text import DOCUMENT_SUFFIXES, document_text, pdf_pages
-from docs_index import QUERY_PROMPT, connect, read_status
+from docs_index import PROMPTS, connect, read_status
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
 PORT = int(os.environ.get("DOCS_PORT", "8770"))
 INDEX_DIR = os.environ.get("DOCS_INDEX_DIR", "")
 EMBED_URL = os.environ.get("DOCS_EMBED_URL", "")
+EMBED_MODEL = os.environ.get("DOCS_EMBED_MODEL", "")
+QUERY_PREFIX = PROMPTS[os.environ.get("DOCS_EMBED_NAME", "embeddinggemma")][0]
 RERANK_URL = os.environ.get("DOCS_RERANK_URL", "")
 
 MAX_LIST = 300
@@ -328,7 +332,7 @@ async def embed_query(query):
     """The query's vector, or None when the embedding server does not answer."""
     try:
         async with httpx2.AsyncClient(timeout=30) as client:
-            resp = await client.post(f"{EMBED_URL}/v1/embeddings", json={"input": [QUERY_PROMPT + query]})
+            resp = await client.post(f"{EMBED_URL}/v1/embeddings", json={"input": [QUERY_PREFIX + query]})
             resp.raise_for_status()
     except httpx2.HTTPError:
         return None
@@ -410,6 +414,11 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
         indexed = json.loads(meta.get("folders", "{}"))
         if any(indexed.get(label, real) != real for label, real in folders.items()):
             raise ToolError("the search index is being rebuilt after a change of folders; use find_files meanwhile.")
+        # Vectors of another model: comparing them with this query means nothing,
+        # and fails outright when their sizes differ.
+        rebuilding = not meta.get("model", "").startswith(EMBED_MODEL + "/")
+        if rebuilding:
+            vector = None
         ids = ranked(db, query, vector, where, args)[:50]
         rows = {r[0]: r[1:] for r in db.execute(
             f"SELECT p.id, f.path, p.page, f.mtime_ns, p.text FROM passages p JOIN files f ON f.id = p.file "
@@ -435,7 +444,9 @@ async def search_documents(ctx: Context, query: str, path: str = "", after: str 
             best.append(pid)
     ids = best[:max(1, min(limit, MAX_RESULTS))]
     head = f"[index updated {meta.get('updated', '?')}]\n"
-    if vector is None:
+    if rebuilding:
+        head += "[the index is being rebuilt for a new embedding model; keyword matches only]\n"
+    elif vector is None:
         head += "[search by meaning is unavailable; keyword matches only]\n"
     if RERANK_URL and len(pages) > 1 and order is None:
         head += "[ranking by relevance is unavailable; results in a rougher order]\n"

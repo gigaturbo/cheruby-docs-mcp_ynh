@@ -7,6 +7,7 @@ root-600 env file, which holds no MCP token:
     DOCS_INDEX_DIR          where each user's index is written
     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
     DOCS_EMBED_MODEL        the model's identity; when it changes, everything is redone
+    DOCS_EMBED_NAME         the model's family, a key of PROMPTS
     DOCS_QUIET_HOURS        optional, such as 01-06: no run in these hours, and one
                             still going stops when they begin. A file run-now in
                             the index folder, left by the panel's Run now, lifts
@@ -27,7 +28,7 @@ OCR and hold no passage. Paths are stored as the tools show them
 The indexer works on <user>.work.sqlite and publishes a finished copy as
 <user>.sqlite every ten minutes and at the end, so the tool server, which only
 reads, never sees a write half done. It imports connect() and
-QUERY_PROMPT from here. Deleting the working copy makes the next run start
+PROMPTS from here. Deleting the working copy makes the next run start
 from zero; search goes on with the published one until its first publish.
 
 <user>.status.json, for the config panel: when the last run started and
@@ -50,9 +51,13 @@ import numpy
 from docs_files import IMAGE_FORMATS, TEXT_SUFFIXES, Folders, Nextcloud, NextcloudError, load_folders, needs_nextcloud
 from docs_text import DOCUMENT_SUFFIXES, document_text, html_text, pdf_pages
 
-# EmbeddingGemma is trained with these prefixes; without them results get worse.
-QUERY_PROMPT = "task: search result | query: "
-DOC_PROMPT = "title: {title} | text: {text}"
+# Each model family's query prefix and passage template, from its model card:
+# without them results get worse. Pooling and the end token are in each GGUF.
+PROMPTS = {
+    "embeddinggemma": ("task: search result | query: ", "title: {title} | text: {text}"),
+    "jina-embeddings-v5-text-nano": ("Query: ", "Document: {text}"),
+    "qwen3-embedding": ("Instruct: Given a search query, retrieve passages that answer it\nQuery:", "{text}"),
+}
 
 # About 250 tokens: a section of a note stays its own passage instead of an
 # average of its neighbours. Well under the model's 2048 tokens.
@@ -310,7 +315,8 @@ def index_file(db, client, item, f, digest):
         rows = [(page, text) for page, whole in pages for text in passages(whole, os.path.basename(shown))]
         if status == "indexed" and not rows:
             status = "needs_ocr" if suffix == ".pdf" else "empty"
-    vectors = embed(client, [DOC_PROMPT.format(title=os.path.basename(shown), text=t) for _, t in rows]) if rows else []
+    template = PROMPTS[os.environ["DOCS_EMBED_NAME"]][1]
+    vectors = embed(client, [template.format(title=os.path.basename(shown), text=t) for _, t in rows]) if rows else []
     cur = db.execute("INSERT INTO files (path, size, mtime_ns, ctime_ns, sha256, status, empty_pages, error) "
                      "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                      (shown, item.size, item.mtime_ns, item.ctime_ns, digest, status, empty, error))

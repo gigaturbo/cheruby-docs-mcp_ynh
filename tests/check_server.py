@@ -410,6 +410,7 @@ def build(base):
         "DOCS_INDEX_DIR": f"{base}/index",
         "DOCS_EMBED_URL": f"http://127.0.0.1:{EMBED_PORT}",
         "DOCS_EMBED_MODEL": "fake-64",
+        "DOCS_EMBED_NAME": "embeddinggemma",
         "DOCS_RERANK_URL": f"http://127.0.0.1:{RERANK_PORT}",
         "DOCS_FOLDERS_FILE": f"{base}/folders.json",
         "DOCS_TOKEN_alice": ALICE,
@@ -734,6 +735,37 @@ def index_checks(base, env, first):
     model = dict(db.execute("SELECT key, value FROM meta"))["model"]
     db.close()
     yield "how passages are cut is part of the index's model", model, model == "fake-64/passages-3"
+    # Another family: its own passage template, in a throwaway index.
+    os.environ["DOCS_EMBED_NAME"], EMBEDDED[:] = "jina-embeddings-v5-text-nano", []
+    db = docs_index.connect(f"{base}/jina.work.sqlite")
+    with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
+        docs_index.index_user(db, {"Notes": users["alice"]["Notes"]}, rules["alice"], None, client, "jina/passages-3",
+                              f"{base}/jina")
+    db.close()
+    del os.environ["DOCS_EMBED_NAME"]
+    yield "each model family gets its own prompt", EMBEDDED[:1], EMBEDDED and all(t.startswith("Document: ") for t in EMBEDDED)
+    # A server on a new model searches by keyword until the index is rebuilt for it.
+    other = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             env={**env, "DOCS_EMBED_MODEL": "other-64", "DOCS_EMBED_NAME": "qwen3-embedding",
+                                  "DOCS_PORT": "18775"})
+    try:
+        EMBEDDED[:] = []
+        for _ in range(50):
+            try:
+                found = httpx.post("http://127.0.0.1:18775/mcp", timeout=60, headers={
+                    "Accept": "application/json, text/event-stream", "Authorization": f"Bearer {ALICE}"}, json={
+                    "jsonrpc": "2.0", "id": 1, "method": "tools/call",
+                    "params": {"name": "search_documents", "arguments": {"query": "loyer augmente"}}}).json()
+                break
+            except httpx.TransportError:
+                time.sleep(0.2)
+    finally:
+        other.terminate()
+        other.wait()
+    text = found["result"]["content"][0]["text"]
+    yield "another model's index is searched by keyword only", text[:200], \
+        "rebuilt for a new embedding model" in text and "--- " in text \
+        and EMBEDDED and EMBEDDED[0].startswith("Instruct: ")
     note = "intro\n\n## lessive\n- savon\n- soude\n\n## version laine :\n100g savon\n\n4L eau\n" \
            "# Shell\n```sh\n# not a heading\n```\n### Sub\ntext"
     cut = docs_index.passages(note, "Lessive.md")
