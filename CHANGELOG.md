@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.0
+
+- Search passages follow the document's headings: a short note or section stays whole, a longer one is cut at its subheadings, and each passage starts with its file name and headings. Passages are about half as long, so an agent reads less beside the answer. The first index run after the upgrade reads every file again, about half an hour, while search answers from what it has done so far.
+- `read_file` shows the headings of Word and OpenDocument files as Markdown `#` lines.
+
 ## 0.7.0
 
 - Search orders its results by how well they answer the question, with a reranking model run on the server, and shows the best passage of each file. On the author's test queries, 9 of 9 expected documents come in the top 5, against 7 before, in about 4 seconds a search. The model, jina-reranker-v2-base-multilingual, is for non-commercial use only.
