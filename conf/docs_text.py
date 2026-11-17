@@ -3,24 +3,22 @@
 document_text reads Word, OpenDocument, PowerPoint, Excel, EPUB and email
 files from a binary file: one paragraph, row or header a line, headings as
 Markdown "#" lines, which the indexer cuts passages at. Each format is read
-from its XML with the standard library. open_pdf opens a PDF. Errors a user
-should see are ValueError.
+from its XML with the standard library. html_text reads HTML and XML for the
+index, pdf_pages a PDF's pages with PDFium. Errors a user should see are
+ValueError.
 """
 
 import email
 import email.policy
-import logging
 import posixpath
 import re
+import threading
 import urllib.parse
 import zipfile
 from html.parser import HTMLParser
 from xml.etree import ElementTree
 
-from pypdf import PdfReader
-
-# pypdf warns on every odd font; the journal needs its errors only.
-logging.getLogger("pypdf").setLevel(logging.ERROR)
+import pypdfium2
 
 # What a document may unpack to in all, so a small file cannot fill the memory.
 MAX_XML_BYTES = 20_000_000
@@ -36,6 +34,10 @@ ODF_DRAW = "{urn:oasis:names:tc:opendocument:xmlns:drawing:1.0}"
 ODF_SHOW = "{urn:oasis:names:tc:opendocument:xmlns:presentation:1.0}"
 EPUB_CONTAINER = "{urn:oasis:names:tc:opendocument:xmlns:container}"
 OPF = "{http://www.idpf.org/2007/opf}"
+# PDFium joins a word cut at a line end and marks the cut with \x02.
+PDF_CUT = re.compile(r"\x02(?:\r?\n)?(.?)", re.S)
+# PDFium may not be called from two threads at once, even on two documents.
+PDF_LOCK = threading.Lock()
 # Word names its heading styles in the document's language: Heading1, Titre1.
 HEADING_STYLE = re.compile(r"(?i)^(?:heading|titre)\s*([1-6])$")
 
@@ -167,38 +169,44 @@ def ods_text(pkg):
 
 
 class HtmlText(HTMLParser):
-    """Collects an HTML page's text, a line per block, headings as "#" lines."""
+    """Collects an HTML page's text, a line per block, headings as "#" lines;
+    with xml, every element is a block."""
     BLOCKS = {"p", "div", "br", "li", "tr", "td", "th", "dt", "dd", "blockquote", "pre", "section", "article",
               "header", "footer", "aside", "nav", "table", "ul", "ol", "dl", "figure", "figcaption", "hr"}
     HEADINGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
     SKIPPED = {"script", "style", "title"}
 
-    def __init__(self):
+    def __init__(self, xml):
         super().__init__(convert_charrefs=True)
-        self.parts, self.skip = [], 0
+        self.parts, self.skip, self.xml = [], 0, xml
 
     def handle_starttag(self, tag, attrs):
         if tag in self.SKIPPED:
             self.skip += 1
         elif tag in self.HEADINGS:
             self.parts.append("\n" + "#" * int(tag[1]) + " ")
-        elif tag in self.BLOCKS:
+        elif self.xml or tag in self.BLOCKS:
             self.parts.append("\n")
 
     def handle_endtag(self, tag):
         if tag in self.SKIPPED:
             self.skip = max(0, self.skip - 1)
-        elif tag in self.HEADINGS or tag in self.BLOCKS:
+        elif self.xml or tag in self.HEADINGS or tag in self.BLOCKS:
             self.parts.append("\n")
 
     def handle_data(self, data):
         if not self.skip:
             self.parts.append(data)
 
+    def unknown_decl(self, data):
+        if data.startswith("CDATA["):
+            self.handle_data(data[6:])
 
-def html_text(page):
-    """The text of an HTML page, a line per block, headings as Markdown "#" lines."""
-    parser = HtmlText()
+
+def html_text(page, xml=False):
+    """The text of an HTML page, a line per block, headings as Markdown "#"
+    lines, or of an XML file, a line per element."""
+    parser = HtmlText(xml)
     parser.feed(page)
     parser.close()
     lines = (" ".join(line.split()) for line in "".join(parser.parts).splitlines())
@@ -255,9 +263,25 @@ def document_text(source, suffix):
         raise ValueError(f"the document is damaged: {e}") from None
 
 
-def open_pdf(source):
-    """A PDF from a path or a binary file."""
-    reader = PdfReader(source)
-    if reader.is_encrypted and not reader.decrypt(""):
-        raise ValueError("the PDF is password-protected.")
-    return reader
+def pdf_pages(source, first=1, count=None):
+    """(the PDF's page count, the text of count pages from first, or of all),
+    from a binary file. A word cut at a line end is joined, its hyphen kept
+    before a capital."""
+    with PDF_LOCK:
+        try:
+            doc = pypdfium2.PdfDocument(source)
+        except pypdfium2.PdfiumError as e:
+            raise ValueError("the PDF is password-protected." if "password" in str(e).lower()
+                             else "the PDF is damaged.") from None
+        try:
+            total, texts = len(doc), []
+            for n in range(max(0, first - 1), total if count is None else min(total, first - 1 + count)):
+                page = doc[n]
+                textpage = page.get_textpage()
+                texts.append(textpage.get_text_bounded())
+                textpage.close()
+                page.close()
+        finally:
+            doc.close()
+    return total, [PDF_CUT.sub(lambda m: m[1] if m[1].islower() else "-" + m[1], t.replace("\r\n", "\n"))
+                   for t in texts]

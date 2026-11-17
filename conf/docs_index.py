@@ -42,12 +42,13 @@ import sqlite3
 import sys
 import time
 import urllib.parse
+from collections import Counter
 
 import httpx2
 import numpy
 
 from docs_files import IMAGE_FORMATS, TEXT_SUFFIXES, Folders, Nextcloud, NextcloudError, load_folders, needs_nextcloud
-from docs_text import DOCUMENT_SUFFIXES, document_text, open_pdf
+from docs_text import DOCUMENT_SUFFIXES, document_text, html_text, pdf_pages
 
 # EmbeddingGemma is trained with these prefixes; without them results get worse.
 QUERY_PROMPT = "task: search result | query: "
@@ -58,8 +59,11 @@ DOC_PROMPT = "title: {title} | text: {text}"
 PASSAGE_CHARS = 900
 OVERLAP_CHARS = 150
 # Joins the model in meta: a change to how passages are cut redoes the index.
-PASSAGES_VERSION = 2
+PASSAGES_VERSION = 3
 HEADING = re.compile(r"^(#{1,6})\s+(.+?)[\s#]*$")
+PAGE_NUMBER = re.compile(r"\b\d{1,4}\b")
+# Indexed by their text alone; read_file still shows them as they are.
+MARKUP = {".html": False, ".htm": False, ".xml": True}
 MAX_FILE_CHARS = 300_000
 MAX_FETCH_BYTES = 64_000_000
 BATCH = 8
@@ -185,15 +189,52 @@ def passages(text, title):
     return out
 
 
+def running_keys(line, page):
+    """The forms a line is compared in across pages: itself, case and spacing
+    aside, and with each number of up to 4 digits given as its distance to
+    the page's number, so "Page 3 of 12" on page 3 matches "Page 4 of 12" on
+    page 4, but ticket 207952278 never matches ticket 207952279."""
+    text = " ".join(line.split()).lower()
+    return {text} | {f"{text[:m.start()]}#{int(m[0]) - page}{text[m.end():]}" for m in PAGE_NUMBER.finditer(text)}
+
+
+def without_running_lines(pages):
+    """A PDF's page texts without their running headers and footers: a line
+    among the first or last three of a page that more than half the pages with
+    text share is kept only where it first appears."""
+    lines = [text.splitlines() for text in pages]
+    edges = []
+    for page in lines:
+        filled = [i for i, line in enumerate(page) if line.strip()]
+        edges.append(set(filled[:3] + filled[-3:]))
+    with_text = sum(1 for e in edges if e)
+    if with_text < 3:
+        return pages
+    counts = Counter(key for n, (page, e) in enumerate(zip(lines, edges))
+                     for key in set().union(*(running_keys(page[i], n) for i in e)))
+    running = {key for key, count in counts.items() if count * 2 > with_text}
+    seen, out = set(), []
+    for n, (page, e) in enumerate(zip(lines, edges)):
+        kept = []
+        for i, line in enumerate(page):
+            keys = running_keys(line, n) & running if i in e else set()
+            if not keys & seen:
+                kept.append(line)
+            seen |= keys
+        out.append("\n".join(kept))
+    return out
+
+
 def file_pages(f, suffix):
     """[(page, text)] of a binary file, page 0 when it has no pages, and its count of pages without text."""
     if suffix == ".pdf":
-        pages = [(n, (page.extract_text() or "").strip()) for n, page in enumerate(open_pdf(f).pages, 1)]
+        pages = [(n, t.strip()) for n, t in enumerate(without_running_lines(pdf_pages(f)[1]), 1)]
         return [(n, t) for n, t in pages if t], sum(1 for _, t in pages if not t)
     if suffix in DOCUMENT_SUFFIXES:
         text = document_text(f, suffix)[:MAX_FILE_CHARS]
     else:
-        text = f.read(MAX_FILE_CHARS * 4).decode("utf-8", errors="replace")[:MAX_FILE_CHARS]
+        text = f.read(MAX_FILE_CHARS * 4).decode("utf-8", errors="replace")
+        text = (html_text(text, MARKUP[suffix]) if suffix in MARKUP else text)[:MAX_FILE_CHARS]
     return ([(0, text)] if text.strip() else []), 0
 
 

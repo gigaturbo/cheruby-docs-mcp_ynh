@@ -115,19 +115,30 @@ def write_documents(docs):
                 "Content-Transfer-Encoding: base64\n\nJVBERg==\n--b--\n")
     with open(f"{docs}/abime.xlsx", "wb") as f:
         f.write(b"not a zip")
+    with open(f"{docs}/rapport.pdf", "wb") as f:
+        f.write(tiny_pdf(*(f"Rapport annuel CONFIDENTIEL\nCotisation {w} recal-\nculee au bureau {n}0\nPage {n} sur 4"
+                           for n, w in enumerate(["ortie", "sureau", "tilleul", "verveine"], 1))))
+    with open(f"{docs}/recette.html", "w") as f:
+        f.write("<html><head><title>titre</title><style>.x { color: red }</style></head><body><h1>Tarte</h1>"
+                "<p>P&acirc;te <b>bris\u00e9e</b> maison</p><script>var cache = 1;</script></body></html>")
+    with open(f"{docs}/carnet.xml", "w") as f:
+        f.write('<carnet><plante nom="x"><![CDATA[Semis de capucines]]></plante><plante>Bouture de figuier</plante></carnet>')
 
 
-def tiny_pdf(text):
-    """A one-page PDF whose page shows text, with a correct cross-reference table."""
-    stream = f"BT /F1 12 Tf 72 720 Td ({text}) Tj ET".encode()
-    objects = [
-        b"<< /Type /Catalog /Pages 2 0 R >>",
-        b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R "
-        b"/Resources << /Font << /F1 5 0 R >> >> >>",
-        b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream",
-        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    ]
+def tiny_pdf(*pages):
+    """A PDF with one page per argument, each line of it shown on its own line,
+    with a correct cross-reference table."""
+    n_pages = len(pages)
+    kids = " ".join(f"{4 + 2 * i} 0 R" for i in range(n_pages))
+    objects = [b"<< /Type /Catalog /Pages 2 0 R >>",
+               f"<< /Type /Pages /Kids [{kids}] /Count {n_pages} >>".encode(),
+               b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    for i, page in enumerate(pages):
+        shown = " 0 -14 Td ".join(f"({line}) Tj" for line in page.split("\n"))
+        stream = f"BT /F1 12 Tf 72 720 Td {shown} ET".encode()
+        objects.append(b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents %d 0 R "
+                       b"/Resources << /Font << /F1 3 0 R >> >> >>" % (5 + 2 * i))
+        objects.append(b"<< /Length %d >>\nstream\n" % len(stream) + stream + b"\nendstream")
     out, offsets = b"%PDF-1.4\n", []
     for n, body in enumerate(objects, 1):
         offsets.append(len(out))
@@ -500,6 +511,16 @@ CHECKS = [
     ("eml headers, attachments and plain text", lambda: tool("read_file", path="Documents/glycine.eml"),
      lambda r: ok_with("# Glycine à tailler\nFrom: Jardin <jardin@example.org>", "Attachments: plan.pdf",
                        "Tailler la glycine en août.")(r) and "version html" not in r[1]),
+    ("a PDF page read as it is, header and footer kept", lambda: tool("read_file", path="Documents/rapport.pdf", page=2, pages=1),
+     ok_with("Rapport annuel CONFIDENTIEL\nCotisation sureau recalculee au bureau 20\nPage 2 sur 4")),
+    ("a word cut at a line end is found whole", lambda: tool("search_documents", query="recalculee"),
+     ok_with("--- Documents/rapport.pdf")),
+    ("HTML is searched by its text", lambda: tool("search_documents", query="brisee"),
+     lambda r: ok_with("--- Documents/recette.html (", "recette.html\nTarte\nPâte brisée maison")(r)
+     and not any(w in r[1].split("--- Documents/recette.html")[1].split("\n--- ")[0] for w in ("<b>", "color", "cache"))),
+    ("HTML is read as it is", lambda: tool("read_file", path="Documents/recette.html"), ok_with("<b>brisée</b>")),
+    ("XML is searched by its text", lambda: tool("search_documents", query="capucines"),
+     lambda r: ok_with("carnet.xml\nSemis de capucines Bouture de figuier")(r) and "<plante" not in r[1]),
     ("a damaged document is named", lambda: tool("read_file", path="Documents/abime.xlsx"), error_with("damaged")),
     ("search finds a slide", lambda: tool("search_documents", query="tournesols"), ok_with("--- Documents/cours.pptx")),
     ("search finds a spreadsheet row", lambda: tool("search_documents", query="rhubarbe"), ok_with("--- Documents/rhubarbe.ods")),
@@ -517,7 +538,7 @@ CHECKS = [
     ("search limit kept", lambda: tool("search_documents", query="loyer jardin pain", limit=2), lambda r: r[1].count("--- ") == 2),
     ("one passage per file", lambda: tool("search_documents", query="jardin tomates", limit=10),
      lambda r: r[0] == "ok" and r[1].count("--- Notes/long.md") == 1),
-    ("the reranker orders the results", lambda: reranked("courses.md", query="loyer augmente"),
+    ("the reranker orders the results", lambda: reranked("courses.md", query="loyer augmente pain"),
      lambda r: r[0] == "ok" and r[1].split("\n--- ")[1].startswith("Notes/courses.md")),
     ("the reranker gets each candidate's file name and start", lambda: reranked(query="loyer augmente"),
      lambda r: r[2] and any(d.startswith("bail.pdf\nLoyer augmente") for d in r[2])
@@ -577,6 +598,13 @@ def index_checks(base, env, first):
     docs, notes = f"{base}/docs", f"{base}/notes"
     files = statuses(base)
     yield "first run indexes both users", first, "alice:" in first and "ju: 1 indexed" in first
+    db = sqlite3.connect(f"{base}/index/alice.sqlite")
+    report = [t for (t,) in db.execute("SELECT p.text FROM passages p JOIN files f ON f.id = p.file "
+                                        "WHERE f.path = 'Documents/rapport.pdf' ORDER BY p.page")]
+    db.close()
+    yield "a running header and footer are indexed once", report, \
+        len(report) == 4 and sum("CONFIDENTIEL" in t for t in report) == 1 and sum("sur 4" in t for t in report) == 1 \
+        and all(f"bureau {n}0" in t for n, t in enumerate(report, 1))
     yield "first run takes everything", sorted(files), "Documents/Brouillons/draft.md" in files and "Notes/photo.png" in files
     yield "scan waits for OCR", files.get("Documents/scan.png"), files.get("Documents/scan.png") == "needs_ocr"
     yield "hidden and links left out of the index", sorted(files), \
@@ -584,7 +612,7 @@ def index_checks(base, env, first):
     yield "prompts sent", EMBEDDED[:1], EMBEDDED and EMBEDDED[0].startswith("title: ") \
         and any(t.startswith("task: search result | query: ") for t in EMBEDDED)
     second = run_indexer(env)
-    yield "re-run drops what the filters leave out", second, "alice: 5 dropped, 15 unchanged" in second
+    yield "re-run drops what the filters leave out", second, "alice: 5 dropped, 18 unchanged" in second
     files = statuses(base)
     yield "filtered files leave the index", sorted(files), \
         not any("Brouillons" in p or "Copie" in p or "photo" in p or "alias" in p for p in files)
@@ -705,7 +733,7 @@ def index_checks(base, env, first):
     db = docs_index.connect(f"{base}/index/alice.sqlite", read_only=True)
     model = dict(db.execute("SELECT key, value FROM meta"))["model"]
     db.close()
-    yield "how passages are cut is part of the index's model", model, model == "fake-64/passages-2"
+    yield "how passages are cut is part of the index's model", model, model == "fake-64/passages-3"
     note = "intro\n\n## lessive\n- savon\n- soude\n\n## version laine :\n100g savon\n\n4L eau\n" \
            "# Shell\n```sh\n# not a heading\n```\n### Sub\ntext"
     cut = docs_index.passages(note, "Lessive.md")

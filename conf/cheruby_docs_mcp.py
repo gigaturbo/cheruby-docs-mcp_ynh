@@ -50,7 +50,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from docs_files import (IMAGE_FORMATS, TEXT_SUFFIXES, Folders, Nextcloud, hidden, kept, load_folders,
                         needs_nextcloud)
-from docs_text import DOCUMENT_SUFFIXES, document_text, open_pdf
+from docs_text import DOCUMENT_SUFFIXES, document_text, pdf_pages
 from docs_index import QUERY_PROMPT, connect, read_status
 
 BIND = os.environ.get("DOCS_BIND", "127.0.0.1")
@@ -251,15 +251,12 @@ def cut(text, offset, max_chars):
 
 
 def pdf_text(source, page, pages):
-    reader = open_pdf(source)
-    total = len(reader.pages)
+    total, texts = pdf_pages(source, page, pages)
     if not 1 <= page <= total:
         raise ToolError(f"page {page} is out of range; the PDF has {total} pages.")
-    last = min(total, page + pages - 1)
-    chunks = []
-    for n in range(page, last + 1):
-        text = (reader.pages[n - 1].extract_text() or "").strip()
-        chunks.append(f"--- page {n} ---\n{text or '[no text on this page: a scan or an image]'}")
+    last = page + len(texts) - 1
+    chunks = [f"--- page {n} ---\n{text.strip() or '[no text on this page: a scan or an image]'}"
+              for n, text in enumerate(texts, page)]
     head = f"{total} pages; pages {page}-{last} below."
     if last < total:
         head += f" Continue with page={last + 1}."
