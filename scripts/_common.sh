@@ -486,9 +486,12 @@ docs_start() {
         [ "$i" = 60 ] && ynh_die "The embedding server did not answer within two minutes: journalctl -u $app-embed"
         sleep 2
     done
-    # Started beside the embedding server, so loaded by now when it works.
-    curl --silent --fail --output /dev/null "http://127.0.0.1:$port_rerank/health" \
-        || ynh_print_warn "The reranking server does not answer yet; search runs in a rougher order until it does: journalctl -u $app-rerank"
+    # Started beside the embedding server, but it may load a little later.
+    for i in $(seq 1 10); do
+        curl --silent --fail --output /dev/null "http://127.0.0.1:$port_rerank/health" && break
+        [ "$i" = 10 ] && ynh_print_warn "The reranking server does not answer yet; search runs in a rougher order until it does: journalctl -u $app-rerank"
+        sleep 2
+    done
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="Uvicorn running on" --timeout=60
     docs_start_timer
