@@ -36,8 +36,10 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 - **Four units, one user** `cheruby-docs-mcp`, all on loopback:
   - `cheruby-docs-mcp.service`, the tool server (uvicorn). Whoopy reaches it
     with one token, chosen in the config panel: one user, some of their folders.
-  - `cheruby-docs-mcp-embed.service`, llama-server with EmbeddingGemma 300M,
-    built from source at install.
+  - `cheruby-docs-mcp-embed.service`, llama-server built from source at
+    install, with the embedding model chosen in the panel: EmbeddingGemma
+    300M (default), jina-embeddings-v5-text-nano or Qwen3-Embedding 0.6B,
+    each Q8 or Q4.
   - `cheruby-docs-mcp-rerank.service`, the same llama-server with
     jina-reranker-v2 (non-commercial licence): it orders search results.
   - `cheruby-docs-mcp-index.service`, run by its timer on the schedule
@@ -53,7 +55,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   backed up. The settings are the rest: `docs_user`, each source's
   `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
   `<source>_writable`, `nextcloud_account`, `nextcloud_password`,
-  `index_schedule`, `index_calendar`, `index_quiet` and `whoopy_*`; configure renders `folders.json`, the
+  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model` and `whoopy_*`; configure renders `folders.json`, the
   env files and the units from them.
 - **The token picks the user**, and the unit joins each folder's group to
   read it, and to change it when it is writable and mounted read-write,
