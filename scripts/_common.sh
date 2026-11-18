@@ -292,8 +292,8 @@ docs_embed_model() {
         embeddinggemma-300m-q4) model_source=model_gemma_q4 model_family=embeddinggemma model_memory=1G ;;
         jina-embeddings-v5-text-nano-q8) model_source=model_jina_q8 model_family=jina-embeddings-v5-text-nano model_memory=1G ;;
         jina-embeddings-v5-text-nano-q4) model_source=model_jina_q4 model_family=jina-embeddings-v5-text-nano model_memory=1G ;;
-        qwen3-embedding-0.6b-q8) model_source=model_qwen_q8 model_family=qwen3-embedding model_memory=2G ;;
-        qwen3-embedding-0.6b-q4) model_source=model_qwen_q4 model_family=qwen3-embedding model_memory=2G ;;
+        qwen3-embedding-600m-q8) model_source=model_qwen_q8 model_family=qwen3-embedding model_memory=2G ;;
+        qwen3-embedding-600m-q4) model_source=model_qwen_q4 model_family=qwen3-embedding model_memory=2G ;;
         *)
             ynh_print_warn "Embedding model: no '${embed_model:-}'; EmbeddingGemma 300M Q8 is used."
             model_source=model model_family=embeddinggemma model_memory=1G

@@ -17,12 +17,14 @@ import base64
 import hashlib
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
 import tempfile
 import threading
 import time
+import tomllib
 import urllib.parse
 import zipfile
 from email.utils import formatdate
@@ -783,6 +785,19 @@ def index_checks(base, env, first):
         len(cut) > 5 and all(len(p) <= docs_index.PASSAGE_CHARS + 20 for p in cut)
 
 
+def panel_checks():
+    """The embedding models the panel offers are the ones docs_embed_model knows,
+    each with a family docs_index.PROMPTS has. A dot in a choice's key splits it in TOML."""
+    import docs_index
+    with open("config_panel.toml", "rb") as f:
+        offered = set(tomllib.load(f)["main"]["index"]["embed_model"]["choices"])
+    common = open("scripts/_common.sh").read()
+    known = dict(re.findall(r"^ +([a-z0-9-]+)\) model_source=\S+ model_family=(\S+)", common, re.M))
+    yield "the panel offers the models the scripts know", sorted(offered ^ set(known)), offered == set(known)
+    yield "every model family has its prompts", sorted(set(known.values()) - set(docs_index.PROMPTS)), \
+        set(known.values()) <= set(docs_index.PROMPTS)
+
+
 def write_checks(base):
     """write_file on disk and in Nextcloud, after the index checks, which count the files."""
     notes = f"{base}/notes"
@@ -878,6 +893,7 @@ def main():
             results = [(name, *(lambda r: (r, passes(r)))(run())) for name, run, passes in CHECKS]
             results += list(index_checks(base, env, first))
             results += list(write_checks(base))
+            results += list(panel_checks())
             refused = subprocess.run([*PYTHON, "conf/cheruby_docs_mcp.py"], capture_output=True, text=True,
                                      env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
             results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],

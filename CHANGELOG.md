@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.9.1
+
+- Qwen3-Embedding can be picked in the panel: its two choices were unreadable and the panel refused them.
+
 ## 0.9.0
 
 - "Embedding model" in the config panel: EmbeddingGemma 300M (the default, as before), jina-embeddings-v5-text-nano (non-commercial use only) or Qwen3-Embedding 0.6B, each in Q8 or a smaller Q4. Only the chosen model is downloaded. A change makes the next index run read every file again; until then search matches keywords only, and says so.
