@@ -26,6 +26,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   and its runs, health pings and the Whoopy token.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
   in `scripts/_common.sh`.
+- `build/llama-server.sh`, `.github/workflows/llama-server.yml`: build
+  llama-server for the Pi 5 and publish it as the release the manifest pins.
 - `tests/eval_search.py`: scores search on a running server against
   a private set of queries (T-M-2).
 - `tests/check_server.py`: the offline check, on throwaway folders, with a
@@ -36,8 +38,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 - **Four units, one user** `cheruby-docs-mcp`, all on loopback:
   - `cheruby-docs-mcp.service`, the tool server (uvicorn). Whoopy reaches it
     with one token, chosen in the config panel: one user, some of their folders.
-  - `cheruby-docs-mcp-embed.service`, llama-server built from source at
-    install, with the embedding model chosen in the panel: EmbeddingGemma
+  - `cheruby-docs-mcp-embed.service`, llama-server (a pinned release, built
+    for the Pi 5 by the repository's workflow), with the embedding model chosen in the panel: EmbeddingGemma
     300M (default), jina-embeddings-v5-text-nano or Qwen3-Embedding 0.6B,
     each Q8 or Q4.
   - `cheruby-docs-mcp-rerank.service`, the same llama-server with
@@ -75,5 +77,5 @@ for f in scripts/*; do bash -n "$f"; done
 
 The whole repository ships except `CLAUDE.md`, `BACKLOG.md` and `TODO.md`.
 Backup holds the unit; the folders and tokens travel in the app settings.
-Restore rebuilds the code and llama-server (about 8 minutes) and needs the
-network; the timer rebuilds the index.
+Restore reinstalls the venv and fetches llama-server and the models, so it
+needs the network; the timer rebuilds the index.

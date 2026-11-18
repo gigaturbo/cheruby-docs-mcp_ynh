@@ -51,6 +51,19 @@ llama.cpp. Scored with F-M-13 against EmbeddingGemma, with the time of a
 full index. v5-text-small (677M) would double the index time; v5-omni
 embeds images but gives no text to search or read.
 
+### F-P-4 · llama-server fetched as a pinned release, not built on the Pi
+
+`wip` `medium` `filed 2026-11-18`
+
+Every install, upgrade and restore compiled llama-server for 8 minutes, and
+on 2026-11-17 a restore failed when the build's unpinned web UI download
+changed upstream, leaving the app uninstalled.
+
+**Do:** build it once per llama.cpp tag in `.github/workflows/llama-server.yml`
+(debian:12, arm64, Cortex-A76 flags), publish it as a release, pin it by
+sha256 in the manifest. Check it against the native build for speed and
+vectors before the upgrade.
+
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
