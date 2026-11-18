@@ -23,10 +23,13 @@ src="$work/llama.cpp-$tag"
 # The Pi 5's Cortex-A76 by name: the same instructions as -mcpu=native there
 # (armv8.2-a, dotprod, fp16; ggml has no use for its crypto extension), so the
 # binary does not depend on the machine that builds it. No web UI: the build
-# would download its latest assets from Hugging Face, pinned by nothing.
+# would download its latest assets from Hugging Face, pinned by nothing. The
+# source paths compiled in are made relative, so they do not hold the random
+# build folder.
 cmake -S "$src" -B "$work/build" -DCMAKE_BUILD_TYPE=Release \
     -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16 \
-    -DCMAKE_C_FLAGS=-mtune=cortex-a76 -DCMAKE_CXX_FLAGS=-mtune=cortex-a76 \
+    -DCMAKE_C_FLAGS="-mtune=cortex-a76 -ffile-prefix-map=$work=." \
+    -DCMAKE_CXX_FLAGS="-mtune=cortex-a76 -ffile-prefix-map=$work=." \
     -DBUILD_SHARED_LIBS=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
     -DLLAMA_USE_PREBUILT_UI=OFF
 cmake --build "$work/build" --target llama-server -j"$(nproc)"

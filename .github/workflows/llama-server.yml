@@ -25,7 +25,10 @@ jobs:
             > /etc/apt/sources.list.d/github-cli.list
           apt-get update
           apt-get install -y --no-install-recommends gh
+      # The token stays out of .git/config while llama.cpp's build runs.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
       - name: Build
         run: build/llama-server.sh out
       - name: Publish
