@@ -8,8 +8,8 @@ docs_default_settings
 ynh_script_progression "Installing the tool server from the locked wheels..."
 docs_build_venv
 
-ynh_script_progression "Building the embedding server, about 8 minutes, and fetching its model..."
-docs_build_llama
+ynh_script_progression "Fetching the embedding server and its models..."
+docs_fetch_llama
 
 ynh_script_progression "Adding configuration files..."
 docs_clear_index

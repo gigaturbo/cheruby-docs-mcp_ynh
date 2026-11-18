@@ -11,13 +11,13 @@ if [ -x "$install_dir/venv/bin/python" ] \
     && [ "$(docs_build_fingerprint)" = "${build_fingerprint:-}" ]; then
     rebuild_venv=0
 fi
-rebuild_llama=1
+fetch_llama=1
 if [ -x "$install_dir/bin/llama-server" ] && [ -f "$install_dir/model/$model_file" ] \
     && [ -f "$install_dir/model/$rerank_model_file" ] \
     && [ "$(docs_llama_fingerprint)" = "${llama_fingerprint:-}" ]; then
-    rebuild_llama=0
+    fetch_llama=0
 fi
-if [ "$rebuild_venv" = 1 ] || [ "$rebuild_llama" = 1 ]; then
+if [ "$rebuild_venv" = 1 ] || [ "$fetch_llama" = 1 ]; then
     docs_check_downloads
 fi
 
@@ -28,9 +28,9 @@ if [ "$rebuild_venv" = 1 ]; then
     ynh_script_progression "Reinstalling the tool server from the locked wheels..."
     docs_build_venv
 fi
-if [ "$rebuild_llama" = 1 ]; then
-    ynh_script_progression "Building the embedding server, about 8 minutes, and fetching its model..."
-    docs_build_llama
+if [ "$fetch_llama" = 1 ]; then
+    ynh_script_progression "Fetching the embedding server and its models..."
+    docs_fetch_llama
 fi
 
 ynh_script_progression "Updating configuration files..."

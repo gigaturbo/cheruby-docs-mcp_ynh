@@ -314,31 +314,23 @@ docs_fetch_model() {
     ynh_app_setting_set --key=llama_fingerprint --value="$(docs_llama_fingerprint)"
 }
 
-# llama-server built from the pinned source for this processor, and the
-# embedding and reranking models beside it. Takes about 8 minutes; the build folder goes once the binary is out.
-docs_build_llama() {
-    local src
-    src=$(mktemp -d)
-    ynh_setup_source --dest_dir="$src" --source_id="llama_cpp"
-    # No web UI: the build would download its latest assets from Hugging Face,
-    # pinned by nothing, and fails when they change (2026-11-17).
-    ynh_hide_warnings cmake -S "$src" -B "$src/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON \
-        -DBUILD_SHARED_LIBS=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
-        -DLLAMA_USE_PREBUILT_UI=OFF
-    ynh_hide_warnings nice -n 19 cmake --build "$src/build" --target llama-server -j4
-    install -D -m 755 "$src/build/bin/llama-server" "$install_dir/bin/llama-server"
-    ynh_safe_rm "$src"
-
+# llama-server, the release build/llama-server.sh made for the Pi 5, and the
+# embedding and reranking models beside it. A downloaded file has no execute
+# bit, and docs_configure's chmod u=rwX would not add one.
+docs_fetch_llama() {
+    ynh_safe_rm "$install_dir/bin"
+    ynh_setup_source --dest_dir="$install_dir/bin" --source_id="llama_server"
+    chmod 750 "$install_dir/bin/llama-server"
     ynh_safe_rm "$install_dir/model"
     ynh_setup_source --dest_dir="$install_dir/model" --source_id="rerank_model"
     docs_fetch_model
 }
 
-# What the binary and the models depend on, the build flags included.
+# What bin/ and model/ hold, and how they are put there.
 docs_llama_fingerprint() {
-    { ynh_read_manifest "resources.sources.llama_cpp.sha256"; ynh_read_manifest "resources.sources.$model_source.sha256"
+    { ynh_read_manifest "resources.sources.llama_server.sha256"; ynh_read_manifest "resources.sources.$model_source.sha256"
       ynh_read_manifest "resources.sources.rerank_model.sha256"
-      declare -f docs_build_llama; } | sha256sum | cut -d' ' -f1
+      declare -f docs_fetch_llama; } | sha256sum | cut -d' ' -f1
 }
 
 # Before an upgrade stops anything: a failed download mid-upgrade makes
@@ -346,6 +338,7 @@ docs_llama_fingerprint() {
 docs_check_downloads() {
     local url
     for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://github.com/ \
+        "$(ynh_read_manifest "resources.sources.llama_server.url")" \
         "$(ynh_read_manifest "resources.sources.$model_source.url")" \
         "$(ynh_read_manifest "resources.sources.rerank_model.url")"; do
         curl --silent --show-error --head --location --output /dev/null --max-time 15 "$url" \
@@ -446,10 +439,10 @@ docs_configure() {
     fi
     [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder."
 
-    # Changes with the model file or llama.cpp, either of which changes the
-    # vectors. The same as before the choice of model, for EmbeddingGemma Q8.
+    # Changes with the model file or llama-server, either of which may change
+    # the vectors.
     local model
-    model="$(ynh_read_manifest "resources.sources.$model_source.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_cpp.sha256" | cut -c1-16)"
+    model="$(ynh_read_manifest "resources.sources.$model_source.sha256" | cut -c1-16)-$(ynh_read_manifest "resources.sources.llama_server.sha256" | cut -c1-16)"
 
     # The trace stays off while a token is in a variable: it would go to the
     # operation log and, unredacted, to yunohost-cli.log.

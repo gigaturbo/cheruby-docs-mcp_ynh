@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.0
+
+- "Embedding model" in the config panel: EmbeddingGemma 300M (the default, as before), jina-embeddings-v5-text-nano (non-commercial use only) or Qwen3-Embedding 0.6B, each in Q8 or a smaller Q4. Only the chosen model is downloaded. A change makes the next index run read every file again; until then search matches keywords only, and says so.
+- Install, upgrade and restore no longer compile llama-server on the server, about 8 minutes each: they download a release built for the Raspberry Pi 5 and pinned by its checksum. The build tools are no longer installed.
+- The first index run after the upgrade reads every file again, about half an hour, since the new llama-server counts as a new model; search matches keywords only until its first results are published.
+
 ## 0.8.0
 
 - Search passages follow the document's headings: a short note or section stays whole, a longer one is cut at its subheadings, and each passage starts with its file name and headings. Passages are about half as long, so an agent reads less beside the answer. The first index run after the upgrade reads every file again, about half an hour, while search answers from what it has done so far.
