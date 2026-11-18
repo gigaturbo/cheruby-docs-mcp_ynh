@@ -55,36 +55,13 @@ CC-BY-NC-4.0.
 
 ## Tests
 
-### T-P-2 · backup, remove and restore
-
-`todo` `playtest` `reopened 2026-11-18`
-
-The restore no longer builds llama-server: it downloads the pinned release
-and the model chosen in the panel (F-P-4, F-P-2), the path that failed on
-2026-11-17. A restored app must also keep its embedding model.
-
-**Last result** (2026-11-16 at `fbbb555`): nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
-
-### T-P-3 · the Whoopy access field
-
-`todo` `playtest` `reopened 2026-11-18`
-
-`scripts/config` gained the embedding model's validator and apply branch
-(F-P-2), which runs before the generic save.
-
-**Last result** (2026-11-16 at `40e8365`): on 0.6.2, "Whoopy access" offers Documents and Notes; Notes alone saved and Whoopy saw only Notes; cleared, all folders open again
-
-### T-P-4 · sources and filters in the panel
-
-`todo` `playtest` `reopened 2026-11-18`
-
-`config_panel.toml` gained the embedding model select (F-P-2) in the index
-section.
-
-**Last result** (2026-11-16 at `c52e3c7`): its upgrade steps are moot, no old settings left; on a throwaway local folder: Syncthing's choices are its three folders, a 600 file counted as 1 unreadable, `*.pdf` left out hid a PDF from list, read, find and search while the index still held it, Documents' PDFs untouched, Local storage turned off took its folder out, the next run dropped it; "Nothing has changed" no longer holds, since the app password field always looks changed
+Nothing open.
 
 ## Closed
 
+- `T-P-2` done `playtest` 2026-11-18 at `8b0a4db` · on 0.9.1, cmake and its 3 libraries (no longer needed) the only autoremove, held for the test; backup, remove, restore without a warning in 46 s, llama-server and EmbeddingGemma Q8 downloaded, nothing built; the 46 settings the same, the user token, the gateway token and the Nextcloud app password by fingerprint; both tokens list the two folders, Notes read through Nextcloud, no token or a wrong one gets 401; the index empty until the next run; no secret in the 2,602 new lines of `yunohost-cli.log` or the 6 operation logs
+- `T-P-3` done `playtest` 2026-11-18 at `8b0a4db` · "Whoopy access" narrowed to Documents and Notes, then Notes: the gateway token lists Notes only, Documents refused, search answers from Notes only; "New token" (pressed with `app action run`) refused the old one with 401 and Whoopy worked once the new one was pasted; no token in the 6,491 new lines of `yunohost-cli.log`, the 8 operation logs or the command's output; access back to all folders
+- `T-P-4` done `playtest` 2026-11-18 at `8b0a4db` · upgrade steps moot; on a throwaway local folder: Syncthing's choices are its three folders, every source shows its status, a 600 file counted as 1 unreadable; indexed, then `*.pdf` left out hid its PDF from list, read, find and search while the index still held it, Documents' 50 PDFs untouched; Local storage turned off took its folder out; saved again unchanged: "Nothing has changed", no restart; settings back as before but the new gateway token
 - `F-P-2` done `medium` 2026-11-18 · embedding model chosen in the panel (EmbeddingGemma 300M, jina-embeddings-v5-text-nano, Qwen3-Embedding 0.6B, each Q8 or Q4), pinned by commit and sha256, prompts per family, a change downloads first and re-indexes; scored on 17 queries with the time of a full index: EmbeddingGemma Q8 16/17, MRR 0.88, 38 min (kept as default); EmbeddingGemma Q4 16/17, MRR 0.81, 36 min; jina Q8 16/17, MRR 0.85, 29 min; Qwen3 Q8 15/17, MRR 0.79, 112 min.
 - `F-P-4` done `medium` 2026-11-18 · llama-server fetched as release `llama-server-b12223`, built by `build/llama-server.sh` in `.github/workflows/llama-server.yml` (debian:12, arm64, Cortex-A76 flags, no web UI) and pinned by sha256: nothing compiled at install, upgrade or restore, `libgomp1` the only apt dependency; on 162 passages the same vectors bit for bit as the Pi's native build, at the same speed (61 to 67 s both); the upgrade to 0.9.0 took 8 min, then the index was rebuilt once for the new binary, 326 indexed in 38 min.
 - `T-M-2` done `playtest` 2026-11-18 at `5d3644a` · on 0.9.0 after the rebuild for the release binary: 16 of 17 in the top 5, mean reciprocal rank 0.88 against 0.84 on 2026-11-17, 3.6 s a search, 4.3 s at most; the laptop bill back to 1st, the list of authored papers still missed
