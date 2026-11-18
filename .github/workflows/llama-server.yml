@@ -1,0 +1,43 @@
+# Builds llama-server for the package and publishes it as release
+# llama-server-<tag>, whose asset manifest.toml pins by sha256. Run by hand
+# after changing the tag in build/llama-server.sh. A release is never
+# replaced: a pinned hash must not change under the manifest.
+name: llama-server
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04-arm
+    container: debian:12
+    steps:
+      - name: Tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends cmake g++ make curl ca-certificates git
+          curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
+            -o /usr/share/keyrings/githubcli-archive-keyring.gpg
+          echo "deb [arch=arm64 signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" \
+            > /etc/apt/sources.list.d/github-cli.list
+          apt-get update
+          apt-get install -y --no-install-recommends gh
+      - uses: actions/checkout@v4
+      - name: Build
+        run: build/llama-server.sh out
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag=$(sed -n 's/^tag=//p' build/llama-server.sh)
+          release="llama-server-$tag"
+          if gh release view "$release" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "$release exists; a published binary is never replaced." >&2
+            exit 1
+          fi
+          gh release create "$release" out/* --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "$release" \
+            --notes "llama-server from llama.cpp $tag, built by build/llama-server.sh in debian:12 for the Raspberry Pi 5 (Cortex-A76). MIT, see LICENSE."
