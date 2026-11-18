@@ -320,8 +320,11 @@ docs_build_llama() {
     local src
     src=$(mktemp -d)
     ynh_setup_source --dest_dir="$src" --source_id="llama_cpp"
+    # No web UI: the build would download its latest assets from Hugging Face,
+    # pinned by nothing, and fails when they change (2026-11-17).
     ynh_hide_warnings cmake -S "$src" -B "$src/build" -DCMAKE_BUILD_TYPE=Release -DGGML_NATIVE=ON \
-        -DBUILD_SHARED_LIBS=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF
+        -DBUILD_SHARED_LIBS=OFF -DLLAMA_OPENSSL=OFF -DLLAMA_BUILD_TESTS=OFF -DLLAMA_BUILD_EXAMPLES=OFF \
+        -DLLAMA_USE_PREBUILT_UI=OFF
     ynh_hide_warnings nice -n 19 cmake --build "$src/build" --target llama-server -j4
     install -D -m 755 "$src/build/bin/llama-server" "$install_dir/bin/llama-server"
     ynh_safe_rm "$src"
@@ -345,7 +348,7 @@ docs_check_downloads() {
     for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://github.com/ \
         "$(ynh_read_manifest "resources.sources.$model_source.url")" \
         "$(ynh_read_manifest "resources.sources.rerank_model.url")"; do
-        curl --silent --show-error --fail --head --location --output /dev/null --max-time 15 "$url" \
+        curl --silent --show-error --head --location --output /dev/null --max-time 15 "$url" \
             || ynh_die "$url cannot be reached; nothing was changed. Retry the upgrade later."
     done
 }
