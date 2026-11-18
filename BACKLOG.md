@@ -55,7 +55,33 @@ CC-BY-NC-4.0.
 
 ## Tests
 
-Nothing open.
+### T-P-2 · backup, remove and restore
+
+`todo` `playtest` `reopened 2026-11-18`
+
+The restore no longer builds llama-server: it downloads the pinned release
+and the model chosen in the panel (F-P-4, F-P-2), the path that failed on
+2026-11-17. A restored app must also keep its embedding model.
+
+**Last result** (2026-11-16 at `fbbb555`): nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
+
+### T-P-3 · the Whoopy access field
+
+`todo` `playtest` `reopened 2026-11-18`
+
+`scripts/config` gained the embedding model's validator and apply branch
+(F-P-2), which runs before the generic save.
+
+**Last result** (2026-11-16 at `40e8365`): on 0.6.2, "Whoopy access" offers Documents and Notes; Notes alone saved and Whoopy saw only Notes; cleared, all folders open again
+
+### T-P-4 · sources and filters in the panel
+
+`todo` `playtest` `reopened 2026-11-18`
+
+`config_panel.toml` gained the embedding model select (F-P-2) in the index
+section.
+
+**Last result** (2026-11-16 at `c52e3c7`): its upgrade steps are moot, no old settings left; on a throwaway local folder: Syncthing's choices are its three folders, a 600 file counted as 1 unreadable, `*.pdf` left out hid a PDF from list, read, find and search while the index still held it, Documents' PDFs untouched, Local storage turned off took its folder out, the next run dropped it; "Nothing has changed" no longer holds, since the app password field always looks changed
 
 ## Closed
 
@@ -71,17 +97,14 @@ Nothing open.
 - `T-M-2` done `playtest` 2026-11-16 at `f2cab55` · on 0.7.0 with `tests/eval_search.py`: 9 of 9 in the top 5, mean reciprocal rank 0.87, 3.8 s a search, 4.1 s at most, against 7 of 9, 0.71 and 0.1 s before
 - `F-M-12` done `medium` 2026-11-16 · the fused top 30, by file name and first 300 characters, reordered by jina-reranker-v2-base-multilingual (CC-BY-NC-4.0) in its own unit, the best passage per file; bge-reranker-v2-m3 (8 of 9, 12 s) and Qwen3-Reranker-0.6B (8 of 9, 37 s) measured and set aside; the fused order kept, and said, when it fails
 - `F-M-13` done `small` 2026-11-16 · `tests/eval_search.py` scores `search_documents` on a running server against a private query set, rank and time per query, top 5 count and mean reciprocal rank
-- `T-P-3` done `playtest` 2026-11-16 at `40e8365` · on 0.6.2, "Whoopy access" offers Documents and Notes; Notes alone saved and Whoopy saw only Notes; cleared, all folders open again
 - `F-P-3` done `small` 2026-11-16 · "Whoopy access" picked from the open folders, a saved label no longer open kept among the choices to be removed
 - `T-P-5` done `playtest` 2026-11-16 at `071063a` · on 0.6.1, a revoked app password: one index run noted it refused and asked Nextcloud nothing more, the panel said it was refused, Nextcloud's failed logins from 127.0.0.1 stayed at 0; a new password saved: the mark cleared, Notes read and indexed, the panel says it can be read and is writable; the new password in no new line of `yunohost-cli.log`, the save's operation log or the journal
 - `T-P-1` done `playtest` 2026-11-16 at `bf59279` · on 0.6.1: 401 without a token; Nextcloud, Syncthing, the other Syncthing folders, `docs.env` and `/etc/shadow` out of the tool server's reach; its code and index read-only even to root; the embedding unit sees `bin/` and `model/` only, `/slots` 501; an index run without the old `RuntimeMaxSec` warning
 - `B-M-2` closed 2026-11-16 · a revoked app password was tried again by the panel, the indexer and the server until Nextcloud held back every login from loopback; now one refusal stops the tries until a new password, and a 429 is named
 - `B-P-1` closed 2026-11-16 · `RuntimeMaxSec` is ignored for a oneshot unit, so a stuck run blocked the timer; `TimeoutStartSec=6h` fails it, checked on a throwaway unit
-- `T-P-4` done `playtest` 2026-11-16 at `c52e3c7` · its upgrade steps are moot, no old settings left; on a throwaway local folder: Syncthing's choices are its three folders, a 600 file counted as 1 unreadable, `*.pdf` left out hid a PDF from list, read, find and search while the index still held it, Documents' PDFs untouched, Local storage turned off took its folder out, the next run dropped it; "Nothing has changed" no longer holds, since the app password field always looks changed
 - `B-P-2` closed 2026-11-16 · the panel said "could not be checked" for every folder on disk: `find` fails when it starts in YunoHost's root-only working folder; it now starts from `/`
 - `T-M-2` done `playtest` 2026-11-16 at `3df4e18` · after a restore and a full rebuild, the same 5 of 7 documents in the top 5 as on 2026-11-11, the same two missed (F-M-12), 0.2 s a search
 - `T-P-5` done `playtest` 2026-11-16 at `3df4e18` · an app password revoked in Nextcloud cut Notes off, and a new one pasted in the panel brought it back; neither app password in the new lines of `yunohost-cli.log` nor the 33 operation files since the restore
-- `T-P-2` done `playtest` 2026-11-16 at `fbbb555` · nothing for `apt` to autoremove; backup, remove, restore without a warning: the user token, the gateway token and the Nextcloud app password back with the same fingerprints, and the 13 source, writable, ping, schedule and quiet-hour settings the same; both tokens list the two folders, Notes read through Nextcloud, no token gets 401; the timer back at its trimmed schedule, the index cleared for a rebuild; no secret in the new lines of `yunohost-cli.log`, the 6 operation logs or the commands' output
 - `T-P-6` done `playtest` 2026-11-16 at `1fa9784` · "Custom" shows its field; `0 3 * * *` refused for the quiet hours 01-06 and `34 6-24 * * *` for hour 24; quiet hours over the current hour skipped it in the next run and made a start by hand log "no run now", while Run now ran; Rebuild stopped a run, dropped the working copy and kept search on the published index, then a run from zero indexed 312 files in 33 min; a stopped run counts as a success with `SuccessExitStatus=SIGTERM` and a failure without (a throwaway unit, since an unchanged run takes 1.3 s)
 - `T-M-3` done `playtest` 2026-11-16 at `1fa9784` · with the Whoopy token both write tools offered on the two writable folders; in Nextcloud a folder made, a file created, replaced and read back, the old version kept whole; on disk, in a group-writable test folder, a new folder 2770 and file 660 in the folder's group, a file the group cannot change refused, one it can replaced keeping owner and mode, synced to two devices; `.pdf`, hidden names, `..`, unknown folders refused, and a Nextcloud label marked under Syncthing refused at save; inside the unit only Documents writable, even to root
 - `T-P-1` done `playtest` 2026-11-16 at `1fa9784` · 401 without a token; the tool server sees only its code, its index and Documents, not Nextcloud, Syncthing, the other Syncthing folders, the env files, `settings.yml`, `/etc/shadow`, PHP sessions or `/mnt`; the embedding unit sees `bin/` and `model/` only, `/slots` 501; the indexer writes in its index folder only
