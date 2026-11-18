@@ -51,19 +51,6 @@ llama.cpp. Scored with F-M-13 against EmbeddingGemma, with the time of a
 full index. v5-text-small (677M) would double the index time; v5-omni
 embeds images but gives no text to search or read.
 
-### F-P-4 · llama-server fetched as a pinned release, not built on the Pi
-
-`wip` `medium` `filed 2026-11-18`
-
-Every install, upgrade and restore compiled llama-server for 8 minutes, and
-on 2026-11-17 a restore failed when the build's unpinned web UI download
-changed upstream, leaving the app uninstalled.
-
-**Do:** build it once per llama.cpp tag in `.github/workflows/llama-server.yml`
-(debian:12, arm64, Cortex-A76 flags), publish it as a release, pin it by
-sha256 in the manifest. Check it against the native build for speed and
-vectors before the upgrade.
-
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -90,6 +77,9 @@ Nothing open.
 
 ## Closed
 
+- `F-P-4` done `medium` 2026-11-18 · llama-server fetched as release `llama-server-b12223`, built by `build/llama-server.sh` in `.github/workflows/llama-server.yml` (debian:12, arm64, Cortex-A76 flags, no web UI) and pinned by sha256: nothing compiled at install, upgrade or restore, `libgomp1` the only apt dependency; on 162 passages the same vectors bit for bit as the Pi's native build, at the same speed (61 to 67 s both); the upgrade to 0.9.0 took 8 min, then the index was rebuilt once for the new binary, 326 indexed in 38 min.
+- `T-M-2` done `playtest` 2026-11-18 at `5d3644a` · on 0.9.0 after the rebuild for the release binary: 16 of 17 in the top 5, mean reciprocal rank 0.88 against 0.84 on 2026-11-17, 3.6 s a search, 4.3 s at most; the laptop bill back to 1st, the list of authored papers still missed
+- `T-P-1` done `playtest` 2026-11-18 at `5d3644a` · on 0.9.0 with the release binary: 401 without a token; as the app user the tool server reads neither `/etc/shadow` nor the env files and writes neither its code nor its index; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
 - `F-M-15` done `medium` 2026-11-17 · PDFs read with pypdfium2, not pypdf: on 314 PDFs 4 s against 45 s, 1 failure against 2, the same text order, ligatures as letters, but 468 unreadable characters in 11 files against 280 in 9; words cut at a line end joined; a PDF's running headers and footers indexed once, a number matching only at a fixed distance from the page number (420 of 31,928 lines, 30 files, 9% at most); HTML and XML indexed by their text; NFKC left out, PDFium already gives letters. After a full rebuild (35 min, 315 indexed, 1 password-protected PDF failed): 16 of 17 in the top 5, mean reciprocal rank 0.84 against 0.88, 3.7 s a search; the Dell invoice 4th, not 1st, its page now read from the payment terms, under a 2013 computer order form
 - `T-M-2` done `playtest` 2026-11-17 at `dddd300` · on 0.8.0 with F-M-16, after a run that indexed the user's one ods (7 passages) and one xlsx (1): the saved set 16 of 17 in the top 5, mean reciprocal rank 0.88, 3.7 s a search, 4.3 s at most, as after F-M-14; the ods 4th for a query in other words; the xlsx, a table of "HP", "HC" and numbers named ELEC/Feuil1, not in the top 5 for two, too little text to match by meaning. `read_file` gave both, sheets as headings
 - `F-M-16` done `small` 2026-11-17 · pptx, odp, xlsx, ods, epub and eml read by `read_file` and the index, from their XML or with `email`, no new wheel, in a new `docs_text.py` with PDF and Word; slides and sheets as headings, in the document's order, notes left out, 20 MB unpacked at most. On the server, 11 odp, 7 ods, 1 pptx and 1 xlsx all read, 0.08 s at most; no epub or eml there to try
