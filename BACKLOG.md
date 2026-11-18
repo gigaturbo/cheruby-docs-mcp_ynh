@@ -33,24 +33,6 @@ Whoopy cannot be reached, the run goes on locally. Never used by the timer.
 The remote must serve the model chosen in the panel (F-P-2): Ollama has
 `embeddinggemma` and `qwen3-embedding:0.6b`, not jina-embeddings-v5-text-nano.
 
-### F-P-2 · choice of embedding model in the panel
-
-`todo` `medium` `filed 2026-11-10`
-
-The model is fixed to EmbeddingGemma 300M.
-
-**Do:** a short list in the panel, EmbeddingGemma by default, each model
-pinned in the manifest by commit and sha256 so a restore can fetch it, and
-its search prefixes kept in the code. A change downloads the model,
-restarts the embedding unit and re-indexes everything (`DOCS_EMBED_MODEL`).
-F-M-10's remote must serve the same model.
-
-**Candidate (2026-11-16):** jina-embeddings-v5-text-nano-retrieval (212M,
-CC-BY-NC-4.0), smaller than EmbeddingGemma, last-token pooling on upstream
-llama.cpp. Scored with F-M-13 against EmbeddingGemma, with the time of a
-full index. v5-text-small (677M) would double the index time; v5-omni
-embeds images but gives no text to search or read.
-
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -77,6 +59,7 @@ Nothing open.
 
 ## Closed
 
+- `F-P-2` done `medium` 2026-11-18 · embedding model chosen in the panel (EmbeddingGemma 300M, jina-embeddings-v5-text-nano, Qwen3-Embedding 0.6B, each Q8 or Q4), pinned by commit and sha256, prompts per family, a change downloads first and re-indexes; scored on 17 queries with the time of a full index: EmbeddingGemma Q8 16/17, MRR 0.88, 38 min (kept as default); EmbeddingGemma Q4 16/17, MRR 0.81, 36 min; jina Q8 16/17, MRR 0.85, 29 min; Qwen3 Q8 15/17, MRR 0.79, 112 min.
 - `F-P-4` done `medium` 2026-11-18 · llama-server fetched as release `llama-server-b12223`, built by `build/llama-server.sh` in `.github/workflows/llama-server.yml` (debian:12, arm64, Cortex-A76 flags, no web UI) and pinned by sha256: nothing compiled at install, upgrade or restore, `libgomp1` the only apt dependency; on 162 passages the same vectors bit for bit as the Pi's native build, at the same speed (61 to 67 s both); the upgrade to 0.9.0 took 8 min, then the index was rebuilt once for the new binary, 326 indexed in 38 min.
 - `T-M-2` done `playtest` 2026-11-18 at `5d3644a` · on 0.9.0 after the rebuild for the release binary: 16 of 17 in the top 5, mean reciprocal rank 0.88 against 0.84 on 2026-11-17, 3.6 s a search, 4.3 s at most; the laptop bill back to 1st, the list of authored papers still missed
 - `T-P-1` done `playtest` 2026-11-18 at `5d3644a` · on 0.9.0 with the release binary: 401 without a token; as the app user the tool server reads neither `/etc/shadow` nor the env files and writes neither its code nor its index; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
