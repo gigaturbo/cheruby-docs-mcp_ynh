@@ -17,30 +17,6 @@ Nothing open.
 
 ## Features
 
-### F-M-10 · first index embedded through Whoopy on the desktop's GPU
-
-`wip` `medium` `filed 2026-11-10` `needs: F-P-1`
-
-A first index of many files takes hours on the Pi, and nearly all of it is
-embedding; reading the text is fast.
-
-**Do:** a "Run now on remote" button: the indexer reads the files on the
-Pi and sends the passages to Whoopy's Ollama, with a key
-allowed that model only. Before using it, it embeds a fixed set of about 20
-passages on both servers and refuses the remote unless every pair has a
-cosine of 0.995 or more, since search still embeds queries on the Pi. When
-Whoopy cannot be reached, the run goes on locally. Never used by the timer.
-The remote must serve the model chosen in the panel (F-P-2), as
-`ollama-embed/<name>` (Whoopy's F-P-3): `ollama/<name>` cannot embed, and
-Whoopy's `embeddinggemma` is this app's own llama-server.
-The desktop has `embeddinggemma-300m-q8-2k:latest` (2026-11-19), no Qwen3,
-and Ollama has no jina-embeddings-v5-text-nano.
-
-**Built (2026-11-19, not installed):** the button, "Desktop embedding" in
-the panel, the check and the fallback, covered by the offline check.
-Asked directly, the desktop matched the Pi on the check passages to 0.9997
-at worst, about 20 times faster. Left: Whoopy's F-P-3, then T-M-4.
-
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -63,14 +39,12 @@ CC-BY-NC-4.0.
 
 ## Tests
 
-### T-M-4 · a first index embedded on the desktop agrees with the Pi
-
-`todo` `playtest` `filed 2026-11-19` `needs: F-M-10`
-
-The recipe is in the `cheruby-docs-mcp-kb` skill.
+Nothing open.
 
 ## Closed
 
+- `T-M-4` done `playtest` 2026-11-19 at `116a392` · on 0.10.0 with Whoopy ~ynh12: after a Rebuild, "Run now on the desktop" passed the check and indexed 333 files in 3 min 47 s against 38 min on the Pi (1 password-protected PDF failed, as before); on that index 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.0 s a search, as on the Pi; Whoopy stopped 55 s into a second run: 215 files done on the desktop, the Pi did the other 208 and the run ended done, the panel naming both; the key in none of 4,000 new lines of `yunohost-cli.log`, 11 operation logs or the journal, and in `index.env` only
+- `F-M-10` done `medium` 2026-11-19 · "Run now on the desktop" embeds a run through Whoopy's `ollama-embed/` route (Whoopy F-P-3) with a pasted key, after 20 check passages agree to 0.995 (0.9997 measured); a Whoopy error sends the rest of the run to the Pi; never used by the timer
 - `T-P-2` done `playtest` 2026-11-18 at `8b0a4db` · on 0.9.1, cmake and its 3 libraries (no longer needed) the only autoremove, held for the test; backup, remove, restore without a warning in 46 s, llama-server and EmbeddingGemma Q8 downloaded, nothing built; the 46 settings the same, the user token, the gateway token and the Nextcloud app password by fingerprint; both tokens list the two folders, Notes read through Nextcloud, no token or a wrong one gets 401; the index empty until the next run; no secret in the 2,602 new lines of `yunohost-cli.log` or the 6 operation logs
 - `T-P-3` done `playtest` 2026-11-18 at `8b0a4db` · "Whoopy access" narrowed to Documents and Notes, then Notes: the gateway token lists Notes only, Documents refused, search answers from Notes only; "New token" (pressed with `app action run`) refused the old one with 401 and Whoopy worked once the new one was pasted; no token in the 6,491 new lines of `yunohost-cli.log`, the 8 operation logs or the command's output; access back to all folders
 - `T-P-4` done `playtest` 2026-11-18 at `8b0a4db` · upgrade steps moot; on a throwaway local folder: Syncthing's choices are its three folders, every source shows its status, a 600 file counted as 1 unreadable; indexed, then `*.pdf` left out hid its PDF from list, read, find and search while the index still held it, Documents' 50 PDFs untouched; Local storage turned off took its folder out; saved again unchanged: "Nothing has changed", no restart; settings back as before but the new gateway token
