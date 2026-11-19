@@ -97,15 +97,6 @@
       <ellipse cx="262" cy="402" rx="17" ry="15"/>
     </g>
 
-    <!-- cat ears, behind the body -->
-    <g stroke="#7a0f2e" stroke-width="6" stroke-linejoin="round">
-      <path d="M 158,250 L 150,182 Q 150,174 158,177 L 212,214 Z" fill="#d81e4a"/>
-      <path d="M 306,250 L 314,182 Q 314,174 306,177 L 252,214 Z" fill="#d81e4a"/>
-    </g>
-    <g fill="#ffb3c4">
-      <path d="M 166,232 L 162,196 L 194,218 Z"/>
-      <path d="M 298,232 L 302,196 L 270,218 Z"/>
-    </g>
 
     <!-- big cherry, with the face -->
     <circle cx="232" cy="306" r="98" fill="url(#cherry)" stroke="#7a0f2e" stroke-width="6"/>

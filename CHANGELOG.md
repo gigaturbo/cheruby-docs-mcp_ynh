@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.10.1
+
+- A redrawn logo.
+
 ## 0.10.0
 
 - "Run now on the desktop" in "Index runs": the passages are turned into vectors by the desktop's GPU through Whoopy, so a first index of many files no longer takes hours. Set the model as Whoopy names it and a Whoopy key under "Desktop embedding". The run checks first that the desktop's vectors agree with the server's, and goes on on the server when they do not or when Whoopy stops answering. The schedule never uses it.
