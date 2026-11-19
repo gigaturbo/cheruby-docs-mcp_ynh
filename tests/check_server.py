@@ -7,7 +7,8 @@ a stand-in Nextcloud, indexes them without filters against a stand-in
 embedding server, starts the tool server, with a stand-in reranker, with filters on a loopback port,
 then calls each tool and re-runs the indexer with the filters, then after a
 move, an edit and a deletion, then with Nextcloud changed, down and refusing,
-then writes in the writable folders, on disk and in Nextcloud.
+then embeds through a stand-in Whoopy, then writes in the writable folders,
+on disk and in Nextcloud.
 The stand-in embedder hashes words into vectors: it checks the wiring, not
 the quality of the search. Needs the package's dependencies only.
 Prints one line per check and exits 1 if any fails.
@@ -44,6 +45,9 @@ DAV = {"root": "", "down": False, "fail": None}
 URL = f"http://127.0.0.1:{PORT}/mcp"
 PYTHON = [sys.executable, "-E", "-s", "-B"]
 EMBEDDED = []
+WHOOPY_PORT = 18776
+WHOOPY_KEY = "w" * 40
+WHOOPY = {"calls": 0, "left": -1, "skew": False, "gone": 503}
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 
@@ -165,7 +169,9 @@ class FakeEmbedder(BaseHTTPRequestHandler):
         self.end_headers()
 
     def do_POST(self):
-        texts = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"]
+        self.answer(json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"])
+
+    def answer(self, texts):
         EMBEDDED.extend(texts)
         if any("panne" in t or ("♪" in t and len(t) > 600) for t in texts):
             self.send_response(500)
@@ -185,6 +191,24 @@ class FakeEmbedder(BaseHTTPRequestHandler):
 
     def log_message(self, *args):
         pass
+
+
+class FakeWhoopy(FakeEmbedder):
+    """Whoopy: 401 without its key and model, then the stand-in embedder's vectors,
+    or those of each text reversed when skewed, and "gone" (503, or 500 as LiteLLM
+    answers for a desktop out of reach) once "left" batches are spent."""
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        WHOOPY["calls"] += 1
+        refused = 401 if self.headers.get("Authorization") != f"Bearer {WHOOPY_KEY}" \
+            or body.get("model") != "ollama/fake" else WHOOPY["gone"] if WHOOPY["left"] == 0 else None
+        if refused:
+            self.send_response(refused)
+            self.end_headers()
+            return
+        WHOOPY["left"] -= 1
+        self.answer([t[::-1] for t in body["input"]] if WHOOPY["skew"] else body["input"])
 
 
 class FakeReranker(BaseHTTPRequestHandler):
@@ -785,6 +809,53 @@ def index_checks(base, env, first):
         len(cut) > 5 and all(len(p) <= docs_index.PASSAGE_CHARS + 20 for p in cut)
 
 
+def remote_checks(base, env):
+    """Run now on the desktop, each run on a fresh index against the stand-in Whoopy."""
+    def run(name, run_now, key=WHOOPY_KEY, left=-1, skew=False, gone=503):
+        index = f"{base}/remote-{name}"
+        os.makedirs(index)
+        if run_now is not None:
+            with open(f"{index}/run-now", "w") as f:
+                f.write(run_now)
+        WHOOPY.update(calls=0, left=left, skew=skew, gone=gone)
+        out = run_indexer({**env, "DOCS_INDEX_DIR": index, "DOCS_REMOTE_URL": f"http://127.0.0.1:{WHOOPY_PORT}",
+                           "DOCS_REMOTE_MODEL": "ollama/fake", "DOCS_REMOTE_KEY": key})
+        with open(f"{index}/alice.status.json") as f:
+            status = json.load(f)
+        db = sqlite3.connect(f"{index}/alice.sqlite")
+        rows = sorted(db.execute("SELECT f.path, f.status, p.text, p.vector FROM files f "
+                                 "LEFT JOIN passages p ON p.file = f.id"))
+        db.close()
+        return out, status, rows, WHOOPY["calls"]
+
+    _, local, rows, calls = run("timer", None)
+    yield "the timer never calls Whoopy", calls, calls == 0 and local["embedded_on"] == ["pi"]
+    _, status, _, calls = run("now", "")
+    yield "Run now never calls Whoopy", calls, calls == 0 and status["embedded_on"] == ["pi"]
+    out, status, remote, calls = run("desktop", "remote")
+    yield "Run now on the desktop embeds there, the same vectors", (out[-300:], status), \
+        status["embedded_on"] == ["desktop"] and calls > 1 and remote == rows and status["result"] == "done"
+    _, status, remote, _ = run("skew", "remote", skew=True)
+    yield "vectors that differ keep the run on this server", status, \
+        status["embedded_on"] == ["pi"] and "differ" in status["remote_note"] and remote == rows
+    _, status, remote, _ = run("key", "remote", key="wrong")
+    yield "a refused key keeps the run on this server", status, \
+        status["embedded_on"] == ["pi"] and "401" in status["remote_note"] and remote == rows
+    _, status, remote, _ = run("drop", "remote", left=3)
+    yield "Whoopy gone midway: the run ends on this server, no file failed for it", status, \
+        status["embedded_on"] == ["desktop", "pi"] and "stopped answering" in status["remote_note"] \
+        and status["result"] == "done" and remote == rows
+    _, status, remote, calls = run("asleep", "remote", left=3, gone=500)
+    yield "a desktop out of reach midway (500): the same, without halving texts", (status, calls), \
+        status["embedded_on"] == ["desktop", "pi"] and status["result"] == "done" and remote == rows and calls == 4
+    os.makedirs(f"{base}/remote-early")
+    with open(f"{base}/remote-early/run-now", "w") as f:
+        f.write("remote")
+    run_indexer({**env, "DOCS_INDEX_DIR": f"{base}/remote-early", "DOCS_FOLDERS_FILE": f"{base}/missing.json"})
+    yield "a run that fails to start leaves no remote for the timer", os.listdir(f"{base}/remote-early"), \
+        not os.path.exists(f"{base}/remote-early/run-now")
+
+
 def panel_checks():
     """The embedding models the panel offers are the ones docs_embed_model knows,
     each with a family docs_index.PROMPTS has. A dot in a choice's key splits it in TOML."""
@@ -875,6 +946,8 @@ def main():
     threading.Thread(target=embedder.serve_forever, daemon=True).start()
     reranker = ThreadingHTTPServer(("127.0.0.1", RERANK_PORT), FakeReranker)
     threading.Thread(target=reranker.serve_forever, daemon=True).start()
+    whoopy = ThreadingHTTPServer(("127.0.0.1", WHOOPY_PORT), FakeWhoopy)
+    threading.Thread(target=whoopy.serve_forever, daemon=True).start()
     nextcloud = ThreadingHTTPServer(("127.0.0.1", DAV_PORT), FakeNextcloud)
     threading.Thread(target=nextcloud.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:
@@ -892,6 +965,7 @@ def main():
                     time.sleep(0.2)
             results = [(name, *(lambda r: (r, passes(r)))(run())) for name, run, passes in CHECKS]
             results += list(index_checks(base, env, first))
+            results += list(remote_checks(base, env))
             results += list(write_checks(base))
             results += list(panel_checks())
             refused = subprocess.run([*PYTHON, "conf/cheruby_docs_mcp.py"], capture_output=True, text=True,

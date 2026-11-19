@@ -250,10 +250,40 @@ name = "Cheruby Docs"
         help = "What turns passages and queries into the vectors search compares. A change downloads the model, stops a run and makes the next run read every file again, which takes hours on many files; until then search matches keywords only, then answers from what is done. Q4 is smaller and faster, Q8 a little more exact. jina-embeddings-v5-text-nano is CC-BY-NC-4.0: non-commercial use only. Qwen3-Embedding is the largest and slowest."
         bind = "settings"
 
+    [main.remote]
+    name = "Desktop embedding"
+    help = "Run now on the desktop reads the files on this server as usual but has the desktop's GPU, through Whoopy, turn the passages into vectors: a first index of many files takes minutes instead of hours. Search still does it here for each question, so the run first compares about 20 passages done both ways and keeps to this server unless they agree. In Whoopy's admin page, make a key allowed only the model below."
+
+        [main.remote.remote_model]
+        ask = "Model in Whoopy"
+        type = "string"
+        optional = true
+        example = "ollama-embed/embeddinggemma-300m-q8-2k:latest"
+        help = "The embedding model chosen above, as Whoopy names it on the desktop: ollama-embed/ then its name in Ollama. Not ollama/, which cannot embed, nor Whoopy's embeddinggemma, which is this server's. jina-embeddings-v5-text-nano is not in Ollama."
+        bind = "settings"
+
+        # Never shown and never traced: stored by set__remote_key with the trace off.
+        [main.remote.remote_key]
+        ask = "Whoopy key"
+        type = "password"
+        optional = true
+        help = "A key allowed the model above only. Empty keeps the one saved."
+        bind = "null"
+
+        [main.remote.remote_url]
+        ask = "Whoopy address"
+        type = "string"
+        optional = true
+        example = "http://127.0.0.1:4000"
+        help = "On this server: the index is not allowed to reach any other machine."
+        pattern.regexp = '^$|^http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+/?$'
+        pattern.error = "An address on this server, such as http://127.0.0.1:4000"
+        bind = "settings"
+
     # Its own section: a section holding a button runs actions and saves nothing.
     [main.index_runs]
     name = "Index runs"
-    help = "Run now starts a run without waiting for the schedule, even in the quiet hours, and does nothing while one runs. Rebuild stops a run and drops the index: the next run reads every file again, which takes hours on many, and search answers from the old index only for its first ten minutes."
+    help = "Run now starts a run without waiting for the schedule, even in the quiet hours, and does nothing while one runs. Run now on the desktop does the same with the desktop's GPU (Desktop embedding above); when Whoopy cannot be reached or the vectors do not agree, the run goes on here. The schedule never uses the desktop. Rebuild stops a run and drops the index: the next run reads every file again, which takes hours on many, and search answers from the old index only for its first ten minutes."
 
         # Filled when the panel opens, from the status file the indexer writes.
         [main.index_runs.index_status]
@@ -263,6 +293,10 @@ name = "Cheruby Docs"
 
         [main.index_runs.run_index]
         ask = "Run now"
+        type = "button"
+
+        [main.index_runs.run_index_remote]
+        ask = "Run now on the desktop"
         type = "button"
 
         [main.index_runs.rebuild_index]

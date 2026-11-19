@@ -12,6 +12,16 @@ root-600 env file, which holds no MCP token:
                             still going stops when they begin. A file run-now in
                             the index folder, left by the panel's Run now, lifts
                             this for one run.
+    DOCS_REMOTE_URL         optional: Whoopy on loopback, e.g. http://127.0.0.1:4000
+    DOCS_REMOTE_MODEL       the model there, as Whoopy names it
+    DOCS_REMOTE_KEY         a Whoopy key allowed that model only
+
+A run-now file holding "remote", left by the panel's "Run now on the desktop",
+sends the passages to Whoopy instead of the embedding server on the Pi. The
+vectors are stored under the Pi's model id, since search embeds queries on the
+Pi: so the run first embeds CHECK_PASSAGES on both and keeps to the Pi unless
+every pair agrees to MIN_COSINE. When Whoopy stops answering, the run goes on
+on the Pi. The timer never leaves the file, so it never uses Whoopy.
 
 Each run walks the folders and redoes only the files whose size or dates
 changed; a moved file keeps its passages, a deleted one loses them, and so do
@@ -73,6 +83,41 @@ MAX_FILE_CHARS = 300_000
 MAX_FETCH_BYTES = 64_000_000
 BATCH = 8
 MIN_EMBED_CHARS = 200
+# A GPU behind a network hop does better with larger batches.
+REMOTE_BATCH = 32
+MIN_COSINE = 0.995
+# The server or the gateway refuses, is down, or holds requests back: not the
+# file's fault, so the run stops instead of marking every file failed.
+SERVER_REFUSED = {401, 403, 429, 502, 503, 504}
+
+# Embedded on the Pi and on the desktop before a remote run. Generic text in
+# both languages and the shapes the folders hold: prose, a list, a table,
+# code, a heading line, a long paragraph.
+CHECK_PASSAGES = [
+    "Le conseil municipal a voté le budget de l'année prochaine après deux heures de débat.",
+    "The meeting was moved to Thursday because half the team was travelling.",
+    "Recette de la pâte brisée : 250 g de farine, 125 g de beurre, une pincée de sel, 5 cl d'eau.",
+    "Invoice 2041: due within 30 days. Late payments incur a fee of 1.5% per month.",
+    "notes.md > Courses\n- lait\n- pain\n- tomates\n- café",
+    "def mean(values):\n    return sum(values) / len(values) if values else 0.0",
+    "Le contrat de location prend fin le 30 juin ; le préavis est de trois mois pour le locataire.",
+    "Photosynthesis converts light energy into chemical energy stored in glucose.",
+    "| Mois | Électricité | Gaz |\n| janvier | 82 € | 64 € |\n| février | 77 € | 59 € |",
+    "Rendez-vous chez le dentiste mardi à 14 h 30, apporter la carte vitale.",
+    "The warranty covers manufacturing defects for two years from the date of purchase.",
+    "rapport.pdf > Introduction > Contexte",
+    "Après la tempête, les arbres tombés ont bloqué la route départementale pendant trois jours, "
+    "et les habitants du hameau ont dû passer par le chemin forestier pour rejoindre le village. "
+    "La mairie a fait venir une entreprise d'élagage, puis les services de l'État ont rouvert la voie.",
+    "Abstract: we study how retrieval quality changes when passages are cut at headings rather than "
+    "at a fixed length, on three collections of notes, reports and scientific articles.",
+    "Mot de passe Wi-Fi changé, penser à mettre à jour l'imprimante et la télévision.",
+    "SELECT name, count(*) FROM orders GROUP BY name ORDER BY 2 DESC;",
+    "Chapter 3. The lighthouse keeper had not seen a ship in eleven days.",
+    "Attestation d'assurance habitation, valable du 1er janvier au 31 décembre.",
+    "To reset the router, hold the button for ten seconds until the light blinks orange.",
+    "Liste des pièces : vis M4 × 20, rondelles, écrous, clé Allen de 3 mm.",
+]
 PUBLISH_EVERY_S = 600
 
 SCHEMA = """
@@ -246,11 +291,14 @@ def file_pages(f, suffix):
 def vectors(client, texts):
     """Raw vectors for texts, in order. A text the server refuses, as one past
     the model's 2048 tokens (music notation takes several a character), is
-    embedded by its first half, down to MIN_EMBED_CHARS."""
-    resp = client.post("/v1/embeddings", json={"input": texts})
-    if resp.status_code == 500 and len(texts) > 1:
+    embedded by its first half, down to MIN_EMBED_CHARS. A client with an
+    embed_model attribute sends it as the model, which Whoopy needs; there a
+    500 means the desktop is out of reach, since Ollama cuts a long text itself."""
+    model = getattr(client, "embed_model", None)
+    resp = client.post("/v1/embeddings", json={"input": texts, **({"model": model} if model else {})})
+    if resp.status_code == 500 and not model and len(texts) > 1:
         return [v for t in texts for v in vectors(client, [t])]
-    if resp.status_code == 500 and len(texts[0]) > MIN_EMBED_CHARS:
+    if resp.status_code == 500 and not model and len(texts[0]) > MIN_EMBED_CHARS:
         return vectors(client, [texts[0][:len(texts[0]) // 2]])
     resp.raise_for_status()
     return [d["embedding"] for d in sorted(resp.json()["data"], key=lambda d: d["index"])]
@@ -258,9 +306,9 @@ def vectors(client, texts):
 
 def embed(client, texts):
     """Unit vectors for texts, in order, as float32 rows."""
-    rows = []
-    for i in range(0, len(texts), BATCH):
-        rows += vectors(client, texts[i:i + BATCH])
+    rows, batch = [], getattr(client, "embed_batch", BATCH)
+    for i in range(0, len(texts), batch):
+        rows += vectors(client, texts[i:i + batch])
     matrix = numpy.asarray(rows, dtype=numpy.float32)
     return matrix / numpy.linalg.norm(matrix, axis=1, keepdims=True)
 
@@ -424,6 +472,10 @@ def index_user(db, folders, rules, nextcloud, client, model, base, quiet=""):
             unreachable.add(shown.split("/", 1)[0])
             outcome = "skipped"
         except (OSError, ValueError, httpx2.HTTPStatusError) as e:
+            # Any error from Whoopy says it or the desktop is out of reach.
+            if isinstance(e, httpx2.HTTPStatusError) and (e.response.status_code in SERVER_REFUSED
+                                                           or getattr(client, "embed_model", None)):
+                raise
             # Kept as failed with its dates, so it is retried once it changes.
             db.rollback()
             if row:
@@ -463,34 +515,70 @@ def wait_ready(client):
 
 
 def main():
-    users, rules, _ = load_folders(os.environ["DOCS_FOLDERS_FILE"])
-    nextcloud = Nextcloud.from_env(os.environ)
-    needs_nextcloud(users, nextcloud)
     index_dir = os.environ["DOCS_INDEX_DIR"]
-    # A password refused before is not tried again: each try counts against loopback.
-    if nextcloud and any(read_status(os.path.join(index_dir, u)).get("nextcloud_refused") == nextcloud.mark
-                         for u in users):
-        nextcloud.refused = True
-    quiet = os.environ.get("DOCS_QUIET_HOURS", "")
+    # Taken first, so a run that fails to start leaves no "remote" for the timer.
+    quiet, wanted = os.environ.get("DOCS_QUIET_HOURS", ""), None
     try:
+        with open(os.path.join(index_dir, "run-now"), encoding="utf-8") as f:
+            wanted = f.read(16).strip()
         os.remove(os.path.join(index_dir, "run-now"))
         quiet = ""
     except FileNotFoundError:
         pass
+    users, rules, _ = load_folders(os.environ["DOCS_FOLDERS_FILE"])
+    nextcloud = Nextcloud.from_env(os.environ)
+    needs_nextcloud(users, nextcloud)
+    # A password refused before is not tried again: each try counts against loopback.
+    if nextcloud and any(read_status(os.path.join(index_dir, u)).get("nextcloud_refused") == nextcloud.mark
+                         for u in users):
+        nextcloud.refused = True
     if quiet_now(quiet):
         # A timer catching up after a stop: the next run outside them will do.
         print(f"quiet hours {quiet}: no run now.", flush=True)
         return
     broken = []
-    with httpx2.Client(base_url=os.environ["DOCS_EMBED_URL"], timeout=300) as client:
+    key, remote_model = os.environ.get("DOCS_REMOTE_KEY", ""), os.environ.get("DOCS_REMOTE_MODEL", "")
+    model = f"{os.environ['DOCS_EMBED_MODEL']}/passages-{PASSAGES_VERSION}"
+    # Waking the desktop takes up to two minutes, within the timeout.
+    with httpx2.Client(base_url=os.environ["DOCS_EMBED_URL"], timeout=300) as client, \
+            httpx2.Client(base_url=os.environ.get("DOCS_REMOTE_URL") or "http://127.0.0.1:4000", timeout=300,
+                          headers={"Authorization": f"Bearer {key}"}) as remote:
+        remote.embed_model, remote.embed_batch = remote_model, REMOTE_BATCH
         wait_ready(client)
+        embedder, note = client, None
+        if wanted == "remote" and not (key and remote_model):
+            note = "No Whoopy key or model is saved in the panel: embedded on this server."
+        elif wanted == "remote":
+            texts = [PROMPTS[os.environ["DOCS_EMBED_NAME"]][1].format(title="check.md", text=t) for t in CHECK_PASSAGES]
+            local = embed(client, texts)
+            try:
+                lowest = float(numpy.min(numpy.sum(local * embed(remote, texts), axis=1)))
+                if lowest >= MIN_COSINE:
+                    embedder = remote
+                else:
+                    note = f"The desktop's vectors differ from this server's (cosine {lowest:.4f}, under {MIN_COSINE}): embedded on this server."
+            except httpx2.HTTPStatusError as e:
+                note = f"Whoopy answered {e.response.status_code} to the check passages: embedded on this server."
+            except (httpx2.TransportError, ValueError, KeyError) as e:  # down, or another shape of answer
+                note = f"Whoopy did not embed the check passages ({type(e).__name__}): embedded on this server."
+        print(note or f"Embedding on the desktop through Whoopy, {remote_model}.", flush=True)
         for user, folders in sorted(users.items()):
             base = os.path.join(index_dir, user)
             db = connect(base + ".work.sqlite")
-            write_status(base, started=time.strftime("%Y-%m-%d %H:%M"), ended=None, result="running", run={}, error=None)
+            write_status(base, started=time.strftime("%Y-%m-%d %H:%M"), ended=None, result="running", run={}, error=None,
+                         embedded_on=["desktop" if embedder is remote else "pi"], remote_note=note)
             try:
-                counts, unreachable = index_user(db, folders, rules[user], nextcloud, client,
-                                                 f"{os.environ['DOCS_EMBED_MODEL']}/passages-{PASSAGES_VERSION}", base, quiet)
+                try:
+                    counts, unreachable = index_user(db, folders, rules[user], nextcloud, embedder, model, base, quiet)
+                except (httpx2.TransportError, httpx2.HTTPStatusError) as e:
+                    if embedder is client:
+                        raise
+                    # Each file done is committed: the Pi carries on from there.
+                    db.rollback()
+                    embedder, note = client, f"Whoopy stopped answering ({type(e).__name__}): the run went on on this server."
+                    print(f"{user}: {note}", file=sys.stderr, flush=True)
+                    write_status(base, embedded_on=["desktop", "pi"], remote_note=note)
+                    counts, unreachable = index_user(db, folders, rules[user], nextcloud, client, model, base, quiet)
                 paused = counts.pop("paused", 0)
                 print(f"{user}: " + (", ".join(f"{n} {k}" for k, n in sorted(counts.items())) or "no files")
                       + (f", paused for the quiet hours {quiet}" if paused else ""), flush=True)

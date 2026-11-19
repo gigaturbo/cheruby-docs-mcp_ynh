@@ -67,6 +67,15 @@ each in a Q8 and a smaller Q4. Only the chosen one is downloaded. A change
 makes the next run read every file again; until then search matches
 keywords only.
 
+"Run now on the desktop", under "Index runs", is for a first index of many
+files, which takes hours on the server. It reads the files on the server
+but has another machine's GPU, reached through the Whoopy gateway, turn the
+passages into vectors. Under "Desktop embedding", give the model as Whoopy
+names it there and paste a Whoopy key allowed that model only. Search still
+turns each question into a vector on the server, so the run first does about
+20 passages both ways and keeps to the server unless they agree. When Whoopy
+stops answering, the run carries on on the server. The schedule never uses it.
+
 The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
 
 The gateway gets its own token, shown in the config panel under "Whoopy

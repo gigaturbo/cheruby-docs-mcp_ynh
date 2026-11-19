@@ -17,6 +17,8 @@ docs_default_settings() {
     ynh_app_setting_set_default --key=index_calendar --value=""
     ynh_app_setting_set_default --key=index_quiet --value="01-06"
     ynh_app_setting_set_default --key=embed_model --value=embeddinggemma-300m-q8
+    ynh_app_setting_set_default --key=remote_url --value="http://127.0.0.1:4000"
+    ynh_app_setting_set_default --key=remote_model --value=""
     local key
 
     # The app password the 0.5 test build made with occ, now pasted in the panel.
@@ -454,6 +456,10 @@ docs_configure() {
         echo "DOCS_EMBED_MODEL=$model"
         echo "DOCS_EMBED_NAME=$model_family"
         echo "DOCS_QUIET_HOURS=${index_quiet:-}"
+        # Used by "Run now on the desktop" only, never by the timer.
+        echo "DOCS_REMOTE_URL=${remote_url:-}"
+        echo "DOCS_REMOTE_MODEL=${remote_model:-}"
+        echo "DOCS_REMOTE_KEY=$(ynh_app_setting_get --key=remote_key)"
         [ -z "$nextcloud_env" ] || echo "$nextcloud_env"
     } > "$install_dir/index.env"
     {

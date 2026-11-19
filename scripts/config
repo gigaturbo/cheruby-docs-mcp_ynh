@@ -80,6 +80,16 @@ set__nextcloud_password() {
     fi
     set -o xtrace
 }
+
+# The same for the Whoopy key, which only index.env holds.
+set__remote_key() {
+    set +o xtrace
+    if [[ "${remote_key:-}" != "" && "${remote_key:-}" != "None" ]]; then
+        ynh_app_setting_set --key=remote_key --value="$remote_key"
+        remote_key_set=1
+    fi
+    set -o xtrace
+}
 validate__whoopy_folders() { docs_check_folders; }
 
 # The schedule and the quiet hours must leave a time to run.
@@ -237,6 +247,9 @@ docs_index_status() {
           elif .result == "paused" then "- **Last run**: \(.started) to \(.ended), paused for the quiet hours; the next run carries on."
           else "- **Last run**: \(.started) to \(.ended), failed: \(.error // "journalctl -u \($unit)")" end,
           (if $state != "activating" and (.run // {}) != {} then "- **It did**: \(.run | said)." else empty end),
+          (if (.embedded_on // ["pi"]) != ["pi"] or .remote_note then
+              "- **Embedded on**: \(.embedded_on // ["pi"] | map({desktop: "the desktop", pi: "this server"}[.]) | join(", then on "))\(if .remote_note then ". \(.remote_note)" else "" end)"
+           else empty end),
           "- **The index holds**: \(if (.files // {}) == {} then "no file yet" else .files | said end).",
           "- **Next run**: \($next)"
         ] | join("\n")'
@@ -277,6 +290,11 @@ ynh_app_config_apply() {
         docs_configure
         docs_start_timer
     fi
+    # The indexer reads index.env at each run: nothing to restart.
+    if [ "${remote_key_set:-0}" = 1 ] || [ "${changed[remote_model]:-}" = "true" ] \
+        || [ "${changed[remote_url]:-}" = "true" ]; then
+        docs_configure
+    fi
     local key
     # A new app password is in the settings already; the units need it.
     if [ "${nc_password_set:-0}" = 1 ]; then
@@ -312,11 +330,33 @@ run__run_index() {
         ynh_print_info "A run is already going. Its progress is under Index runs."
         return
     fi
-    # Read and removed by the indexer: this run ignores the quiet hours.
-    touch "$data_dir/run-now"
-    chown "$app:$app" "$data_dir/run-now"
+    # Read and removed by the indexer: this run ignores the quiet hours. Made
+    # as the app, so root never writes through a link the indexer could plant.
+    rm -f "$data_dir/run-now"
+    runuser -u "$app" -- touch "$data_dir/run-now"
     systemctl start --no-block "$app-index.service"
     ynh_print_info "A run has started. Reopen the panel to see its progress under Index runs."
+}
+
+# The same, with "remote" in run-now: the indexer embeds through Whoopy once
+# the check passages agree.
+run__run_index_remote() {
+    if [ "$(systemctl is-active "$app-index.service")" = activating ]; then
+        ynh_print_info "A run is already going. Its progress is under Index runs."
+        return
+    fi
+    local has_key=0
+    set +o xtrace
+    [ -z "$(ynh_app_setting_get --key=remote_key)" ] || has_key=1
+    set -o xtrace
+    if [ -z "$(ynh_app_setting_get --key=remote_model)" ] || [ "$has_key" = 0 ]; then
+        ynh_print_info "Save the model in Whoopy and a Whoopy key under Desktop embedding first."
+        return
+    fi
+    rm -f "$data_dir/run-now"
+    echo remote | runuser -u "$app" -- tee "$data_dir/run-now" > /dev/null
+    systemctl start --no-block "$app-index.service"
+    ynh_print_info "A run has started on the desktop. Reopen the panel to see where it embeds under Index runs."
 }
 
 # The working copy goes; the published one stays for search until the next
