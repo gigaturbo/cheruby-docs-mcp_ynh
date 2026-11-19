@@ -57,8 +57,11 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   backed up. The settings are the rest: `docs_user`, each source's
   `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
   `<source>_writable`, `nextcloud_account`, `nextcloud_password`,
-  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model` and `whoopy_*`; configure renders `folders.json`, the
+  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*` and `whoopy_*`; configure renders `folders.json`, the
   env files and the units from them.
+- **"Run now on the desktop"** has Whoopy's Ollama embed one run's
+  passages, after checking its vectors agree with the Pi's; the timer
+  never does. The key is pasted in the panel and goes to `index.env` only.
 - **The token picks the user**, and the unit joins each folder's group to
   read it, and to change it when it is writable and mounted read-write,
   with everything else those groups could read hidden. Nextcloud's folders

@@ -19,19 +19,27 @@ Nothing open.
 
 ### F-M-10 · first index embedded through Whoopy on the desktop's GPU
 
-`todo` `medium` `filed 2026-11-10` `needs: F-P-1`
+`wip` `medium` `filed 2026-11-10` `needs: F-P-1`
 
 A first index of many files takes hours on the Pi, and nearly all of it is
 embedding; reading the text is fast.
 
 **Do:** a "Run now on remote" button: the indexer reads the files on the
-Pi and sends the passages to Whoopy's Ollama `embeddinggemma`, with a key
+Pi and sends the passages to Whoopy's Ollama, with a key
 allowed that model only. Before using it, it embeds a fixed set of about 20
 passages on both servers and refuses the remote unless every pair has a
 cosine of 0.995 or more, since search still embeds queries on the Pi. When
 Whoopy cannot be reached, the run goes on locally. Never used by the timer.
-The remote must serve the model chosen in the panel (F-P-2): Ollama has
-`embeddinggemma` and `qwen3-embedding:0.6b`, not jina-embeddings-v5-text-nano.
+The remote must serve the model chosen in the panel (F-P-2), as
+`ollama-embed/<name>` (Whoopy's F-P-3): `ollama/<name>` cannot embed, and
+Whoopy's `embeddinggemma` is this app's own llama-server.
+The desktop has `embeddinggemma-300m-q8-2k:latest` (2026-11-19), no Qwen3,
+and Ollama has no jina-embeddings-v5-text-nano.
+
+**Built (2026-11-19, not installed):** the button, "Desktop embedding" in
+the panel, the check and the fallback, covered by the offline check.
+Asked directly, the desktop matched the Pi on the check passages to 0.9997
+at worst, about 20 times faster. Left: Whoopy's F-P-3, then T-M-4.
 
 ### F-M-6 · read scans and images into the search index
 
@@ -55,7 +63,11 @@ CC-BY-NC-4.0.
 
 ## Tests
 
-Nothing open.
+### T-M-4 · a first index embedded on the desktop agrees with the Pi
+
+`todo` `playtest` `filed 2026-11-19` `needs: F-M-10`
+
+The recipe is in the `cheruby-docs-mcp-kb` skill.
 
 ## Closed
 
