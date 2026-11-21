@@ -26,30 +26,6 @@ unit can read, or ping a second check for those runs.
 
 ## Features
 
-### F-P-6 · one Rust binary for the tool server, the indexer and their commands
-
-`wip` `large` `filed 2026-11-21`
-
-The tool server, the indexer and the text readers ran as Python from a uv
-venv, as Whoopy's daemon did before its own binary. They are ported to
-`cheruby-docs/` with the same index format: on the author's Documents, 401
-files with the same status and identical passages, 17 s against 39 s with a
-stand-in embedder.
-
-**Do:** publish the release `cheruby-docs-0.11.0`, pin its sha256, upgrade
-(ask first), then the reopened checks.
-
-### F-M-17 · an agent asks for an index run
-
-`wip` `medium` `filed 2026-11-21`
-
-A file written with `write_file` could not be found by search until the next
-timer run, up to an hour later. `run_index` leaves a request that the index's
-path unit starts a run for, of some files or of everything; refused in the
-quiet hours, past 50 files and once 20 requests wait.
-
-**Do:** T-M-5 on the installed app.
-
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -71,13 +47,6 @@ which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
 ## Tests
-
-### T-M-5 · an agent's run_index reaches the index and nothing else
-
-`todo` `playtest` `filed 2026-11-21`
-
-New with F-M-17: the tool server writes in the index's `requests/` folder,
-and a path unit starts the index unit.
 
 ### T-M-2 · search finds documents by meaning
 
@@ -153,6 +122,9 @@ expected, Rebuild keeping search on the published index.
 
 ## Closed
 
+- `T-M-5` done `playtest` 2026-11-21 at `940adcd` · on 0.11.0: `run_index` of one PDF answered "indexed" in 1 s and ran that file only; everything asked for answered at once; `..` refused; inside the server's namespace the index, its status file and the code are read-only, `requests/` writable; the path unit never restarted the indexer; done with an existing file, no note written
+- `F-M-17` done `medium` 2026-11-21 · `run_index` asks the index unit through a request in `requests/` and a path unit, for some files or everything; each request answered in the status file; refused in the quiet hours, past 50 files or 20 waiting requests, for one waiting 5 minutes, and for everything within 15 minutes of the last full run (0.11.0)
+- `F-P-6` done `large` 2026-11-21 · the tool server, the indexer and their commands one Rust binary, release `cheruby-docs-0.11.0`, with PDFium chromium/8076, the build pypdfium2 shipped; the same passages as the Python on 401 files; the upgrade kept the index (model, 4,833 passages, 428 files unchanged) and search answered by meaning in 3 s (0.11.0)
 - `T-M-1` done `spec` 2026-11-21 at `d9ba5fb` · `tests/check_server.py` 177 of 177 against the binary, `run_index` included; the 6 checks of a run's inside moved to `cargo test`, 22 of 22
 - `F-P-5` done `medium` 2026-11-19 · the redrawn icon set from ynh-app-icons 0ca6205: `conf/logo.png` and `doc/logo.svg` replaced, `logo_update/` deleted (0.10.1)
 - `F-M-10` done `medium` 2026-11-19 · "Run now on the desktop" embeds a run through Whoopy's `ollama-embed/` route (Whoopy F-P-3) with a pasted key, after 20 check passages agree to 0.995 (0.9997 measured); a Whoopy error sends the rest of the run to the Pi; never used by the timer
