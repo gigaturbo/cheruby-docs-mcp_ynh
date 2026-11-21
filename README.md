@@ -23,6 +23,9 @@ writable. Meant to sit behind an MCP gateway.
   writable; it never deletes.
 - `create_folder(path)`: creates a folder, with those above it, in a
   writable folder.
+- `run_index(files)`: asks for an index run, of some files, such as one just
+  written, or of all the folders, so search finds what changed. With files it
+  waits up to a minute and says how each went. Refused in the quiet hours.
 
 Paths start with a folder's label, such as `Documents/Factures`.
 
@@ -77,6 +80,8 @@ turns each question into a vector on the server, so the run first does about
 stops answering, the run carries on on the server. The schedule never uses it.
 
 The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
+It is one binary, built for the Pi 5 from `cheruby-docs/` in this
+repository and downloaded at install, with PDFium to read PDFs.
 
 The gateway gets its own token, shown in the config panel under "Whoopy
 token", with the address to paste beside it. It opens all the folders, or the
@@ -93,3 +98,16 @@ The service joins each folder's group to read the folders on disk, so their
 files must be group-readable. It sees the folders read-only, but for the
 writable ones. Everything else on the server stays hidden from it, and it
 can reach nothing but loopback.
+
+## Commands
+
+As root, the binary also answers on the shell, with the app's own settings:
+`/var/www/cheruby-docs-mcp/bin/cheruby-docs <command>`.
+
+- **`ls`, `find`, `read`, `search`**: the tools, as the user's own token, or
+  as the Whoopy token with `--gateway`. They first drop root for the app's
+  user and its folders' groups, as the service runs.
+- **`run-index [path...]`**: asks for an index run, as `run_index` does.
+- **`status`**: the index runs, as the panel shows them.
+- **`check-desktop`**: whether the desktop's vectors, through Whoopy, agree
+  with the server's, without starting a run.
