@@ -24,6 +24,17 @@ timer has stopped or every full run fails (R9's silent failure).
 **Fix:** leave the pings out of a files-only run, with a marker the ping
 unit can read, or ping a second check for those runs.
 
+### B-P-4 · the panel says "the schedule is never" while a timer run goes on
+
+`open` `low` `filed 2026-11-21`
+
+While the index unit runs, its timer has no next elapse, so `status` in
+`main.rs` reads the empty `NextElapseUSecRealtime` as "none: the schedule
+is never." on an hourly schedule. The Python had the same since 0.6.0.
+
+**Fix:** say "after this run" when the unit is active and the schedule is
+not `never`.
+
 ## Features
 
 ### F-M-6 · read scans and images into the search index
@@ -48,80 +59,17 @@ CC-BY-NC-4.0.
 
 ## Tests
 
-### T-M-2 · search finds documents by meaning
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: search and the passages are now the binary's. Last done
-2026-11-18 at `5d3644a`: 16 of 17 in the top 5, mean reciprocal rank 0.88,
-3.6 s a search.
-
-### T-P-1 · the installed server reads only its folders
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6 and F-M-17: new binaries under the same sandbox, and a
-writable `requests/` bind inside the read-only index folder. Last done
-2026-11-18 at `5d3644a`: 401 without a token, the env files and
-`/etc/shadow` out of reach, code and index read-only.
-
-### T-P-2 · backup and restore keep the tokens
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: restore now fetches the binary and PDFium. Last done
-2026-11-18 at `8b0a4db`: 46 s, the 46 settings and both tokens the same, no
-secret in the logs.
-
-### T-P-3 · the Whoopy token, from the panel, stays out of the logs
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: the server's restarts wait for the binary's start line.
-Last done 2026-11-18 at `8b0a4db`: the old token refused with 401, the new
-one in no log.
-
-### T-P-4 · the upgrade keeps the folders, and the panel's sources choose them
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: Syncthing's folders and the panel's status now come from
-the binary. Last done 2026-11-18 at `8b0a4db`: the sources, the filters and
-"Nothing has changed" as expected.
-
-### T-P-5 · Nextcloud folders are read through Nextcloud only
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: a new WebDAV client. Last done 2026-11-16 at `071063a`:
-a revoked app password asked once, then not again until a new one.
-
-### T-M-3 · writes land in the writable folders only
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: the writes are the binary's. Last done 2026-11-16 at
-`1fa9784`: in Nextcloud and on disk, 660 and 2770 in the folder's group,
-every escape refused.
-
-### T-M-4 · a first index embedded on the desktop agrees with the Pi
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: the remote run and its fallback are the binary's. Last
-done 2026-11-19 at `116a392`: 333 files in 3 min 47 s, the same search,
-the Pi taking over when Whoopy stopped.
-
-### T-P-6 · the index runs on the chosen schedule, from the panel
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-P-6: the schedule and the status come from the binary. Last
-done 2026-11-16 at `1fa9784`: presets, custom schedules and quiet hours as
-expected, Rebuild keeping search on the published index.
-
 ## Closed
 
+- `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
+- `T-P-1` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 401 without a token; Nextcloud's config and data, PHP sessions, Syncthing's own dir, `/mnt` and the logs absent in the server's namespace, the env files and `/etc/shadow` unreadable; code and index read-only even to root, `requests/` writable; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
+- `T-M-3` done `playtest` 2026-11-21 at `ed08fb3` · on disk and in Nextcloud: created, replaced, read back; a new file 660 and folder 770 in the folder's group, a replaced file keeping its owner and mode; a `.pdf`, a hidden name, `..`, an unknown folder, a link to a folder and a link to a file refused; a read-only folder refused by the tool and by its read-only mount; another source's label and a multimedia folder refused at save; Nextcloud kept the old version; the file reached the author's device
+- `T-P-3` done `playtest` 2026-11-21 at `ed08fb3` · Whoopy access narrowed to two folders then one, New token: the new token saw Documents only, the old one 401; neither token in `yunohost-cli.log` or the operation logs from this app (Whoopy's own upgrade traced the old one, its bug)
+- `T-P-4` done `playtest` 2026-11-21 at `ed08fb3` · Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed
+- `T-P-5` done `playtest` 2026-11-21 at `ed08fb3` · no `nextcloud` group; a wrong app password refused at save, with no failed login counted; a PDF in Notes read, found and searched; an unchanged run sent one PROPFIND; a revoked password refused once each by the server, the indexer and the panel, then nothing sent, the panel naming it; a new one brought Notes back; no password in the logs. No share from another account to try
+- `T-M-4` done `playtest` 2026-11-21 at `ed08fb3` · 340 files indexed on the desktop in 2 min, the same search as the Pi's index; Whoopy stopped 30 s into a run: the run went on on the Pi and ended done in 36 min, no file failed for it; the key in no log. The Whoopy key first allowed only `ollama/...` and got 403, the run then on the Pi as it should
+- `T-P-6` done `playtest` 2026-11-21 at `ed08fb3` · every 6 hours 0,6,12,18:20, 0,12,18:20 with quiet hours 01-07; `*/30 8-20` taken, `0 3` and a day with a weekday refused; never stopped the timer; Run now ran in the quiet hours, a start by hand did not; pressed again during a run it started nothing; Rebuild stopped a run, dropped the working copy, search answered from the published one, and the next run read every file; hourly and 01-06 at the end (B-P-4 found)
+- `T-P-2` done `playtest` 2026-11-21 at `ed08fb3` · backup 2 s, remove, restore 37 s; the 38 settings and both tokens the same and answering, Nextcloud read again; the timer rebuilt the index in 45 min; no secret in the 13 operation files or the CLI log. The first restore failed at `apt update` on a stale `packages.sury.org` index and left the app registered; removed and restored once it cleared
 - `T-M-5` done `playtest` 2026-11-21 at `940adcd` · on 0.11.0: `run_index` of one PDF answered "indexed" in 1 s and ran that file only; everything asked for answered at once; `..` refused; inside the server's namespace the index, its status file and the code are read-only, `requests/` writable; the path unit never restarted the indexer; done with an existing file, no note written
 - `F-M-17` done `medium` 2026-11-21 · `run_index` asks the index unit through a request in `requests/` and a path unit, for some files or everything; each request answered in the status file; refused in the quiet hours, past 50 files or 20 waiting requests, for one waiting 5 minutes, and for everything within 15 minutes of the last full run (0.11.0)
 - `F-P-6` done `large` 2026-11-21 · the tool server, the indexer and their commands one Rust binary, release `cheruby-docs-0.11.0`, with PDFium chromium/8076, the build pypdfium2 shipped; the same passages as the Python on 401 files; the upgrade kept the index (model, 4,833 passages, 428 files unchanged) and search answered by meaning in 3 s (0.11.0)
