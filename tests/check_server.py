@@ -1,6 +1,10 @@
-"""Offline check of the tool server and the indexer. Run from the project root:
+"""Offline check of the tool server and the indexer. Run from the project root,
+after cargo build --release in cheruby-docs/:
 
     .venv/bin/python tests/check_server.py
+
+DOCS_BIN names another build of the binary, DOCS_PDFIUM another PDFium library
+than the copy unpacked in cheruby-docs/target/pdfium/.
 
 Builds two users' folders in a temporary directory, one of alice's served by
 a stand-in Nextcloud, indexes them without filters against a stand-in
@@ -10,7 +14,9 @@ move, an edit and a deletion, then with Nextcloud changed, down and refusing,
 then embeds through a stand-in Whoopy, then writes in the writable folders,
 on disk and in Nextcloud.
 The stand-in embedder hashes words into vectors: it checks the wiring, not
-the quality of the search. Needs the package's dependencies only.
+the quality of the search. Needs httpx only; what the binary does inside a run
+(the pause at the quiet hours, the halving of a text too long, one refusal
+from Nextcloud, how passages are cut) is checked by cargo test.
 Prints one line per check and exits 1 if any fails.
 """
 
@@ -43,7 +49,8 @@ DAV_PASSWORD = "n" * 72
 DAV_LOG = []
 DAV = {"root": "", "down": False, "fail": None}
 URL = f"http://127.0.0.1:{PORT}/mcp"
-PYTHON = [sys.executable, "-E", "-s", "-B"]
+BIN = os.environ.get("DOCS_BIN", "cheruby-docs/target/release/cheruby-docs")
+PDFIUM = os.environ.get("DOCS_PDFIUM", "cheruby-docs/target/pdfium/lib/libpdfium.so")
 EMBEDDED = []
 WHOOPY_PORT = 18776
 WHOOPY_KEY = "w" * 40
@@ -432,6 +439,7 @@ def build(base):
                                          "ju": folders["ju"]})
     return {
         "PATH": os.environ.get("PATH", ""),
+        "DOCS_PDFIUM": os.path.abspath(PDFIUM),
         "DOCS_PORT": str(PORT),
         "DOCS_INDEX_DIR": f"{base}/index",
         "DOCS_EMBED_URL": f"http://127.0.0.1:{EMBED_PORT}",
@@ -482,7 +490,7 @@ CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
     ("six tools listed", lambda: call("tools/list"),
-     lambda r: r[1] == "list_folder find_files read_file search_documents write_file create_folder"),
+     lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file create_folder".split())),
     ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
      lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
@@ -609,7 +617,7 @@ CHECKS = [
 
 
 def run_indexer(env):
-    out = subprocess.run([*PYTHON, "conf/docs_index.py"], env=env, capture_output=True, text=True, timeout=120)
+    out = subprocess.run([BIN, "index"], env=env, capture_output=True, text=True, timeout=120)
     return out.stdout + out.stderr
 
 
@@ -734,44 +742,19 @@ def index_checks(base, env, first):
     open(f"{base}/index/run-now", "w").close()
     out = run_indexer(quiet)
     yield "Run now ignores them, once", out, "alice:" in out and not os.path.exists(f"{base}/index/run-now")
-    sys.path.insert(0, "conf")
-    import docs_index
-    import httpx2
-    users, rules, _ = docs_index.load_folders(env["DOCS_FOLDERS_FILE"])
-    db = docs_index.connect(f"{base}/index/alice.work.sqlite")
-    with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
-        counts, _ = docs_index.index_user(db, users["alice"], rules["alice"], docs_index.Nextcloud.from_env(env),
-                                          client, f"{env['DOCS_EMBED_MODEL']}/passages-{docs_index.PASSAGES_VERSION}",
-                                          f"{base}/index/alice", quiet["DOCS_QUIET_HOURS"])
-    db.close()
-    yield "a run stops when the quiet hours begin, its index kept", counts, \
-        counts == {"paused": 1} and statuses(base).get("Notes/liste.md") == "indexed"
-    with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
-        rows = docs_index.embed(client, ["court", "♪ " * 1000, "autre"])
-    yield "a text too long for the model is embedded by its start", rows.shape, rows.shape == (3, 64)
-    nc, DAV_LOG[:] = docs_index.Nextcloud(env["DOCS_NEXTCLOUD_URL"], "", "alice", "wrong"), []
-    for _ in range(3):
-        try:
-            nc.list("Partage", 0)
-        except docs_index.NextcloudError:
-            pass
-    yield "one refusal and the client asks no more", DAV_LOG, len(DAV_LOG) == 1
-
-    db = docs_index.connect(f"{base}/index/alice.sqlite", read_only=True)
+    db = sqlite3.connect(f"{base}/index/alice.sqlite")
     model = dict(db.execute("SELECT key, value FROM meta"))["model"]
     db.close()
     yield "how passages are cut is part of the index's model", model, model == "fake-64/passages-3"
     # Another family: its own passage template, in a throwaway index.
-    os.environ["DOCS_EMBED_NAME"], EMBEDDED[:] = "jina-embeddings-v5-text-nano", []
-    db = docs_index.connect(f"{base}/jina.work.sqlite")
-    with httpx2.Client(base_url=env["DOCS_EMBED_URL"]) as client:
-        docs_index.index_user(db, {"Notes": users["alice"]["Notes"]}, rules["alice"], None, client, "jina/passages-3",
-                              f"{base}/jina")
-    db.close()
-    del os.environ["DOCS_EMBED_NAME"]
+    os.makedirs(f"{base}/jina")
+    write_folders(f"{base}/jina.json", {"alice": {"Notes": (f"{base}/notes", ["*.md"], [])}})
+    EMBEDDED[:] = []
+    run_indexer({**env, "DOCS_EMBED_NAME": "jina-embeddings-v5-text-nano", "DOCS_INDEX_DIR": f"{base}/jina",
+                 "DOCS_FOLDERS_FILE": f"{base}/jina.json"})
     yield "each model family gets its own prompt", EMBEDDED[:1], EMBEDDED and all(t.startswith("Document: ") for t in EMBEDDED)
     # A server on a new model searches by keyword until the index is rebuilt for it.
-    other = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    other = subprocess.Popen([BIN, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              env={**env, "DOCS_EMBED_MODEL": "other-64", "DOCS_EMBED_NAME": "qwen3-embedding",
                                   "DOCS_PORT": "18775"})
     try:
@@ -792,21 +775,6 @@ def index_checks(base, env, first):
     yield "another model's index is searched by keyword only", text[:200], \
         "rebuilt for a new embedding model" in text and "--- " in text \
         and EMBEDDED and EMBEDDED[0].startswith("Instruct: ")
-    note = "intro\n\n## lessive\n- savon\n- soude\n\n## version laine :\n100g savon\n\n4L eau\n" \
-           "# Shell\n```sh\n# not a heading\n```\n### Sub\ntext"
-    cut = docs_index.passages(note, "Lessive.md")
-    yield "a short note stays one passage, its headings as lines", cut, cut == [
-        "Lessive.md\nintro\nlessive\n- savon - soude\nversion laine :\n100g savon\n4L eau\nShell\n"
-        "```sh # not a heading ```\nSub\ntext"]
-    size, docs_index.PASSAGE_CHARS = docs_index.PASSAGE_CHARS, 40
-    cut = docs_index.passages(note, "Lessive.md")
-    docs_index.PASSAGE_CHARS = size
-    yield "a longer one is cut at its headings, each passage with its trail", cut, cut == [
-        "Lessive.md\nintro", "Lessive.md > lessive\n- savon - soude", "Lessive.md > version laine :\n100g savon\n4L eau",
-        "Lessive.md > Shell\n```sh # not a heading ```\nSub\ntext"]
-    cut = docs_index.passages(" ".join(f"Phrase {n} sur le jardin." for n in range(300)), "long.md")
-    yield "a long paragraph cut near the passage size", [len(p) for p in cut], \
-        len(cut) > 5 and all(len(p) <= docs_index.PASSAGE_CHARS + 20 for p in cut)
 
 
 def remote_checks(base, env):
@@ -858,15 +826,18 @@ def remote_checks(base, env):
 
 def panel_checks():
     """The embedding models the panel offers are the ones docs_embed_model knows,
-    each with a family docs_index.PROMPTS has. A dot in a choice's key splits it in TOML."""
-    import docs_index
+    each with a family the binary has prompts for. A dot in a choice's key splits it in TOML."""
+    with open("cheruby-docs/src/embed.rs") as f:
+        source = f.read()
+    prefixes = source[source.index("pub fn query_prefix"):source.index("_ => None")]
+    prompts = set(re.findall(r'^ +"([a-z0-9-]+)" =>', prefixes, re.M))
     with open("config_panel.toml", "rb") as f:
         offered = set(tomllib.load(f)["main"]["index"]["embed_model"]["choices"])
     common = open("scripts/_common.sh").read()
     known = dict(re.findall(r"^ +([a-z0-9-]+)\) model_source=\S+ model_family=(\S+)", common, re.M))
     yield "the panel offers the models the scripts know", sorted(offered ^ set(known)), offered == set(known)
-    yield "every model family has its prompts", sorted(set(known.values()) - set(docs_index.PROMPTS)), \
-        set(known.values()) <= set(docs_index.PROMPTS)
+    yield "every model family has its prompts", sorted(set(known.values()) - prompts), \
+        prompts and set(known.values()) <= prompts
 
 
 def write_checks(base):
@@ -954,10 +925,12 @@ def main():
         env = build(base)
         first = run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/open.json"})
         # The unit's UMask.
-        server = subprocess.Popen([*PYTHON, "conf/cheruby_docs_mcp.py"], env=env, umask=0o007,
+        server = subprocess.Popen([BIN, "serve"], env=env, umask=0o007,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             for _ in range(50):
+                if server.poll() is not None:
+                    sys.exit(f"the server stopped: {server.communicate()[1].decode()[-2000:]}")
                 try:
                     httpx.get(f"http://127.0.0.1:{PORT}/", timeout=1)
                     break
@@ -968,7 +941,7 @@ def main():
             results += list(remote_checks(base, env))
             results += list(write_checks(base))
             results += list(panel_checks())
-            refused = subprocess.run([*PYTHON, "conf/cheruby_docs_mcp.py"], capture_output=True, text=True,
+            refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
                                      env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
             results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],
                             refused.returncode != 0 and "does not have" in refused.stderr))
