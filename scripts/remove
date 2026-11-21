@@ -7,6 +7,10 @@ if [ -e "/etc/systemd/system/$app-index.timer" ]; then
     systemctl disable --now "$app-index.timer" --quiet 2>/dev/null || true
     ynh_safe_rm "/etc/systemd/system/$app-index.timer"
 fi
+if [ -e "/etc/systemd/system/$app-index.path" ]; then
+    systemctl disable --now "$app-index.path" --quiet 2>/dev/null || true
+    ynh_safe_rm "/etc/systemd/system/$app-index.path"
+fi
 systemctl stop "$app-index.service" --quiet 2>/dev/null || true
 ynh_config_remove_systemd "$app-index"
 ynh_safe_rm "/etc/systemd/system/$app-ping@.service"

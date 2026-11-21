@@ -12,7 +12,8 @@ embedding server, starts the tool server, with a stand-in reranker, with filters
 then calls each tool and re-runs the indexer with the filters, then after a
 move, an edit and a deletion, then with Nextcloud changed, down and refusing,
 then embeds through a stand-in Whoopy, then writes in the writable folders,
-on disk and in Nextcloud.
+on disk and in Nextcloud, then asks for index runs as an agent would, the
+check starting each run as the path unit would.
 The stand-in embedder hashes words into vectors: it checks the wiring, not
 the quality of the search. Needs httpx only; what the binary does inside a run
 (the pause at the quiet hours, the halving of a text too long, one refusal
@@ -414,7 +415,7 @@ def build(base):
     os.symlink("Brouillons/draft.md", f"{docs}/alias.md")
     os.symlink(base, f"{notes}/dehors")
     os.utime(f"{notes}/courses.md", (946_000_000, 946_000_000))  # 1999-12-24
-    os.makedirs(f"{base}/index")
+    os.makedirs(f"{base}/index/requests")
     DAV["root"] = f"{base}/nextcloud"
     for path, text in {"Partage/compte-rendu.md": "Réunion du conseil syndical, ravalement vote",
                        "Partage/.cache.md": "hidden",
@@ -489,8 +490,9 @@ def error_with(needle):
 CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
-    ("six tools listed", lambda: call("tools/list"),
-     lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file create_folder".split())),
+    ("seven tools listed", lambda: call("tools/list"),
+     lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file create_folder "
+                                              "run_index".split())),
     ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
      lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
@@ -684,7 +686,7 @@ def index_checks(base, env, first):
     run_indexer(env)
     left = sorted(os.listdir(f"{base}/index"))
     yield "a removed user's index goes", left, left == ["alice.sqlite", "alice.status.json", "alice.work.sqlite",
-                                                        "ju.sqlite", "ju.status.json", "ju.work.sqlite"]
+                                                        "ju.sqlite", "ju.status.json", "ju.work.sqlite", "requests"]
     with open(f"{base}/index/alice.status.json") as f:
         status = json.load(f)
     yield "the status file says how the run ended", status, status["result"] == "done" and status["ended"] \
@@ -912,6 +914,60 @@ def write_checks(base):
     yield "Nextcloud is never asked to delete or move", methods, methods <= {"PROPFIND", "GET", "PUT", "MKCOL"}
 
 
+def requests_left(base):
+    return [n for n in os.listdir(f"{base}/index/requests") if n.endswith(".json")]
+
+
+def asked(base, env, **arguments):
+    """run_index called as an agent would, with the index run its request
+    starts: (the tool's answer, the indexer's output)."""
+    answer = {}
+    caller = threading.Thread(target=lambda: answer.update(r=tool("run_index", **arguments)))
+    caller.start()
+    for _ in range(100):
+        if requests_left(base):
+            break
+        time.sleep(0.1)
+    out = run_indexer(env)
+    caller.join()
+    return answer["r"], out
+
+
+def run_checks(base, env):
+    """run_index: a run of files, a run of everything, and what it refuses."""
+    tool("write_file", path="Notes/fraise.md", content="Confiture de fraises maison")
+    result = tool("search_documents", query="fraises")
+    yield "a file just written is not found yet", result, "Notes/fraise.md" not in result[1]
+    result, out = asked(base, env, files=["Notes/fraise.md"])
+    yield "run_index of a file says how it went", (result, out), \
+        ok_with("The index run is done.", "- Notes/fraise.md: indexed")(result) and "alice: 1 indexed" in out
+    yield "and does that file only, for its user only", out, "unchanged" not in out and "ju:" not in out
+    result = tool("search_documents", query="fraises")
+    yield "then search finds it", result, ok_with("--- Notes/fraise.md")(result)
+    yield "the request is taken", requests_left(base), requests_left(base) == []
+    result, out = asked(base, env)
+    yield "run_index of everything answers at once", result, ok_with("all the folders is asked for", "The index holds")(result)
+    yield "and its run checks every file of the user", out, "alice:" in out and "unchanged" in out and "ju:" not in out
+    for name, files, needle in [(".. refused", ["Notes/../secret.md"], "not allowed"),
+                                ("another user's folder refused", ["Papiers/bob.md"], "no folder named"),
+                                ("a missing file refused", ["Notes/absent.md"], "not found"),
+                                ("a folder refused", ["Notes/Jardin"], "is a folder"),
+                                ("at most 50 files", ["Notes/liste.md"] * 51, "at most 50")]:
+        result = tool("run_index", files=files)
+        yield f"run_index: {name}", result, error_with(needle)(result) and requests_left(base) == []
+    for n in range(20):
+        open(f"{base}/index/requests/{n}.json", "w").close()
+    result = tool("run_index", files=["Notes/liste.md"])
+    yield "run_index refused once 20 requests wait", result, error_with("waiting already")(result)
+    run_indexer(env)
+    yield "unreadable requests are taken too", requests_left(base), requests_left(base) == []
+    hour = time.localtime().tm_hour
+    refused = subprocess.run([BIN, "run-index", "Notes/liste.md"], capture_output=True, text=True,
+                             env={**env, "DOCS_QUIET_HOURS": f"{hour:02d}-{(hour + 1) % 24:02d}"})
+    yield "run-index refused in the quiet hours", refused.stderr, \
+        refused.returncode != 0 and "quiet hours" in refused.stderr and requests_left(base) == []
+
+
 def main():
     embedder = ThreadingHTTPServer(("127.0.0.1", EMBED_PORT), FakeEmbedder)
     threading.Thread(target=embedder.serve_forever, daemon=True).start()
@@ -940,6 +996,7 @@ def main():
             results += list(index_checks(base, env, first))
             results += list(remote_checks(base, env))
             results += list(write_checks(base))
+            results += list(run_checks(base, env))
             results += list(panel_checks())
             refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
                                      env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})

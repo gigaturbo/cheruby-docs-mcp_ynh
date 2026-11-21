@@ -26,7 +26,8 @@ IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6
 
 # The process sees the configured folders on disk, the index and its own
-# code, read-only but for the folders marked writable, and none of what the
+# code, read-only but for the folders marked writable and the index's
+# requests folder, and none of what the
 # joined groups could otherwise read: Nextcloud's and Syncthing's code and
 # config under /var/www, PHP sessions under /var/lib, their logs and caches.
 ProtectSystem=strict
@@ -34,6 +35,8 @@ ProtectHome=tmpfs
 TemporaryFileSystem=/var/www:ro
 # First: both options fill one list, and an empty BindPaths= empties it.
 BindPaths=__WRITE_PATHS__
+# Where run_index leaves its requests: the one place of the index folder it writes.
+BindPaths=__DATA_DIR__/requests
 BindReadOnlyPaths=__INSTALL_DIR__ __DATA_DIR__ __READ_PATHS__
 InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
 

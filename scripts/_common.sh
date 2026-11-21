@@ -471,6 +471,8 @@ docs_configure() {
         echo "DOCS_EMBED_MODEL=$model"
         echo "DOCS_EMBED_NAME=$model_family"
         echo "DOCS_RERANK_URL=http://127.0.0.1:$port_rerank"
+        # run_index is refused in them.
+        echo "DOCS_QUIET_HOURS=${index_quiet:-}"
         token=$(ynh_app_setting_get --key="token_$docs_user")
         token=${token:-$(ynh_string_random --length=48)}
         ynh_app_setting_set --key="token_$docs_user" --value="$token"
@@ -495,7 +497,10 @@ docs_configure() {
     chmod -R u=rwX,g=rX,o= "$install_dir"
     chown root:root "$install_dir/docs.env" "$install_dir/index.env"
     chmod 600 "$install_dir/docs.env" "$install_dir/index.env"
+    # run_index's requests, which the server may write and the path unit watches.
+    mkdir -p "$data_dir/requests"
     chown -R "$app:$app" "$data_dir"
+    chmod 700 "$data_dir/requests"
     docs_write_ping
 
     ynh_config_add_systemd
@@ -504,6 +509,7 @@ docs_configure() {
     # Started by its timer only, so written, not enabled.
     ynh_config_add --template="index.service" --destination="/etc/systemd/system/$app-index.service"
     docs_write_timer
+    ynh_config_add --template="index.path" --destination="/etc/systemd/system/$app-index.path"
     ynh_config_add --template="ping@.service" --destination="/etc/systemd/system/$app-ping@.service"
     systemctl daemon-reload
     yunohost service add "$app" --description="Cheruby Docs, MCP tools on users' folders"
@@ -532,6 +538,9 @@ docs_start() {
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="Uvicorn running on" --timeout=60
     docs_start_timer
+    # Watches for run_index's requests, whatever the schedule.
+    systemctl enable "$app-index.path" --quiet
+    systemctl restart "$app-index.path"
 }
 
 # The index timer at the schedule chosen in the panel, never in its quiet
@@ -631,9 +640,10 @@ docs_clear_index() {
     return 0
 }
 
-# Stops everything before files change under it; the timer first, so no index run starts.
+# Stops everything before files change under it; the path unit and the timer
+# first, so no index run starts.
 docs_stop() {
-    systemctl stop "$app-index.timer" "$app-index.service" --quiet 2>/dev/null || true
+    systemctl stop "$app-index.path" "$app-index.timer" "$app-index.service" --quiet 2>/dev/null || true
     ynh_systemctl --service="$app" --action="stop"
     systemctl stop "$app-embed" "$app-rerank" --quiet 2>/dev/null || true
 }

@@ -1,0 +1,12 @@
+[Unit]
+Description=Cheruby Docs: index runs the tools ask for (__APP__)
+
+[Path]
+# run_index leaves <time>.json here; the indexer takes every one at its start,
+# so the run is not started again for them. Only .json: the tool writes a
+# dot-named file first and renames it once whole.
+PathExistsGlob=__DATA_DIR__/requests/*.json
+Unit=__APP__-index.service
+
+[Install]
+WantedBy=paths.target

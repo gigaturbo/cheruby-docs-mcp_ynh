@@ -161,6 +161,7 @@ pub fn load_docs() -> Result<Docs, String> {
         embed_model: var("DOCS_EMBED_MODEL"),
         query_prefix,
         rerank_url: var("DOCS_RERANK_URL"),
+        quiet: var("DOCS_QUIET_HOURS"),
         http,
     })
 }
@@ -210,6 +211,12 @@ struct SearchArgs {
 struct WriteArgs {
     path: String,
     content: String,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct RunArgs {
+    #[serde(default)]
+    files: Vec<String>,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -373,6 +380,21 @@ impl Tools {
         Parameters(a): Parameters<FolderArgs>,
     ) -> Result<CallToolResult, ErrorData> {
         answer(tools::write(&self.ctx(&parts)?, a.path, None).await)
+    }
+
+    #[tool(
+        description = "Ask for an index run, so search_documents finds what changed: of some\n\
+        files, such as one just written, or of all the folders.\n\n\
+        files: up to 50 paths such as \"Notes/Recettes/pain.md\"; empty asks for all the\n\
+        folders, which redoes only what changed. With files, waits up to a minute and\n\
+        says how each went. Refused in the index's quiet hours. Changes no file."
+    )]
+    async fn run_index(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(a): Parameters<RunArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        answer(tools::run_index(&self.ctx(&parts)?, a.files).await)
     }
 }
 

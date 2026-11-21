@@ -277,18 +277,23 @@ ynh_app_config_apply() {
     # restarts, would mix two models' vectors in one index. docs_start arms
     # the timer again; the next run sees the new model and reads every file.
     if [ "${changed[embed_model]:-}" = "true" ]; then
-        systemctl stop "$app-index.timer" "$app-index.service"
+        systemctl stop "$app-index.path" "$app-index.timer" "$app-index.service"
         docs_fetch_model
         docs_configure
         docs_start
         ynh_print_info "The embedding model is $embed_model. The next index run reads every file again; Run now starts it."
         return
     fi
-    # The quiet hours also go to the indexer, through index.env.
+    # The quiet hours also go to the indexer, through index.env, and to the
+    # tool server, which refuses run_index in them.
     if [ "${changed[index_schedule]:-}" = "true" ] || [ "${changed[index_calendar]:-}" = "true" ] \
         || [ "${changed[index_quiet]:-}" = "true" ]; then
         docs_configure
         docs_start_timer
+    fi
+    if [ "${changed[index_quiet]:-}" = "true" ]; then
+        ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
+            --wait_until="Uvicorn running on" --timeout=60
     fi
     # The indexer reads index.env at each run: nothing to restart.
     if [ "${remote_key_set:-0}" = 1 ] || [ "${changed[remote_model]:-}" = "true" ] \

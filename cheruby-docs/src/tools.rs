@@ -40,6 +40,11 @@ const RRF_K: f64 = 60.0;
 /// passage starts with its file name and headings (passages::passages).
 const RERANK_CANDIDATES: usize = 30;
 const RERANK_CHARS: usize = 360;
+const MAX_RUN_FILES: usize = 50;
+/// Requests waiting for the index unit; past this, run_index says so.
+const MAX_REQUESTS: usize = 20;
+/// How long run_index waits for a run of files to end.
+const RUN_WAIT_S: u64 = 60;
 
 /// What every tool reads: the folders, Nextcloud, the index and the servers.
 pub struct Docs {
@@ -50,6 +55,8 @@ pub struct Docs {
     pub embed_model: String,
     pub query_prefix: &'static str,
     pub rerank_url: String,
+    /// The index's quiet hours, such as 01-06, when run_index is refused.
+    pub quiet: String,
     pub http: reqwest::Client,
 }
 
@@ -679,6 +686,131 @@ pub async fn search_documents(
         })
         .collect();
     Ok(head + &blocks.join("\n\n"))
+}
+
+/// "indexed", or what else the published index says of a file.
+fn indexed_status(db: &rusqlite::Connection, shown: &str) -> String {
+    let row = db.query_row(
+        "SELECT status, error FROM files WHERE path = ?",
+        [shown],
+        |r| Ok((r.get::<_, String>(0)?, r.get::<_, Option<String>>(1)?)),
+    );
+    match row {
+        Ok((status, Some(error))) if status == "failed" => format!("failed: {error}"),
+        Ok((status, _)) if status == "needs_ocr" => "waiting for OCR, not searchable yet".into(),
+        Ok((status, _)) => status,
+        Err(_) => "not in the index".into(),
+    }
+}
+
+/// Ask the index unit for a run of these files, or of all the folders.
+///
+/// The server cannot write the index or start a unit: it leaves a request
+/// in <index dir>/requests, the one place it may write there, and the
+/// index's path unit starts a run. Refused in the quiet hours, and when
+/// MAX_REQUESTS wait already. A run of files is waited for, up to RUN_WAIT_S.
+pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
+    if files.len() > MAX_RUN_FILES {
+        return Err(format!(
+            "at most {MAX_RUN_FILES} files at a time; an empty list asks for all the folders."
+        ));
+    }
+    let c = ctx.clone();
+    let shown = blocking(move || -> ToolResult<Vec<String>> {
+        let mut shown = Vec::new();
+        for path in files {
+            match c.resolve(&path)? {
+                Some(item) if !item.is_dir => shown.push(item.shown),
+                _ => {
+                    return Err(format!(
+                        "{path}: is a folder; name its files, or ask for all the folders with an empty list."
+                    ));
+                }
+            }
+        }
+        Ok(shown)
+    })
+    .await??;
+    let quiet = &ctx.docs.quiet;
+    if index::quiet_now(quiet) {
+        let end = quiet.split('-').nth(1).unwrap_or("").trim();
+        return Err(format!(
+            "the index does not run in its quiet hours, {quiet}; the next run after {end}:00 picks the changes up."
+        ));
+    }
+    let spool = ctx.docs.index_dir.join("requests");
+    let waiting = std::fs::read_dir(&spool)
+        .map_err(|e| {
+            format!(
+                "the index takes no request: {}",
+                crate::folders::io_message(&e)
+            )
+        })?
+        .flatten()
+        .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
+        .count();
+    if waiting >= MAX_REQUESTS {
+        return Err(format!(
+            "{waiting} index requests are waiting already; the next run takes them all."
+        ));
+    }
+    let name = format!(
+        "{}-{}",
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or_default(),
+        std::process::id()
+    );
+    let request = spool.join(format!("{name}.json"));
+    // Named .json only once whole: the path unit and the indexer look at .json files.
+    let tmp = spool.join(format!(".{name}.tmp"));
+    let body = serde_json::json!({"user": ctx.grant.user, "files": shown});
+    std::fs::write(&tmp, body.to_string())
+        .and_then(|()| std::fs::rename(&tmp, &request))
+        .map_err(|e| {
+            format!(
+                "the request could not be left: {}",
+                crate::folders::io_message(&e)
+            )
+        })?;
+    let base = ctx.docs.index_dir.join(&ctx.grant.user);
+    if shown.is_empty() {
+        let status = index::read_status(&base);
+        let state = if status.get("result").and_then(Value::as_str) == Some("running") {
+            "activating"
+        } else {
+            "inactive"
+        };
+        let unit = "cheruby-docs-mcp-index";
+        return Ok(format!(
+            "An index run of all the folders is asked for; it redoes only what changed.\n{}",
+            crate::status::render(&status, state, None, unit)
+        ));
+    }
+    // Taken by the indexer, then its run ended: the published index says how each went.
+    for _ in 0..RUN_WAIT_S {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        let running = index::read_status(&base)
+            .get("result")
+            .and_then(Value::as_str)
+            == Some("running");
+        if request.exists() || running {
+            continue;
+        }
+        let db_path = base.with_extension("sqlite");
+        let lines = blocking(move || -> ToolResult<Vec<String>> {
+            let db = index::connect(&db_path, true)
+                .map_err(|e| format!("the search index could not be read: {e}"))?;
+            Ok(shown
+                .iter()
+                .map(|s| format!("- {s}: {}", indexed_status(&db, s)))
+                .collect())
+        })
+        .await??;
+        return Ok(format!("The index run is done.\n{}", lines.join("\n")));
+    }
+    Ok(format!(
+        "The run is asked for, and has not ended within {RUN_WAIT_S} s: another run may be going. \
+         Search finds the files once it ends."
+    ))
 }
 
 /// The parts of a path in a folder this token may write in, or an error.

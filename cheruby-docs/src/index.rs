@@ -385,6 +385,22 @@ struct Known {
     error: Option<String>,
 }
 
+/// The columns Known::from_row reads, in order.
+const KNOWN: &str = "id, size, mtime_ns, ctime_ns, sha256, error";
+
+impl Known {
+    fn from_row(r: &rusqlite::Row, at: usize) -> rusqlite::Result<Known> {
+        Ok(Known {
+            id: r.get(at)?,
+            size: r.get::<_, Option<i64>>(at + 1)?.unwrap_or(-1),
+            mtime_ns: r.get::<_, Option<i64>>(at + 2)?.unwrap_or(-1),
+            ctime_ns: r.get::<_, Option<i64>>(at + 3)?.unwrap_or(-1),
+            sha256: r.get(at + 4)?,
+            error: r.get(at + 5)?,
+        })
+    }
+}
+
 /// ({shown path: Item} of every file the index can use, {folders and labels
 /// Nextcloud did not list}). Hidden names, links out and what the filters
 /// leave out are not used.
@@ -492,20 +508,8 @@ fn index_user(
     let (found, mut unreachable) = walk(&mut tree);
     // What Nextcloud did not list is kept as it was, neither dropped nor taken as moved.
     let known: HashMap<String, Known> = db
-        .prepare("SELECT path, id, size, mtime_ns, ctime_ns, sha256, error FROM files")?
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, String>(0)?,
-                Known {
-                    id: r.get(1)?,
-                    size: r.get::<_, Option<i64>>(2)?.unwrap_or(-1),
-                    mtime_ns: r.get::<_, Option<i64>>(3)?.unwrap_or(-1),
-                    ctime_ns: r.get::<_, Option<i64>>(4)?.unwrap_or(-1),
-                    sha256: r.get(5)?,
-                    error: r.get(6)?,
-                },
-            ))
-        })?
+        .prepare(&format!("SELECT path, {KNOWN} FROM files"))?
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, Known::from_row(r, 1)?)))?
         .collect::<Result<Vec<_>, _>>()?
         .into_iter()
         .filter(|(path, _)| {
@@ -529,30 +533,16 @@ fn index_user(
             publish(db, base)?;
             return Ok((counts, unreachable));
         }
-        let row = known.get(shown);
-        db.execute_batch("BEGIN")?;
-        let outcome = match one_file(db, &tree, run, item, row, &mut gone, &mut reused) {
-            Ok(outcome) => outcome,
-            Err(FileError::Embed(EmbedError::Status(code)))
-                if !SERVER_REFUSED.contains(&code) && !run.embedder.is_remote() =>
-            {
-                failed(db, item, row, &EmbedError::Status(code).to_string())?
-            }
-            Err(FileError::Embed(e @ EmbedError::Shape(_))) => {
-                failed(db, item, row, &e.to_string())?
-            }
-            Err(FileError::Embed(e)) => return Err(RunError::Embed(e)),
-            Err(FileError::Db(e)) => return Err(e.into()),
-            Err(FileError::Nextcloud(message)) => {
-                // Not the file's fault: kept as it was, and tried again next run.
-                db.execute_batch("ROLLBACK; BEGIN")?;
-                eprintln!("{shown}: {message}");
-                unreachable.insert(shown.split('/').next().unwrap_or("").to_string());
-                "skipped"
-            }
-            Err(FileError::File(message)) => failed(db, item, row, &message)?,
-        };
-        db.execute_batch("COMMIT")?;
+        let outcome = step(
+            db,
+            &tree,
+            run,
+            item,
+            known.get(shown),
+            &mut gone,
+            &mut reused,
+            &mut unreachable,
+        )?;
         *counts.entry(outcome.into()).or_default() += 1;
         if last_publish.elapsed().as_secs() > PUBLISH_EVERY_S {
             publish(db, base)?;
@@ -578,6 +568,159 @@ fn index_user(
     }
     publish(db, base)?;
     Ok((counts, unreachable))
+}
+
+/// One file in its own transaction: its outcome, or why the run stops. A
+/// file Nextcloud did not send is kept as it was, its label noted unreachable.
+#[allow(clippy::too_many_arguments)]
+fn step(
+    db: &Connection,
+    tree: &Tree,
+    run: &Run,
+    item: &Item,
+    row: Option<&Known>,
+    gone: &mut HashMap<String, i64>,
+    reused: &mut HashSet<i64>,
+    unreachable: &mut BTreeSet<String>,
+) -> Result<&'static str, RunError> {
+    db.execute_batch("BEGIN")?;
+    let outcome = match one_file(db, tree, run, item, row, gone, reused) {
+        Ok(outcome) => outcome,
+        Err(FileError::Embed(EmbedError::Status(code)))
+            if !SERVER_REFUSED.contains(&code) && !run.embedder.is_remote() =>
+        {
+            failed(db, item, row, &EmbedError::Status(code).to_string())?
+        }
+        Err(FileError::Embed(e @ EmbedError::Shape(_))) => failed(db, item, row, &e.to_string())?,
+        Err(FileError::Embed(e)) => return Err(RunError::Embed(e)),
+        Err(FileError::Db(e)) => return Err(e.into()),
+        Err(FileError::Nextcloud(message)) => {
+            // Not the file's fault: kept as it was, and tried again next run.
+            db.execute_batch("ROLLBACK; BEGIN")?;
+            eprintln!("{}: {message}", item.shown);
+            unreachable.insert(item.shown.split('/').next().unwrap_or("").to_string());
+            "skipped"
+        }
+        Err(FileError::File(message)) => failed(db, item, row, &message)?,
+    };
+    db.execute_batch("COMMIT")?;
+    Ok(outcome)
+}
+
+/// Bring the named files of one user's index in line with their folders,
+/// nothing else, for the tools' run_index. None when the index is for
+/// another model or other folders: then only a full run will do.
+fn index_files(
+    db: &Connection,
+    own: &UserFolders,
+    nextcloud: Option<&Nextcloud>,
+    run: &Run,
+    model: &str,
+    base: &Path,
+    paths: &BTreeSet<String>,
+) -> Result<Option<(Counts, BTreeSet<String>)>, RunError> {
+    let meta: HashMap<String, String> = db
+        .prepare("SELECT key, value FROM meta")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let roots: BTreeMap<&str, &str> = own
+        .roots
+        .iter()
+        .map(|(l, r)| (l.as_str(), r.as_str()))
+        .collect();
+    if meta.get("model").map(String::as_str) != Some(model)
+        || meta.get("folders") != Some(&serde_json::to_string(&roots).unwrap_or_default())
+    {
+        return Ok(None);
+    }
+    let tree = Tree::new(&own.roots, &own.rules, nextcloud);
+    let mut counts = Counts::new();
+    let mut unreachable = BTreeSet::new();
+    for shown in paths {
+        // Checked again here: the request file is only as good as what wrote it.
+        let parts: Vec<String> = shown.split('/').map(String::from).collect();
+        let fits = parts.len() > 1
+            && roots.contains_key(parts[0].as_str())
+            && !parts
+                .iter()
+                .any(|p| p.is_empty() || p == ".." || folders::hidden(p));
+        let item = match fits.then(|| tree.item(&parts[0], &parts[1..])) {
+            Some(Ok(Some(item))) if !item.is_dir && usable(&suffix(&item.shown)) => item,
+            Some(Err(Error::Nextcloud { message, .. })) => {
+                eprintln!("{shown}: {message}");
+                unreachable.insert(parts[0].clone());
+                *counts.entry("skipped".into()).or_default() += 1;
+                continue;
+            }
+            _ => {
+                *counts.entry("not found".into()).or_default() += 1;
+                continue;
+            }
+        };
+        let row = db
+            .query_row(
+                &format!("SELECT {KNOWN} FROM files WHERE path = ?"),
+                [shown],
+                |r| Known::from_row(r, 0),
+            )
+            .ok();
+        let outcome = step(
+            db,
+            &tree,
+            run,
+            &item,
+            row.as_ref(),
+            &mut HashMap::new(),
+            &mut HashSet::new(),
+            &mut unreachable,
+        )?;
+        *counts.entry(outcome.into()).or_default() += 1;
+    }
+    publish(db, base)?;
+    Ok(Some((counts, unreachable)))
+}
+
+/// What the tools asked for since the last run: users to index whole, and
+/// files of others. Every request is taken, even one that cannot be read,
+/// so the path unit is not started again for it.
+#[derive(Default)]
+struct Requests {
+    all: BTreeSet<String>,
+    files: BTreeMap<String, BTreeSet<String>>,
+}
+
+/// The requests in <index dir>/requests, deleted as they are read; None when there are none.
+fn claim_requests(index_dir: &Path) -> Option<Requests> {
+    let mut out: Option<Requests> = None;
+    for entry in std::fs::read_dir(index_dir.join("requests"))
+        .ok()?
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) != Some("json") {
+            continue;
+        }
+        let data = std::fs::read(&path).unwrap_or_default();
+        if let Err(e) = std::fs::remove_file(&path) {
+            eprintln!("{}: {e}", path.display());
+        }
+        let wanted = out.get_or_insert_default();
+        let Ok(request) = serde_json::from_slice::<Value>(&data) else {
+            continue;
+        };
+        let user = request["user"].as_str().unwrap_or("").to_string();
+        match request["files"].as_array() {
+            Some(files) if !files.is_empty() => wanted
+                .files
+                .entry(user)
+                .or_default()
+                .extend(files.iter().filter_map(Value::as_str).map(String::from)),
+            _ => {
+                wanted.all.insert(user);
+            }
+        }
+    }
+    out
 }
 
 /// Kept as failed with its dates, so it is retried once it changes.
@@ -745,6 +888,8 @@ pub fn main(s: &Settings) -> Result<(), String> {
         }
         Err(_) => None,
     };
+    // Taken in any case, quiet hours included: the path unit starts again while any is left.
+    let requests = claim_requests(&s.index_dir).filter(|_| wanted.is_none());
     let users = folders::load_folders(&s.folders_file)?;
     let nextcloud = Nextcloud::from_env()?;
     needs_nextcloud(&users, nextcloud.as_ref())?;
@@ -796,6 +941,16 @@ pub fn main(s: &Settings) -> Result<(), String> {
     }
     let mut broken = Vec::new();
     for (user, own) in &users {
+        // A run the tools asked for does only their users, and only their files
+        // unless one asked for everything.
+        let files = match &requests {
+            None => None,
+            Some(r) if r.all.contains(user) => None,
+            Some(r) => match r.files.get(user) {
+                Some(files) => Some(files),
+                None => continue,
+            },
+        };
         let base = s.index_dir.join(user);
         let db = connect(&base.with_extension("work.sqlite"), false)
             .map_err(|e| format!("{user}: {e}"))?;
@@ -810,7 +965,17 @@ pub fn main(s: &Settings) -> Result<(), String> {
                 embedder: if use_remote { &remote } else { &local },
                 family: &s.family,
             };
-            index_user(&db, own, nextcloud.as_ref(), &run, &model, &base, &quiet)
+            let asked = match files {
+                Some(files) => {
+                    index_files(&db, own, nextcloud.as_ref(), &run, &model, &base, files)
+                }
+                None => Ok(None),
+            };
+            match asked {
+                Ok(Some(done)) => Ok(done),
+                Ok(None) => index_user(&db, own, nextcloud.as_ref(), &run, &model, &base, &quiet),
+                Err(e) => Err(e),
+            }
         };
         if use_remote && let Err(RunError::Embed(e)) = &result {
             // Each file done is committed: the Pi carries on from there.

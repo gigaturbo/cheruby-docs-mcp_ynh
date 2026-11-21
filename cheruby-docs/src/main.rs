@@ -109,6 +109,12 @@ enum Command {
         #[command(flatten)]
         r#as: As,
     },
+    /// Ask the index unit for a run of these files, or of everything, as run_index.
+    RunIndex {
+        paths: Vec<String>,
+        #[command(flatten)]
+        r#as: As,
+    },
     /// Print Syncthing's folders from its config.xml, a tab-separated line each.
     SyncthingFolders { config: PathBuf },
     /// Print the OnCalendar of a cron schedule without the quiet hours, or nothing.
@@ -323,6 +329,11 @@ fn run(cli: Cli) -> Result<(), String> {
             print(runtime()?.block_on(tools::search_documents(
                 &ctx, query, path, after, before, limit,
             )))
+        }
+        Command::RunIndex { paths, r#as } => {
+            load_env(given, Some("docs.env"))?;
+            let ctx = shell_ctx(r#as.gateway)?;
+            print(runtime()?.block_on(tools::run_index(&ctx, paths)))
         }
         Command::SyncthingFolders { config } => {
             // Nothing when it cannot be read, as when Syncthing has no config yet.
