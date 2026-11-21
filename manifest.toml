@@ -44,7 +44,7 @@ ram.runtime = "2500M"
     # on the Pi and published as a release of this repository.
     [resources.sources.cheruby_docs]
     url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/cheruby-docs-0.11.0/cheruby-docs-aarch64-linux"
-    sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+    sha256 = "5ba5db65e902d7ca16d6c2381777a07af811076fc50ececf5efe20cdbce77929"
     extract = false
     rename = "cheruby-docs"
 
