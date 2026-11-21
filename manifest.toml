@@ -7,7 +7,7 @@ name = "Cheruby Docs"
 description.en = "MCP tools that let a user's AI agents list, find, read and search that user's folders, and write where allowed"
 description.fr = "Outils MCP : les agents IA d'un utilisateur listent, cherchent, lisent et fouillent ses dossiers, et écrivent là où c'est permis"
 
-version = "0.10.1~ynh1"
+version = "0.11.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -17,15 +17,15 @@ license = "MIT"
 [integration]
 yunohost = ">= 12.1"
 helpers_version = "2.1"
-# The lock file holds aarch64 wheels only.
+# The tool server and llama-server are built for the Pi 5 only.
 architectures = ["arm64"]
 multi_instance = false
 ldap = false
 sso = false
-# The embedding model (up to 640 MB) and the reranker (310 MB), llama-server
-# and the venv; the index grows with the folders.
-disk = "1800M"
-ram.build = "300M"
+# The embedding model (up to 640 MB) and the reranker (310 MB), llama-server,
+# the tool server and PDFium; the index grows with the folders.
+disk = "1700M"
+ram.build = "50M"
 # Qwen3-Embedding Q8_0 takes about 1 GB more than EmbeddingGemma: as a causal
 # model it keeps a KV cache (1.7 GB at most, measured on b12223).
 ram.runtime = "2500M"
@@ -40,14 +40,22 @@ ram.runtime = "2500M"
 
 [resources]
 
-    # uv installs the locked wheels and checks every hash.
-    [resources.sources.uv]
-    arm64.url = "https://github.com/astral-sh/uv/releases/download/0.12.12/uv-aarch64-unknown-linux-gnu.tar.gz"
-    arm64.sha256 = "fe08db50cc1b56cd1da7801065ed1103d27ed3f9571cd122386cfc7faf1b8df5"
-    in_subdir = true
-    autoupdate.strategy = "latest_github_release"
-    autoupdate.upstream = "https://github.com/astral-sh/uv"
-    autoupdate.asset.arm64 = "^uv-aarch64-unknown-linux-gnu.tar.gz$"
+    # The tool server, the indexer and their commands, built from cheruby-docs/
+    # on the Pi and published as a release of this repository.
+    [resources.sources.cheruby_docs]
+    url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/cheruby-docs-0.11.0/cheruby-docs-aarch64-linux"
+    sha256 = "0000000000000000000000000000000000000000000000000000000000000000"
+    extract = false
+    rename = "cheruby-docs"
+
+    # PDFium, which reads PDFs: chromium/8076 from bblanchon/pdfium-binaries,
+    # the build pypdfium2 5.14 shipped, so the text is the same.
+    # BSD-3-Clause and Apache-2.0 (LICENSE and licenses/ in it).
+    [resources.sources.pdfium]
+    url = "https://github.com/bblanchon/pdfium-binaries/releases/download/chromium%2F8076/pdfium-linux-arm64.tgz"
+    sha256 = "d7247b33ae5545615a5e877235dd97afc879e3a8805689684f528cae3339d352"
+    format = "tar.gz"
+    in_subdir = false
 
     # llama-server from llama.cpp b12223, built for the Pi 5 by build/llama-server.sh
     # in this repository's release workflow: upstream's arm64 builds need a newer

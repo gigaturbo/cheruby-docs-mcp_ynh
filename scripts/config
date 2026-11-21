@@ -232,27 +232,9 @@ ynh_app_config_show() {
 }
 
 # Whether a run is going, how the last one ended, what the index holds and
-# when the next run comes, from the status file docs_index.py writes.
+# when the next run comes, from the status file the indexer writes.
 docs_index_status() {
-    local state next file="$data_dir/$docs_user.status.json"
-    state=$(systemctl is-active "$app-index.service" || true)
-    next=$(systemctl show "$app-index.timer" -p NextElapseUSecRealtime --value)
-    [[ -n "$next" && "$next" != n/a ]] || next="none: the schedule is never."
-    { cat "$file" 2>/dev/null || echo '{"result": "none"}'; } | jq -r --arg state "$state" --arg next "$next" --arg unit "$app-index" '
-        def said: to_entries | map("\(.value) \({needs_ocr: "waiting for OCR"}[.key] // .key)") | join(", ");
-        [ if $state == "activating" then "- **Running now**\(if .result == "running" then ", since \(.started)" else "" end)."
-          elif .result == "none" then "- **No run yet.**"
-          elif .result == "running" then "- **Last run**: started \(.started), stopped before the end: journalctl -u \($unit)."
-          elif .result == "done" then "- **Last run**: \(.started) to \(.ended), done."
-          elif .result == "paused" then "- **Last run**: \(.started) to \(.ended), paused for the quiet hours; the next run carries on."
-          else "- **Last run**: \(.started) to \(.ended), failed: \(.error // "journalctl -u \($unit)")" end,
-          (if $state != "activating" and (.run // {}) != {} then "- **It did**: \(.run | said)." else empty end),
-          (if (.embedded_on // ["pi"]) != ["pi"] or .remote_note then
-              "- **Embedded on**: \(.embedded_on // ["pi"] | map({desktop: "the desktop", pi: "this server"}[.]) | join(", then on "))\(if .remote_note then ". \(.remote_note)" else "" end)"
-           else empty end),
-          "- **The index holds**: \(if (.files // {}) == {} then "no file yet" else .files | said end).",
-          "- **Next run**: \($next)"
-        ] | join("\n")'
+    "$install_dir/bin/cheruby-docs" status --index-dir "$data_dir" --user "$docs_user" --unit "$app-index"
 }
 
 # The ping unit reads ping.env at each run: nothing to restart for it.
@@ -293,7 +275,7 @@ ynh_app_config_apply() {
     fi
     if [ "${changed[index_quiet]:-}" = "true" ]; then
         ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-            --wait_until="Uvicorn running on" --timeout=60
+            --wait_until="cheruby-docs: MCP at" --timeout=60
     fi
     # The indexer reads index.env at each run: nothing to restart.
     if [ "${remote_key_set:-0}" = 1 ] || [ "${changed[remote_model]:-}" = "true" ] \
@@ -305,7 +287,7 @@ ynh_app_config_apply() {
     if [ "${nc_password_set:-0}" = 1 ]; then
         docs_configure
         ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-            --wait_until="Uvicorn running on" --timeout=60
+            --wait_until="cheruby-docs: MCP at" --timeout=60
         return
     fi
     for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_only syncthing_skip \
@@ -314,7 +296,7 @@ ynh_app_config_apply() {
         if [ "${changed[$key]:-}" = "true" ]; then
             docs_configure
             ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-                --wait_until="Uvicorn running on" --timeout=60
+                --wait_until="cheruby-docs: MCP at" --timeout=60
             return
         fi
     done
@@ -326,7 +308,7 @@ run__new_token() {
     set -o xtrace
     docs_configure
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-        --wait_until="Uvicorn running on" --timeout=60
+        --wait_until="cheruby-docs: MCP at" --timeout=60
     ynh_print_info "A new token is in the panel. Paste it in Whoopy: the old one no longer works."
 }
 

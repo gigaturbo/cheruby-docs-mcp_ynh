@@ -91,18 +91,8 @@ docs_syncthing_folders() {
     for file in "$dir/.config/syncthing/config.xml" "$dir/.local/state/syncthing/config.xml"; do
         [ -f "$file" ] || continue
         # Top-level folders only: the one under <defaults> is a template.
-        python3 -I -c '
-import sys
-import xml.etree.ElementTree as ET
-try:
-    root = ET.parse(sys.argv[1]).getroot()
-except (OSError, ET.ParseError):
-    sys.exit()
-for folder in root.findall("folder"):
-    label, path = folder.get("label") or folder.get("id") or "", folder.get("path") or ""
-    if label and path and not any(c in label + path for c in "\t\n,"):
-        print(label, path, folder.get("ignorePerms", "false"), folder.get("type") or "sendreceive", sep="\t")
-' "$file"
+        # Nothing before the binary is installed, as during an upgrade from 0.10.
+        [ ! -x "$install_dir/bin/cheruby-docs" ] || "$install_dir/bin/cheruby-docs" syncthing-folders "$file"
         return 0
     done
 }
@@ -252,41 +242,21 @@ docs_write_ping() {
     chmod 600 "$install_dir/ping.env"
 }
 
-# uv is told not to look for configuration files: Yunohost runs scripts from a
-# directory under /var/cache/yunohost, and uv would walk up from it.
-docs_uv() {
-    env HOME="$build_home" UV_CACHE_DIR="$build_home/uv" UV_NO_CONFIG=1 \
-        "$install_dir/.uv/uv" "$@"
-}
-
-# Code is root-owned and read by the app user through its group: a stolen
-# process cannot rewrite what it runs. The venv comes from the hash-locked
-# wheels, fetched here as root; the running service downloads nothing.
-docs_build_venv() {
-    build_home=$(mktemp -d)
-    ynh_safe_rm "$install_dir/.uv"
-    ynh_safe_rm "$install_dir/venv"
-    ynh_setup_source --dest_dir="$install_dir/.uv" --source_id="uv"
-    cp "$YNH_APP_BASEDIR/conf/requirements.txt" "$install_dir/requirements.txt"
-
-    pushd "$install_dir"
-        ynh_hide_warnings docs_uv venv --python /usr/bin/python3 "$install_dir/venv"
-        ynh_hide_warnings docs_uv pip install --python "$install_dir/venv/bin/python" \
-            --require-hashes --no-build --requirement "$install_dir/requirements.txt"
-    popd
-
-    ynh_safe_rm "$build_home"
-    ynh_app_setting_set --key=build_fingerprint --value="$(docs_build_fingerprint)"
-}
-
-# What a build depends on. An upgrade that changes neither keeps the venv.
-docs_build_fingerprint() {
-    { cat "$YNH_APP_BASEDIR/conf/requirements.txt"; ynh_read_manifest "resources.sources.uv.arm64.url"; } \
-        | sha256sum | cut -d' ' -f1
+# The tool server's binary and PDFium, checked downloads. Code is root-owned
+# and read by the app user through its group: a stolen process cannot
+# rewrite what it runs. After docs_fetch_llama, which empties bin/, and only
+# with the units stopped: a running binary cannot be overwritten.
+docs_install_binary() {
+    mkdir -p "$install_dir/bin"
+    ynh_safe_rm "$install_dir/bin/cheruby-docs"
+    ynh_setup_source --dest_dir="$install_dir/bin" --source_id="cheruby_docs"
+    chmod 750 "$install_dir/bin/cheruby-docs"
+    ynh_safe_rm "$install_dir/pdfium"
+    ynh_setup_source --dest_dir="$install_dir/pdfium" --source_id="pdfium"
 }
 
 # The embedding model chosen in the panel: its source in the manifest, its
-# file, its family (a key of PROMPTS in docs_index.py) and the memory its
+# file, its family (one embed::query_prefix knows) and the memory its
 # server may take. Each GGUF carries its own pooling and end token.
 docs_embed_model() {
     case "${embed_model:-}" in
@@ -339,7 +309,8 @@ docs_llama_fingerprint() {
 # Yunohost remove the app, then restore it.
 docs_check_downloads() {
     local url
-    for url in https://pypi.org/simple/ https://files.pythonhosted.org/ https://github.com/ \
+    for url in "$(ynh_read_manifest "resources.sources.cheruby_docs.url")" \
+        "$(ynh_read_manifest "resources.sources.pdfium.url")" \
         "$(ynh_read_manifest "resources.sources.llama_server.url")" \
         "$(ynh_read_manifest "resources.sources.$model_source.url")" \
         "$(ynh_read_manifest "resources.sources.rerank_model.url")"; do
@@ -489,10 +460,6 @@ docs_configure() {
     nextcloud_env=""
     set -o xtrace
 
-    local module
-    for module in cheruby_docs_mcp.py docs_files.py docs_index.py docs_text.py; do
-        install -m 644 "$YNH_APP_BASEDIR/conf/$module" "$install_dir/$module"
-    done
     chown -R root:"$app" "$install_dir"
     chmod -R u=rwX,g=rX,o= "$install_dir"
     chown root:root "$install_dir/docs.env" "$install_dir/index.env"
@@ -536,7 +503,7 @@ docs_start() {
         sleep 2
     done
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-        --wait_until="Uvicorn running on" --timeout=60
+        --wait_until="cheruby-docs: MCP at" --timeout=60
     docs_start_timer
     # Watches for run_index's requests, whatever the schedule.
     systemctl enable "$app-index.path" --quiet
@@ -571,52 +538,8 @@ docs_index_cron() {
 # meaning cannot be kept, no hour is left, or systemd does not take it.
 docs_calendar() { # <cron> <quiet hours>
     local expr
-    expr=$(python3 -I - "$1" "$2" <<'EOF'
-import re
-import sys
-
-fields, quiet = sys.argv[1].lower().split(), sys.argv[2]
-if len(fields) != 5:
-    sys.exit(1)
-NAMES = {**{d: str(n) for n, d in enumerate(["sun", "mon", "tue", "wed", "thu", "fri", "sat"])},
-         **{m: str(n) for n, m in enumerate(["jan", "feb", "mar", "apr", "may", "jun",
-                                             "jul", "aug", "sep", "oct", "nov", "dec"], 1)}}
-DAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
-
-
-def values(field, low, high):
-    """The sorted numbers a cron field names; exits on what it cannot read."""
-    out = set()
-    for part in re.sub(r"[a-z]{3}", lambda m: NAMES.get(m[0], m[0]), field).split(","):
-        m = re.fullmatch(r"(\*|\d+)(?:-(\d+))?(?:/(\d+))?", part)
-        if not m or (m[1] == "*" and m[2]):
-            sys.exit(1)
-        start = low if m[1] == "*" else int(m[1])
-        end = int(m[2]) if m[2] else high if m[1] == "*" or m[3] else start
-        if not low <= start <= end <= high or (m[3] and int(m[3]) == 0):
-            sys.exit(1)
-        out.update(range(start, end + 1, int(m[3] or 1)))
-    return sorted(out)
-
-
-minutes, hours, days, months, weekdays = (values(f, lo, hi) for f, lo, hi in
-                                          zip(fields, (0, 0, 1, 1, 0), (59, 23, 31, 12, 7), strict=True))
-# cron runs when either the day or the weekday matches, systemd when both do.
-if fields[2] != "*" and fields[4] != "*":
-    sys.exit(1)
-if quiet:
-    a, b = (int(h) % 24 for h in quiet.split("-"))
-    if a == b:
-        sys.exit(1)
-    hours = [h for h in hours if not (a <= h < b if a < b else h >= a or h < b)]
-if not hours:
-    sys.exit(1)
-listed = lambda found, every: "*" if found == every else ",".join(map(str, found))
-weekday = "" if fields[4] == "*" else ",".join(dict.fromkeys(DAYS[d] for d in weekdays)) + " "
-print(f"{weekday}*-{listed(months, list(range(1, 13)))}-{listed(days, list(range(1, 32)))} "
-      f"{listed(hours, list(range(24)))}:{listed(minutes, list(range(60)))}:00")
-EOF
-) || return 0
+    expr=$("$install_dir/bin/cheruby-docs" calendar "$1" "$2") || return 0
+    [ -n "$expr" ] || return 0
     systemd-analyze calendar "$expr" > /dev/null 2>&1 && echo "$expr" || true
 }
 

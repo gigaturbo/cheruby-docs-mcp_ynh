@@ -14,8 +14,7 @@ SupplementaryGroups=__GROUPS__
 # Tokens, the Nextcloud app password, folders and index settings. Root 600,
 # read before privileges drop.
 EnvironmentFile=__INSTALL_DIR__/docs.env
-# Not -I: it would keep the server from importing its own modules beside it.
-ExecStart=__INSTALL_DIR__/venv/bin/python -E -s -B __INSTALL_DIR__/cheruby_docs_mcp.py
+ExecStart=__INSTALL_DIR__/bin/cheruby-docs serve
 
 MemoryMax=512M
 

@@ -20,7 +20,7 @@ EnvironmentFile=__INSTALL_DIR__/index.env
 # timer firing during a long run sent it again. "+" runs it outside the
 # sandbox, which blocks the socket systemctl talks through.
 ExecStartPre=+/bin/systemctl start --no-block __APP__-ping@start.service
-ExecStart=__INSTALL_DIR__/venv/bin/python -E -s -B __INSTALL_DIR__/docs_index.py
+ExecStart=__INSTALL_DIR__/bin/cheruby-docs index
 # Stopped on purpose (Rebuild, an upgrade) is not a failed run: no failure ping.
 SuccessExitStatus=SIGTERM
 

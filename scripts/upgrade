@@ -5,33 +5,32 @@ source /usr/share/yunohost/helpers
 
 docs_default_settings
 
-# Each part is rebuilt only when what it depends on changed.
-rebuild_venv=1
-if [ -x "$install_dir/venv/bin/python" ] \
-    && [ "$(docs_build_fingerprint)" = "${build_fingerprint:-}" ]; then
-    rebuild_venv=0
-fi
+# llama-server and the models are fetched again only when they changed. The
+# tool server's binary is installed at each upgrade.
 fetch_llama=1
 if [ -x "$install_dir/bin/llama-server" ] && [ -f "$install_dir/model/$model_file" ] \
     && [ -f "$install_dir/model/$rerank_model_file" ] \
     && [ "$(docs_llama_fingerprint)" = "${llama_fingerprint:-}" ]; then
     fetch_llama=0
 fi
-if [ "$rebuild_venv" = 1 ] || [ "$fetch_llama" = 1 ]; then
-    docs_check_downloads
-fi
+docs_check_downloads
 
 ynh_script_progression "Stopping the tool server..."
 docs_stop
 
-if [ "$rebuild_venv" = 1 ]; then
-    ynh_script_progression "Reinstalling the tool server from the locked wheels..."
-    docs_build_venv
-fi
+# The Python of 0.10 and before, replaced by the binary.
+for old in venv .uv requirements.txt cheruby_docs_mcp.py docs_files.py docs_index.py docs_text.py; do
+    ynh_safe_rm "$install_dir/$old"
+done
+ynh_app_setting_delete --key=build_fingerprint
+
 if [ "$fetch_llama" = 1 ]; then
     ynh_script_progression "Fetching the embedding server and its models..."
     docs_fetch_llama
 fi
+
+ynh_script_progression "Installing the tool server..."
+docs_install_binary
 
 ynh_script_progression "Updating configuration files..."
 docs_configure

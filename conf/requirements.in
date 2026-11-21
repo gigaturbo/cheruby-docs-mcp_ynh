@@ -1,9 +1,0 @@
-# Inputs of conf/requirements.txt. Re-lock only deliberately, a week behind
-# the newest releases:
-#   uv pip compile conf/requirements.in --python-version 3.11 --python-platform aarch64-unknown-linux-gnu \
-#     --generate-hashes --no-build --exclude-newer <date> -o conf/requirements.txt
-mcp>=2.3,<3
-uvicorn
-pypdfium2
-httpx2
-numpy

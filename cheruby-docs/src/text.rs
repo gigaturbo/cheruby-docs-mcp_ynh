@@ -904,8 +904,9 @@ pub fn document_text<R: Read + Seek>(source: R, suffix: &str) -> Result<String, 
     }
 }
 
-/// PDFium, loaded once from DOCS_PDFIUM or lib/ beside bin/. It may not be
-/// called from two threads at once, even on two documents.
+/// PDFium, loaded once from DOCS_PDFIUM or pdfium/lib/ beside bin/, as the
+/// package unpacks it. It may not be called from two threads at once, even
+/// on two documents.
 fn pdfium() -> Result<&'static Mutex<Pdfium>, String> {
     static PDFIUM: OnceLock<Result<Mutex<Pdfium>, String>> = OnceLock::new();
     PDFIUM
@@ -916,7 +917,7 @@ fn pdfium() -> Result<&'static Mutex<Pdfium>, String> {
                     .map_err(|e| e.to_string())?
                     .parent()
                     .and_then(|bin| bin.parent())
-                    .map(|dir| dir.join("lib/libpdfium.so"))
+                    .map(|dir| dir.join("pdfium/lib/libpdfium.so"))
                     .ok_or("no folder above the binary")?,
             };
             let bindings = Pdfium::bind_to_library(&path)

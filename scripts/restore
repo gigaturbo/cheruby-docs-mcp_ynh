@@ -5,13 +5,13 @@ source /usr/share/yunohost/helpers
 
 docs_default_settings
 
-# Needs the network: the code is rebuilt from the lock file and the pinned
-# sources, not restored. The search index is rebuilt by the timer.
-ynh_script_progression "Reinstalling the tool server from the locked wheels..."
-docs_build_venv
-
+# Needs the network: the binaries and models are fetched again from the
+# pinned sources, not restored. The search index is rebuilt by the timer.
 ynh_script_progression "Fetching the embedding server and its models..."
 docs_fetch_llama
+
+ynh_script_progression "Installing the tool server..."
+docs_install_binary
 
 ynh_script_progression "Restoring configuration files..."
 docs_clear_index

@@ -5,11 +5,11 @@ source /usr/share/yunohost/helpers
 
 docs_default_settings
 
-ynh_script_progression "Installing the tool server from the locked wheels..."
-docs_build_venv
-
 ynh_script_progression "Fetching the embedding server and its models..."
 docs_fetch_llama
+
+ynh_script_progression "Installing the tool server..."
+docs_install_binary
 
 ynh_script_progression "Adding configuration files..."
 docs_clear_index
