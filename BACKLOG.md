@@ -13,7 +13,16 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
-Nothing open.
+### B-P-3 · runs the tools ask for ping healthchecks.io like scheduled runs
+
+`open` `low` `filed 2026-11-21`
+
+A run started by `run_index` sends the same start and success pings as a
+timer run. An agent calling it regularly keeps the check green while the
+timer has stopped or every full run fails (R9's silent failure).
+
+**Fix:** leave the pings out of a files-only run, with a marker the ping
+unit can read, or ping a second check for those runs.
 
 ## Features
 
