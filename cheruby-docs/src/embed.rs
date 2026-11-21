@@ -141,9 +141,13 @@ impl Embedder {
             return Err(EmbedError::Status(code));
         }
         let data: Value = resp.json().map_err(|e| EmbedError::Shape(e.to_string()))?;
-        parse_vectors(&data).ok_or_else(|| {
-            EmbedError::Shape("the embedding server's answer has no vectors.".into())
-        })
+        match parse_vectors(&data) {
+            Some(rows) if same_shape(&rows, texts.len()) => Ok(rows),
+            _ => Err(EmbedError::Shape(format!(
+                "the embedding server's answer does not hold {} vectors of one size.",
+                texts.len()
+            ))),
+        }
     }
 
     /// Unit vectors for texts, in order.
@@ -177,6 +181,14 @@ fn parse_vectors(data: &Value) -> Option<Vec<Vec<f32>>> {
     }
     rows.sort_by_key(|(i, _)| *i);
     Some(rows.into_iter().map(|(_, v)| v).collect())
+}
+
+/// Whether rows are n vectors of one non-zero size.
+pub fn same_shape(rows: &[Vec<f32>], n: usize) -> bool {
+    rows.len() == n
+        && rows
+            .first()
+            .is_some_and(|r| !r.is_empty() && rows.iter().all(|x| x.len() == r.len()))
 }
 
 pub fn normalized(v: Vec<f32>) -> Vec<f32> {
@@ -285,5 +297,12 @@ mod tests {
             .unwrap();
         assert_eq!(rows.len(), 3);
         assert!((dot(&rows[1], &rows[1]) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn an_answer_without_one_vector_per_text_is_refused() {
+        let (url, _) = crate::testing::serve(|_, _, _| (200, json!({"data": []}).to_string()));
+        let shape = Embedder::local(&url).embed(&["a".into(), "b".into()]);
+        assert!(matches!(shape, Err(EmbedError::Shape(_))));
     }
 }

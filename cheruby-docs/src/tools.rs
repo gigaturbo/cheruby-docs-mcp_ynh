@@ -45,6 +45,10 @@ const MAX_RUN_FILES: usize = 50;
 const MAX_REQUESTS: usize = 20;
 /// How long run_index waits for a run of files to end.
 const RUN_WAIT_S: u64 = 60;
+/// A request older than this means the index unit takes none.
+const STALE_REQUEST_S: u64 = 300;
+/// Between two runs of everything an agent asks for.
+const FULL_RUN_GAP_MIN: i64 = 15;
 
 /// What every tool reads: the folders, Nextcloud, the index and the servers.
 pub struct Docs {
@@ -738,8 +742,31 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
             "the index does not run in its quiet hours, {quiet}; the next run after {end}:00 picks the changes up."
         ));
     }
+    let base = ctx.docs.index_dir.join(&ctx.grant.user);
+    // A run of everything walks every folder: not again within minutes of the last one.
+    if shown.is_empty() {
+        let status = index::read_status(&base);
+        let full = status.get("kind").and_then(Value::as_str).unwrap_or("full") == "full";
+        let started = status
+            .get("started")
+            .and_then(Value::as_str)
+            .and_then(|t| chrono::NaiveDateTime::parse_from_str(t, "%Y-%m-%d %H:%M").ok())
+            .and_then(|t| Local.from_local_datetime(&t).earliest());
+        if let Some(started) = started.filter(|_| full)
+            && Local::now() - started < chrono::Duration::minutes(FULL_RUN_GAP_MIN)
+        {
+            let again = started + chrono::Duration::minutes(FULL_RUN_GAP_MIN);
+            return Err(format!(
+                "a run of all the folders started at {}; ask again after {}, or name the files.",
+                started.format("%H:%M"),
+                again.format("%H:%M")
+            ));
+        }
+    }
     let spool = ctx.docs.index_dir.join("requests");
-    let waiting = std::fs::read_dir(&spool)
+    let mut waiting = 0;
+    let mut oldest = std::time::Duration::ZERO;
+    for entry in std::fs::read_dir(&spool)
         .map_err(|e| {
             format!(
                 "the index takes no request: {}",
@@ -748,7 +775,21 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
         })?
         .flatten()
         .filter(|e| e.path().extension().is_some_and(|x| x == "json"))
-        .count();
+    {
+        waiting += 1;
+        let age = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok());
+        oldest = oldest.max(age.unwrap_or_default());
+    }
+    if oldest.as_secs() > STALE_REQUEST_S {
+        return Err(format!(
+            "a request has waited {} minutes: the index unit is not taking them; see Index runs in the panel.",
+            oldest.as_secs() / 60
+        ));
+    }
     if waiting >= MAX_REQUESTS {
         return Err(format!(
             "{waiting} index requests are waiting already; the next run takes them all."
@@ -771,7 +812,6 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
                 crate::folders::io_message(&e)
             )
         })?;
-    let base = ctx.docs.index_dir.join(&ctx.grant.user);
     if shown.is_empty() {
         let status = index::read_status(&base);
         let state = if status.get("result").and_then(Value::as_str) == Some("running") {
@@ -785,17 +825,25 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
             crate::status::render(&status, state, None, unit)
         ));
     }
-    // Taken by the indexer, then its run ended: the published index says how each went.
+    // The indexer answers each request it took in the status file, run or
+    // not; then the published index says how each file went.
     for _ in 0..RUN_WAIT_S {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-        let running = index::read_status(&base)
-            .get("result")
+        let status = index::read_status(&base);
+        let Some(answer) = status
+            .get("answered")
+            .and_then(|a| a.get(&name))
             .and_then(Value::as_str)
-            == Some("running");
-        if request.exists() || running {
+        else {
             continue;
-        }
+        };
+        let head = if answer == "done" {
+            "The index run is done.".to_string()
+        } else {
+            format!("The index run did not do it: {answer}")
+        };
         let db_path = base.with_extension("sqlite");
+        let shown = shown.clone();
         let lines = blocking(move || -> ToolResult<Vec<String>> {
             let db = index::connect(&db_path, true)
                 .map_err(|e| format!("the search index could not be read: {e}"))?;
@@ -805,7 +853,7 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
                 .collect())
         })
         .await??;
-        return Ok(format!("The index run is done.\n{}", lines.join("\n")));
+        return Ok(format!("{head}\n{}", lines.join("\n")));
     }
     Ok(format!(
         "The run is asked for, and has not ended within {RUN_WAIT_S} s: another run may be going. \

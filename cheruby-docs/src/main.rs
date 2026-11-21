@@ -275,6 +275,7 @@ fn run(cli: Cli) -> Result<(), String> {
             } else {
                 next
             };
+            let watching = status::systemd(&format!("{unit}.path"), "ActiveState");
             println!(
                 "{}",
                 status::render(
@@ -284,6 +285,12 @@ fn run(cli: Cli) -> Result<(), String> {
                     &unit
                 )
             );
+            // run_index's requests wait for the path unit.
+            if !watching.is_empty() && watching != "active" {
+                println!(
+                    "- **Requests from the tools**: not taken, the path unit is {watching}: systemctl status {unit}.path"
+                );
+            }
             Ok(())
         }
         Command::Ls { path, r#as } => {

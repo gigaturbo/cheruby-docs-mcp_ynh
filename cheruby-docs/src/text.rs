@@ -753,7 +753,12 @@ pub fn html_text(page: &str, xml: bool) -> String {
             } else if name == "script" || name == "style" {
                 // Raw text up to the closing tag, as HTMLParser reads it.
                 let close = format!("</{name}");
-                let at = rest.to_lowercase().find(&close).unwrap_or(rest.len());
+                // On the bytes: lowering case changes some characters' length.
+                let at = rest
+                    .as_bytes()
+                    .windows(close.len())
+                    .position(|w| w.eq_ignore_ascii_case(close.as_bytes()))
+                    .unwrap_or(rest.len());
                 p.data(&rest[..at]);
                 rest = &rest[at..];
             }
@@ -1003,6 +1008,13 @@ mod tests {
             "Semis de capucines\nBouture de figuier"
         );
         assert_eq!(html_text("a < b <br/>c", false), "a < b\nc");
+        // Characters whose lower case is longer or shorter.
+        assert_eq!(
+            html_text("<p>x</p><script>\u{e9}\u{212a}</SCRIPT>y", false),
+            "x\ny"
+        );
+        let long = format!("<script>{}</script>z", "\u{130}".repeat(20));
+        assert_eq!(html_text(&long, false), "z");
     }
 
     #[test]

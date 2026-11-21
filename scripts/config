@@ -349,9 +349,11 @@ run__run_index_remote() {
 # The working copy goes; the published one stays for search until the next
 # run replaces it.
 run__rebuild_index() {
-    systemctl stop "$app-index.service"
+    # The path unit first, or a waiting request would start a run on the old copy.
+    systemctl stop "$app-index.path" "$app-index.service"
     ynh_safe_rm "$data_dir/$docs_user.work.sqlite"
     ynh_safe_rm "$data_dir/$docs_user.work.sqlite-journal"
+    systemctl start "$app-index.path"
     ynh_print_info "The index was dropped: the next run reads every file again. Press Run now to start it."
 }
 

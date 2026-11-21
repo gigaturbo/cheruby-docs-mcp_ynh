@@ -332,7 +332,11 @@ impl Run<'_> {
         if image_format(&ext).is_some() {
             status = "needs_ocr";
         } else {
-            match file_pages(f, &ext) {
+            // A reader's bug fails this file only; the run goes on.
+            let read =
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| file_pages(f, &ext)))
+                    .unwrap_or_else(|_| Err("the reader stopped on this file.".into()));
+            match read {
                 Ok((pages, e)) => {
                     empty = e;
                     rows = pages
@@ -687,6 +691,8 @@ fn index_files(
 struct Requests {
     all: BTreeSet<String>,
     files: BTreeMap<String, BTreeSet<String>>,
+    /// {request name: its user}, to say each one how it went.
+    names: BTreeMap<String, String>,
 }
 
 /// The requests in <index dir>/requests, deleted as they are read; None when there are none.
@@ -709,6 +715,11 @@ fn claim_requests(index_dir: &Path) -> Option<Requests> {
             continue;
         };
         let user = request["user"].as_str().unwrap_or("").to_string();
+        let name = path
+            .file_stem()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+        wanted.names.insert(name, user.clone());
         match request["files"].as_array() {
             Some(files) if !files.is_empty() => wanted
                 .files
@@ -804,11 +815,19 @@ pub fn desktop_check(
         .collect();
     let here = local.embed(&texts)?;
     Ok(match remote.embed(&texts) {
-        Ok(there) => Ok(here
-            .iter()
-            .zip(&there)
-            .map(|(a, b)| embed::dot(a, b))
-            .fold(f32::INFINITY, f32::min)),
+        Ok(there)
+            if there.len() == here.len()
+                && there.first().map(Vec::len) == here.first().map(Vec::len) =>
+        {
+            Ok(here
+                .iter()
+                .zip(&there)
+                .map(|(a, b)| embed::dot(a, b))
+                .fold(f32::INFINITY, f32::min))
+        }
+        Ok(_) => Err(
+            "Whoopy's vectors are not the size of this server's: embedded on this server.".into(),
+        ),
         Err(EmbedError::Status(code)) => Err(format!(
             "Whoopy answered {code} to the check passages: embedded on this server."
         )),
@@ -871,7 +890,12 @@ impl Settings {
     }
 }
 
-/// One index run for every user. An error is the run's failure, said once.
+/// Requests answered, kept in each user's status file for run_index to read.
+const ANSWERS_KEPT: usize = 100;
+
+/// One index run for every user, or for those the tools asked for. An error
+/// is the run's failure, said once. Every request taken is answered in its
+/// user's status file, run or not.
 pub fn main(s: &Settings) -> Result<(), String> {
     // Taken first, so a run that fails to start leaves no "remote" for the timer.
     let mut quiet = s.quiet.clone();
@@ -889,7 +913,51 @@ pub fn main(s: &Settings) -> Result<(), String> {
         Err(_) => None,
     };
     // Taken in any case, quiet hours included: the path unit starts again while any is left.
-    let requests = claim_requests(&s.index_dir).filter(|_| wanted.is_none());
+    let requests = claim_requests(&s.index_dir);
+    let result = run_all(
+        s,
+        &quiet,
+        wanted.as_deref(),
+        requests.as_ref().filter(|_| wanted.is_none()),
+    );
+    if let Some(requests) = &requests {
+        let answer = match &result {
+            Ok(None) => "done".to_string(),
+            Ok(Some(why)) => why.clone(),
+            Err(e) => format!("the run failed: {e}"),
+        };
+        for (name, user) in &requests.names {
+            if user.is_empty() || user.contains('/') || user.starts_with('.') {
+                continue;
+            }
+            let base = s.index_dir.join(user);
+            let mut answered = read_status(&base)
+                .get("answered")
+                .and_then(Value::as_object)
+                .cloned()
+                .unwrap_or_default();
+            answered.insert(name.clone(), json!(answer));
+            let oldest: Vec<String> = answered
+                .keys()
+                .take(answered.len().saturating_sub(ANSWERS_KEPT))
+                .cloned()
+                .collect();
+            for key in oldest {
+                answered.shift_remove(&key);
+            }
+            write_status(&base, json!({"answered": answered}));
+        }
+    }
+    result.map(|_| ())
+}
+
+/// The run itself: None when it ran, or why it did not.
+fn run_all(
+    s: &Settings,
+    quiet: &str,
+    wanted: Option<&str>,
+    requests: Option<&Requests>,
+) -> Result<Option<String>, String> {
     let users = folders::load_folders(&s.folders_file)?;
     let nextcloud = Nextcloud::from_env()?;
     needs_nextcloud(&users, nextcloud.as_ref())?;
@@ -901,10 +969,10 @@ pub fn main(s: &Settings) -> Result<(), String> {
     {
         nc.refused.store(true, std::sync::atomic::Ordering::Relaxed);
     }
-    if quiet_now(&quiet) {
+    if quiet_now(quiet) {
         // A timer catching up after a stop: the next run outside them will do.
         println!("quiet hours {quiet}: no run now.");
-        return Ok(());
+        return Ok(Some(format!("no run in the quiet hours, {quiet}.")));
     }
     let model = format!("{}/passages-{PASSAGES_VERSION}", s.embed_model);
     let local = Embedder::local(&s.embed_url);
@@ -914,7 +982,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
     }
     let mut use_remote = false;
     let mut note: Option<String> = None;
-    if wanted.as_deref() == Some("remote") {
+    if wanted == Some("remote") {
         if s.remote_key.is_empty() || s.remote_model.is_empty() {
             note = Some(
                 "No Whoopy key or model is saved in the panel: embedded on this server.".into(),
@@ -943,7 +1011,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
     for (user, own) in &users {
         // A run the tools asked for does only their users, and only their files
         // unless one asked for everything.
-        let files = match &requests {
+        let files = match requests {
             None => None,
             Some(r) if r.all.contains(user) => None,
             Some(r) => match r.files.get(user) {
@@ -957,6 +1025,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
         write_status(
             &base,
             json!({"started": now(), "ended": null, "result": "running", "run": {}, "error": null,
+                   "kind": if files.is_some() { "files" } else { "full" },
                    "embedded_on": [if use_remote { "desktop" } else { "pi" }], "remote_note": note}),
         );
         let mut result = {
@@ -973,7 +1042,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
             };
             match asked {
                 Ok(Some(done)) => Ok(done),
-                Ok(None) => index_user(&db, own, nextcloud.as_ref(), &run, &model, &base, &quiet),
+                Ok(None) => index_user(&db, own, nextcloud.as_ref(), &run, &model, &base, quiet),
                 Err(e) => Err(e),
             }
         };
@@ -999,7 +1068,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
                 embedder: &local,
                 family: &s.family,
             };
-            result = index_user(&db, own, nextcloud.as_ref(), &run, &model, &base, &quiet);
+            result = index_user(&db, own, nextcloud.as_ref(), &run, &model, &base, quiet);
         }
         match result {
             Ok((mut counts, unreachable)) => {
@@ -1072,7 +1141,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
     if !broken.is_empty() {
         return Err(format!("index failed for {}.", broken.join(", ")));
     }
-    Ok(())
+    Ok(None)
 }
 
 /// Refuses a folder in Nextcloud when no account is set.

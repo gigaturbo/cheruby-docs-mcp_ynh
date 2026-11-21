@@ -948,6 +948,8 @@ def run_checks(base, env):
     result, out = asked(base, env)
     yield "run_index of everything answers at once", result, ok_with("all the folders is asked for", "The index holds")(result)
     yield "and its run checks every file of the user", out, "alice:" in out and "unchanged" in out and "ju:" not in out
+    result = tool("run_index")
+    yield "not again within 15 minutes", result, error_with("ask again after")(result) and requests_left(base) == []
     for name, files, needle in [(".. refused", ["Notes/../secret.md"], "not allowed"),
                                 ("another user's folder refused", ["Papiers/bob.md"], "no folder named"),
                                 ("a missing file refused", ["Notes/absent.md"], "not found"),
@@ -961,6 +963,12 @@ def run_checks(base, env):
     yield "run_index refused once 20 requests wait", result, error_with("waiting already")(result)
     run_indexer(env)
     yield "unreadable requests are taken too", requests_left(base), requests_left(base) == []
+    stale = f"{base}/index/requests/stale.json"
+    open(stale, "w").close()
+    os.utime(stale, (time.time() - 600, time.time() - 600))
+    result = tool("run_index", files=["Notes/liste.md"])
+    os.remove(stale)
+    yield "a request left untaken is said", result, error_with("not taking them")(result)
     hour = time.localtime().tm_hour
     refused = subprocess.run([BIN, "run-index", "Notes/liste.md"], capture_output=True, text=True,
                              env={**env, "DOCS_QUIET_HOURS": f"{hour:02d}-{(hour + 1) % 24:02d}"})
