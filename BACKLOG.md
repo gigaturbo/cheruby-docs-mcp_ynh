@@ -37,6 +37,20 @@ not `never`.
 
 ## Features
 
+### F-P-7 · `cheruby-docs-mcp token`, and the gateway token named `mcp_token`
+
+`wip` `small` `filed 2026-11-22`
+
+Reading or replacing the Whoopy token took the panel or `yunohost app
+setting`, and each MCP app here named its token differently. The app now
+installs `/usr/local/bin/cheruby-docs-mcp`: `token` shows the address and both
+tokens, `token --new` presses the panel's "New token"; every other command
+goes to the binary. The setting and the panel section are `mcp_token` and
+`main.mcp`, as in the other MCP apps; the old setting is moved at install,
+upgrade and restore, its value unchanged (0.11.0~ynh2).
+
+**Do:** upgrade (ask first), then T-P-3 and T-P-2.
+
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -59,17 +73,45 @@ CC-BY-NC-4.0.
 
 ## Tests
 
+### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
+
+`todo` `playtest` `filed 2026-11-22`
+
+Reopened by F-P-7: the token's setting, panel section and rotation path
+changed. Last done 2026-11-21 at `ed08fb3`: Whoopy access narrowed to two folders then one, New
+token: the new token saw Documents only, the old one 401; neither token in
+`yunohost-cli.log` or the operation logs from this app.
+
+**Check:** after the upgrade, `sudo cheruby-docs-mcp token` shows the same
+Whoopy token as before and Whoopy's `/mcp/docs` still answers;
+`sudo cheruby-docs-mcp token --new` prints no token, the old one gets 401,
+the new one 200 once pasted in Whoopy; no token in `yunohost-cli.log`; the
+panel shows "MCP token"; `sudo cheruby-docs-mcp status` answers as the
+binary did.
+
+### T-P-2 · backup and restore keep the tokens
+
+`todo` `playtest` `filed 2026-11-22`
+
+Reopened by F-P-7: restore now moves an old `whoopy_token` to `mcp_token`.
+Last done 2026-11-21 at `ed08fb3`: backup 2 s, remove, restore 37 s; the 38 settings and both
+tokens the same and answering; no secret in the operation files or the CLI
+log.
+
+**Check:** a backup made before the upgrade restores with the same Whoopy
+token under `mcp_token` and no `whoopy_token`; `/usr/local/bin/cheruby-docs-mcp`
+there after restore, gone after remove.
+
 ## Closed
 
+- `F-M-18` done `small` 2026-11-22 · each tool, its arguments and its limits in `doc/mcp.md`, in the layout the other MCP apps share; the README keeps a short list and the commands name the tool each mirrors; `search_documents`' `before` documented as inclusive
 - `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
 - `T-P-1` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 401 without a token; Nextcloud's config and data, PHP sessions, Syncthing's own dir, `/mnt` and the logs absent in the server's namespace, the env files and `/etc/shadow` unreadable; code and index read-only even to root, `requests/` writable; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
 - `T-M-3` done `playtest` 2026-11-21 at `ed08fb3` · on disk and in Nextcloud: created, replaced, read back; a new file 660 and folder 770 in the folder's group, a replaced file keeping its owner and mode; a `.pdf`, a hidden name, `..`, an unknown folder, a link to a folder and a link to a file refused; a read-only folder refused by the tool and by its read-only mount; another source's label and a multimedia folder refused at save; Nextcloud kept the old version; the file reached the author's device
-- `T-P-3` done `playtest` 2026-11-21 at `ed08fb3` · Whoopy access narrowed to two folders then one, New token: the new token saw Documents only, the old one 401; neither token in `yunohost-cli.log` or the operation logs from this app (Whoopy's own upgrade traced the old one, its bug)
 - `T-P-4` done `playtest` 2026-11-21 at `ed08fb3` · Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed
 - `T-P-5` done `playtest` 2026-11-21 at `ed08fb3` · no `nextcloud` group; a wrong app password refused at save, with no failed login counted; a PDF in Notes read, found and searched; an unchanged run sent one PROPFIND; a revoked password refused once each by the server, the indexer and the panel, then nothing sent, the panel naming it; a new one brought Notes back; no password in the logs. No share from another account to try
 - `T-M-4` done `playtest` 2026-11-21 at `ed08fb3` · 340 files indexed on the desktop in 2 min, the same search as the Pi's index; Whoopy stopped 30 s into a run: the run went on on the Pi and ended done in 36 min, no file failed for it; the key in no log. The Whoopy key first allowed only `ollama/...` and got 403, the run then on the Pi as it should
 - `T-P-6` done `playtest` 2026-11-21 at `ed08fb3` · every 6 hours 0,6,12,18:20, 0,12,18:20 with quiet hours 01-07; `*/30 8-20` taken, `0 3` and a day with a weekday refused; never stopped the timer; Run now ran in the quiet hours, a start by hand did not; pressed again during a run it started nothing; Rebuild stopped a run, dropped the working copy, search answered from the published one, and the next run read every file; hourly and 01-06 at the end (B-P-4 found)
-- `T-P-2` done `playtest` 2026-11-21 at `ed08fb3` · backup 2 s, remove, restore 37 s; the 38 settings and both tokens the same and answering, Nextcloud read again; the timer rebuilt the index in 45 min; no secret in the 13 operation files or the CLI log. The first restore failed at `apt update` on a stale `packages.sury.org` index and left the app registered; removed and restored once it cleared
 - `T-M-5` done `playtest` 2026-11-21 at `940adcd` · on 0.11.0: `run_index` of one PDF answered "indexed" in 1 s and ran that file only; everything asked for answered at once; `..` refused; inside the server's namespace the index, its status file and the code are read-only, `requests/` writable; the path unit never restarted the indexer; done with an existing file, no note written
 - `F-M-17` done `medium` 2026-11-21 · `run_index` asks the index unit through a request in `requests/` and a path unit, for some files or everything; each request answered in the status file; refused in the quiet hours, past 50 files or 20 waiting requests, for one waiting 5 minutes, and for everything within 15 minutes of the last full run (0.11.0)
 - `F-P-6` done `large` 2026-11-21 · the tool server, the indexer and their commands one Rust binary, release `cheruby-docs-0.11.0`, with PDFium chromium/8076, the build pypdfium2 shipped; the same passages as the Python on 401 files; the upgrade kept the index (model, 4,833 passages, 428 files unchanged) and search answered by meaning in 3 s (0.11.0)
