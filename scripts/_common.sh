@@ -30,6 +30,14 @@ docs_default_settings() {
     ynh_app_setting_delete --key=nextcloud_token
     ynh_app_setting_delete --key=nextcloud_token_user
 
+    # The gateway's token, under the name every MCP app here uses since 0.11.0~ynh2.
+    set +o xtrace
+    if [ -n "$(ynh_app_setting_get --key=whoopy_token)" ]; then
+        ynh_app_setting_set --key=mcp_token --value="$(ynh_app_setting_get --key=whoopy_token)"
+    fi
+    set -o xtrace
+    ynh_app_setting_delete --key=whoopy_token
+
     for key in syncthing_enabled local_enabled nextcloud_enabled; do
         ynh_app_setting_set_default --key="$key" --value=0
     done
@@ -251,6 +259,10 @@ docs_install_binary() {
     ynh_safe_rm "$install_dir/bin/cheruby-docs"
     ynh_setup_source --dest_dir="$install_dir/bin" --source_id="cheruby_docs"
     chmod 750 "$install_dir/bin/cheruby-docs"
+    # The app's command on the PATH: `token` itself, the rest passed to the binary.
+    ynh_config_add --template="cheruby-docs-mcp" --destination="$install_dir/bin/$app"
+    chmod 750 "$install_dir/bin/$app"
+    ln -sf "$install_dir/bin/$app" "/usr/local/bin/$app"
     ynh_safe_rm "$install_dir/pdfium"
     ynh_setup_source --dest_dir="$install_dir/pdfium" --source_id="pdfium"
 }
@@ -448,9 +460,9 @@ docs_configure() {
         token=${token:-$(ynh_string_random --length=48)}
         ynh_app_setting_set --key="token_$docs_user" --value="$token"
         echo "DOCS_TOKEN_$docs_user=$token"
-        token=$(ynh_app_setting_get --key=whoopy_token)
+        token=$(ynh_app_setting_get --key=mcp_token)
         token=${token:-$(ynh_string_random --length=48)}
-        ynh_app_setting_set --key=whoopy_token --value="$token"
+        ynh_app_setting_set --key=mcp_token --value="$token"
         echo "DOCS_GATEWAY_TOKEN=$token"
         echo "DOCS_GATEWAY_USER=$docs_user"
         echo "DOCS_GATEWAY_FOLDERS=$whoopy_labels"

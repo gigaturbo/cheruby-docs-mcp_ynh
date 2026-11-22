@@ -225,8 +225,8 @@ ynh_app_config_show() {
     ynh_return "index_status: $(jq -cn --arg a "$(docs_index_status)" '{ask: $a}')"
 
     set +o xtrace
-    ynh_return "whoopy_token:"
-    ynh_return "  value: '$(ynh_app_setting_get --key=whoopy_token)'"
+    ynh_return "mcp_token:"
+    ynh_return "  value: '$(ynh_app_setting_get --key=mcp_token)'"
     ynh_return "  help: 'Address for Whoopy: http://127.0.0.1:$port/mcp'"
     set -o xtrace
 }
@@ -304,7 +304,7 @@ ynh_app_config_apply() {
 
 run__new_token() {
     set +o xtrace
-    ynh_app_setting_set --key=whoopy_token --value="$(ynh_string_random --length=48)"
+    ynh_app_setting_set --key=mcp_token --value="$(ynh_string_random --length=48)"
     set -o xtrace
     docs_configure
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \

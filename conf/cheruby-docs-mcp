@@ -1,0 +1,40 @@
+#!/bin/bash
+# The app's command, linked as /usr/local/bin/__APP__. `token [--new]` is
+# answered here; every other command goes to the binary beside it. Root
+# only: the tokens and the settings are in root's env files.
+#
+#   sudo __APP__ token         the address and the tokens
+#   sudo __APP__ token --new   a new Whoopy token, through the panel's button
+set -eu
+
+if [ "$(id -u)" != 0 ]; then
+    echo "__APP__: run it as root, with sudo" >&2
+    exit 2
+fi
+
+if [ "${1:-}" != token ]; then
+    exec "__INSTALL_DIR__/bin/cheruby-docs" "$@"
+fi
+
+case "${2:-}" in
+    "")
+        env_file="__INSTALL_DIR__/docs.env"
+        value() { sed -n "s/^$1=//p" "$env_file"; }
+        user=$(value DOCS_GATEWAY_USER)
+        echo "Address:      http://127.0.0.1:$(value DOCS_PORT)/mcp"
+        echo "Whoopy token: $(value DOCS_GATEWAY_TOKEN)"
+        echo "$user's token: $(value "DOCS_TOKEN_$user")"
+        ;;
+    --new)
+        # The panel's button makes it, renders the files and restarts the
+        # service: one way to rotate, from the panel or from here. Its output
+        # holds the token as a read-only value, so only its errors are shown.
+        yunohost app action run __APP__ main.mcp.new_token > /dev/null
+        echo "A new Whoopy token is made: the old one no longer works."
+        echo "Paste it in Whoopy's panel, under Documents. See it with: sudo __APP__ token"
+        ;;
+    *)
+        echo "usage: __APP__ token [--new]" >&2
+        exit 2
+        ;;
+esac
