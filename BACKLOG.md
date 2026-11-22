@@ -37,20 +37,6 @@ not `never`.
 
 ## Features
 
-### F-P-7 · `cheruby-docs-mcp token`, and the gateway token named `mcp_token`
-
-`wip` `small` `filed 2026-11-22`
-
-Reading or replacing the Whoopy token took the panel or `yunohost app
-setting`, and each MCP app here named its token differently. The app now
-installs `/usr/local/bin/cheruby-docs-mcp`: `token` shows the address and both
-tokens, `token --new` presses the panel's "New token"; every other command
-goes to the binary. The setting and the panel section are `mcp_token` and
-`main.mcp`, as in the other MCP apps; the old setting is moved at install,
-upgrade and restore, its value unchanged (0.11.0~ynh2).
-
-**Do:** upgrade (ask first), then T-P-3 and T-P-2.
-
 ### F-M-6 · read scans and images into the search index
 
 `todo` `medium` `filed 2026-11-09`
@@ -76,6 +62,11 @@ CC-BY-NC-4.0.
 ### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
 
 `todo` `playtest` `filed 2026-11-22`
+
+**Last:** 2026-11-22 at `940062b`, 0.11.0~ynh2 installed: `mcp_token` and
+`token_blac` keep their fingerprints, `whoopy_token` is gone, the command
+shows both and refuses `serve`, Whoopy's `/mcp/docs` lists the seven tools.
+`token --new` not run yet.
 
 Reopened by F-P-7: the token's setting, panel section and rotation path
 changed. Last done 2026-11-21 at `ed08fb3`: Whoopy access narrowed to two folders then one, New
@@ -104,6 +95,7 @@ there after restore, gone after remove.
 
 ## Closed
 
+- `F-P-7` done 2026-11-22 · `sudo cheruby-docs-mcp token [--new]` and the gateway token named `mcp_token`, as in the other MCP apps; the read and status commands pass to the binary (0.11.0~ynh2, installed 2026-11-22)
 - `F-M-18` done `small` 2026-11-22 · each tool, its arguments and its limits in `doc/mcp.md`, in the layout the other MCP apps share; the README keeps a short list and the commands name the tool each mirrors; `search_documents`' `before` documented as inclusive
 - `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
 - `T-P-1` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 401 without a token; Nextcloud's config and data, PHP sessions, Syncthing's own dir, `/mnt` and the logs absent in the server's namespace, the env files and `/etc/shadow` unreadable; code and index read-only even to root, `requests/` writable; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
