@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0~ynh2
+
+- `sudo cheruby-docs-mcp token` shows the address and the tokens, and `token --new` makes a new Whoopy token, as the panel's "New token" does. Every other command of the binary answers as `sudo cheruby-docs-mcp <command>`.
+- The panel's "Whoopy token" section is now "MCP token", and its setting `mcp_token`, as in the other MCP apps here. The upgrade keeps the token as it is: Whoopy needs nothing.
+- Each tool, its arguments and its limits in [MCP tools](doc/mcp.md).
+
+## 0.11.0
+
+- The tool server, the indexer and their commands are one binary built for the Pi 5, in place of the Python and its virtual environment. The index is kept.
+- `run_index`: an agent asks for an index run of some files, such as one it just wrote, or of all the folders, so search finds what changed. Refused in the quiet hours, past 50 files and while 20 requests wait.
+- The binary answers on the shell as root: `ls`, `find`, `read`, `search`, `run-index`, `status` and `check-desktop`.
+
 ## 0.10.1
 
 - A redrawn logo.

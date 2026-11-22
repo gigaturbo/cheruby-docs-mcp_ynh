@@ -1,0 +1,121 @@
+# MCP tools
+
+## Connecting
+
+The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP), on
+the server itself only. Every request needs `Authorization: Bearer <token>`;
+without it the answer is 401.
+
+Two tokens open it:
+
+- **The Whoopy token**, for the gateway: the user's folders, or the ones
+  listed under "Whoopy access" in the config panel. Paste it in Whoopy's
+  panel, under Documents. Whoopy publishes the tools at `/mcp/docs`, to the
+  local network and WireGuard only, and to the keys granted `docs`.
+- **The user's own token**, on all their folders, for a client on the
+  server itself.
+
+See the address and both tokens, and make a new Whoopy token:
+
+```bash
+sudo cheruby-docs-mcp token
+sudo cheruby-docs-mcp token --new
+```
+
+`--new` presses the panel's "New token" button: the old token stops working
+at once, so paste the new one in Whoopy. The user's own token has no button.
+
+Paths start with a folder's label, such as `Documents/Factures`.
+
+## What the tools cannot do
+
+- **No delete.** `write_file` creates or replaces a file whole and
+  `create_folder` creates folders; nothing removes a file or a folder.
+- **Write only in the folders marked writable**, text files only, never
+  through a link, and never into the last 2 GB of the disk. The two write
+  tools are offered only when a folder is writable.
+- **Only the token's folders.** Search keeps to them too.
+- **No scans or images in search yet.** Find them by name with `find_files`;
+  `read_file` returns an image as the picture.
+- **Bounded reads.** 20 pages of a PDF or 20,000 characters at a time.
+- **Bounded index runs.** `run_index` takes 50 files at most, and is refused
+  in the index's quiet hours, with 20 requests waiting, and for all the
+  folders within 15 minutes of the last full run.
+
+## list_folder
+
+A folder's subfolders, then its files with size and date.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `path` | empty | The folder, such as `Documents/Factures`. Empty lists the top folders. |
+
+## find_files
+
+Files and folders whose path holds every word of the query, ignoring case
+and accents. Names only, not contents.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `query` | required | The words to find in the path. |
+| `path` | empty | Limits the search to one folder, such as `Documents/Santé`. |
+
+## read_file
+
+One file: text and Markdown by character, PDF by page, images as pictures.
+Word, Excel and PowerPoint (docx, xlsx, pptx), OpenDocument (odt, ods, odp),
+EPUB books and saved emails (eml) come back as text, with their headings as
+Markdown `#` lines.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `path` | required | The file. |
+| `page` | 1 | A PDF's first page to read. |
+| `pages` | 5 | How many PDF pages, 1 to 20. |
+| `offset` | 0 | Other text: the character to start at. |
+| `max_chars` | 8000 | Other text: how many characters, up to 20,000. |
+
+## search_documents
+
+The best passage of each matching file, found by meaning and by keywords,
+then ordered by how well it answers the query. Each passage starts with the
+file's headings above it, and comes with its page and date. Searches an index
+refreshed on the schedule chosen in the panel.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `query` | required | What the passage says, in the user's words. |
+| `path` | empty | Limits the search to one folder, such as `Documents/Logement`. |
+| `after` | empty | Files dated on or after this day, as `2025-03-31`. |
+| `before` | empty | Files dated on or before this day, as `2025-03-31`. |
+| `limit` | 8 | How many files, 1 to 10. |
+
+## write_file
+
+Creates a text file, with its missing folders, or replaces one whole, in a
+writable folder.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `path` | required | Such as `Notes/Recettes/pain.md`. Text files only (`.md`, `.txt`, `.csv`...). |
+| `content` | required | The whole new text of the file, UTF-8. |
+
+## create_folder
+
+Creates a folder, with those above it, in a writable folder. A folder that
+exists already is left as it is.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `path` | required | Such as `Notes/Recettes/Pains`. |
+
+## run_index
+
+Asks for an index run, so `search_documents` finds what changed: of some
+files, such as one just written, or of all the folders, which redoes only
+what changed. With files, it waits up to a minute and says how each went.
+Changes no file.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `files` | empty | Up to 50 paths, such as `Notes/Recettes/pain.md`. Empty asks for all the folders. |

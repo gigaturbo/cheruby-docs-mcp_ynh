@@ -20,7 +20,10 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 - `conf/systemd.service`, `embed.service`, `rerank.service`, `index.service`,
   `index.timer`, `index.path`: the sandboxed units.
 - `config_panel.toml`, `scripts/config`: the sources, the index schedule
-  and its runs, health pings and the Whoopy token.
+  and its runs, health pings and the MCP token (`main.mcp`, setting
+  `mcp_token`, the token Whoopy presents).
+- `conf/cheruby-docs-mcp`: the app's command, linked in `/usr/local/bin`:
+  `token [--new]` itself, every other command passed to the binary.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
   in `scripts/_common.sh`.
 - `build/llama-server.sh`, `.github/workflows/llama-server.yml`: build
@@ -48,7 +51,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
     folders, updates the user's search index and writes
     `<user>.status.json` for the panel.
 - **Code and secrets** in `/var/www/cheruby-docs-mcp`, root-owned, group
-  read-only: `bin/cheruby-docs`, `bin/llama-server`, `pdfium/`, `model/`,
+  read-only: `bin/cheruby-docs`, `bin/cheruby-docs-mcp`, `bin/llama-server`, `pdfium/`, `model/`,
   `folders.json` (the folders and their filters), `docs.env` (root 600, the
   tokens) and `index.env` (root 600, no MCP token). Both hold the Nextcloud app
   password when a folder is in Nextcloud.
@@ -58,7 +61,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   writes. The settings are the rest: `docs_user`, each source's
   `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
   `<source>_writable`, `nextcloud_account`, `nextcloud_password`,
-  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*` and `whoopy_*`; configure renders `folders.json`, the
+  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*`, `mcp_token` and `whoopy_folders`; configure renders `folders.json`, the
   env files and the units from them.
 - **"Run now on the desktop"** has Whoopy's Ollama embed one run's
   passages, after checking its vectors agree with the Pi's; the timer

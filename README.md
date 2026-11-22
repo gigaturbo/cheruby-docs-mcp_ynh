@@ -8,24 +8,17 @@ writable. Meant to sit behind an MCP gateway.
 
 ## Tools
 
-- `list_folder(path)`: a folder's subfolders, then its files with size and date.
-- `find_files(query, path)`: files whose path holds every word, ignoring case and accents.
-- `read_file(path, ...)`: text and Markdown by character range, PDF by page,
-  images as pictures, and as text with their headings as Markdown `#` lines:
-  Word, Excel and PowerPoint (docx, xlsx, pptx), OpenDocument (odt, ods,
-  odp), EPUB books and saved emails (eml). Search reads the same formats.
-- `search_documents(query, path, after, before, limit)`: the best passage of
-  each matching file, cut at the file's headings and starting with them, found by meaning and keywords, then ordered by how
-  well it answers the query. Searches an index refreshed on the schedule
-  chosen in the panel.
-- `write_file(path, content)`: creates a text file, with its missing folders,
-  or replaces one, in a writable folder. Offered only when a folder is
-  writable; it never deletes.
-- `create_folder(path)`: creates a folder, with those above it, in a
-  writable folder.
-- `run_index(files)`: asks for an index run, of some files, such as one just
-  written, or of all the folders, so search finds what changed. With files it
-  waits up to a minute and says how each went. Refused in the quiet hours.
+- `list_folder`, `find_files`, `read_file`: a folder's content, files by
+  name, and one file: text, PDF by page, images as pictures, Word, Excel,
+  PowerPoint, OpenDocument, EPUB and saved emails.
+- `search_documents`: the best passage of each matching file, by meaning
+  and keywords, from an index refreshed on the schedule chosen in the panel.
+- `write_file`, `create_folder`: a text file or a folder, in a folder marked
+  writable, never a delete.
+- `run_index`: an index run of some files or of everything, so search finds
+  what changed.
+
+Each tool, its arguments and its limits: [MCP tools](doc/mcp.md).
 
 Paths start with a folder's label, such as `Documents/Factures`.
 
@@ -83,11 +76,13 @@ The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
 It is one binary, built for the Pi 5 from `cheruby-docs/` in this
 repository and downloaded at install, with PDFium to read PDFs.
 
-The gateway gets its own token, shown in the config panel under "Whoopy
+The gateway gets its own token, shown in the config panel under "MCP
 token", with the address to paste beside it. It opens all the folders, or the
-ones listed under "Whoopy access", and searches the user's index. "New token"
-replaces it. The user also has a token of their own, on all the folders, read
-with `yunohost app setting cheruby-docs-mcp token_<user>`.
+ones listed under "Whoopy access", and searches the user's index. "New token",
+or `sudo cheruby-docs-mcp token --new`, replaces it. The user also has a token
+of their own, on all the folders. `sudo cheruby-docs-mcp token` shows the
+address and both tokens. Whoopy publishes the tools to the local network and
+WireGuard only.
 
 Search orders its results with jina-reranker-v2-base-multilingual, which
 the install downloads from Hugging Face. Its licence, CC-BY-NC-4.0, allows
@@ -101,10 +96,13 @@ can reach nothing but loopback.
 
 ## Commands
 
-As root, the binary also answers on the shell, with the app's own settings:
-`/var/www/cheruby-docs-mcp/bin/cheruby-docs <command>`.
+As root, `sudo cheruby-docs-mcp <command>`, with the app's own settings.
+Each command that does what a tool does is named beside it.
 
-- **`ls`, `find`, `read`, `search`**: the tools, as the user's own token, or
+- **`token [--new]`**: the address and the tokens; `--new` makes a new
+  Whoopy token, as the panel's "New token" does.
+- **`ls`, `find`, `read`, `search`**: `list_folder`, `find_files`,
+  `read_file` and `search_documents`, as the user's own token, or
   as the Whoopy token with `--gateway`. They first drop root for the app's
   user and its folders' groups, as the service runs.
 - **`run-index [path...]`**: asks for an index run, as `run_index` does.
