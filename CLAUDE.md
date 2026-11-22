@@ -23,7 +23,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   and its runs, health pings and the MCP token (`main.mcp`, setting
   `mcp_token`, the token Whoopy presents).
 - `conf/cheruby-docs-mcp`: the app's command, linked in `/usr/local/bin`:
-  `token [--new]` itself, every other command passed to the binary.
+  `token [--new]` itself, the read and status commands passed to the binary; `serve` and `index` refused.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
   in `scripts/_common.sh`.
 - `build/llama-server.sh`, `.github/workflows/llama-server.yml`: build

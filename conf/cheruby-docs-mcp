@@ -12,9 +12,16 @@ if [ "$(id -u)" != 0 ]; then
     exit 2
 fi
 
-if [ "${1:-}" != token ]; then
-    exec "__INSTALL_DIR__/bin/cheruby-docs" "$@"
-fi
+# Only the commands that drop root or only read; `serve` and `index` belong
+# to the units, run as the app's user.
+case "${1:-}" in
+    token) ;;
+    ls|find|read|search|run-index|status|check-desktop|help|--help|-h|--version|-V)
+        exec "__INSTALL_DIR__/bin/cheruby-docs" "$@" ;;
+    *)
+        echo "usage: __APP__ token [--new] | ls | find | read | search | run-index | status | check-desktop" >&2
+        exit 2 ;;
+esac
 
 case "${2:-}" in
     "")
