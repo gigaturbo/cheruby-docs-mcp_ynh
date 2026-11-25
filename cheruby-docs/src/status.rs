@@ -1,8 +1,10 @@
-//! The index runs as the config panel shows them: whether one is going, how
-//! the last one ended, what the index holds and when the next comes, from
-//! the status file the indexer writes and from systemd.
+//! The index runs as the config panel and the page show them: whether one is
+//! going, how the last one ended, what the index holds and when the next
+//! comes, from the status file the indexer writes and the schedule.
 
 use serde_json::{Map, Value};
+
+use crate::settings::Settings;
 
 /// "3 indexed, 1 waiting for OCR" from {status: count}.
 fn said(counts: &Value) -> String {
@@ -36,8 +38,8 @@ fn is_empty(v: &Value) -> bool {
 }
 
 /// The panel's lines, one "- **...**" each. state is systemd's for the
-/// index unit (activating while a run goes); next, when given, the timer's
-/// next run as systemd says it.
+/// index unit (activating while a run goes); next, when given, the next
+/// scheduled run (next_run).
 pub fn render(status: &Map<String, Value>, state: &str, next: Option<&str>, unit: &str) -> String {
     let get = |k: &str| status.get(k).cloned().unwrap_or(Value::Null);
     let result = if status.is_empty() {
@@ -111,6 +113,21 @@ pub fn render(status: &Map<String, Value>, state: &str, next: Option<&str>, unit
         lines.push(format!("- **Next run**: {next}"));
     }
     lines.join("\n")
+}
+
+/// When the schedule starts the next run. A due minute while a run goes on
+/// is skipped, as a timer's was.
+pub fn next_run(settings: &Settings, running: bool) -> String {
+    if settings.schedule == "never" {
+        return "none: the schedule is never.".into();
+    }
+    if running {
+        return "after this run.".into();
+    }
+    match settings.next(chrono::Local::now().naive_local()) {
+        Some(t) => t.format("%a %Y-%m-%d %H:%M").to_string(),
+        None => "none: the quiet hours leave the schedule no time.".into(),
+    }
 }
 
 /// systemd's value of a property of a unit, or "" when it cannot say.

@@ -69,6 +69,12 @@ ul.lines{margin:0;padding-left:var(--s-5)}
 .hit .when{color:var(--muted);font-size:.9rem}
 .hit p{margin:var(--s-2) 0 0;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}
 .note{color:var(--warn)}
+.settings{display:grid;gap:var(--s-3)}
+.settings .help{margin:0;color:var(--muted);font-size:.9rem;max-width:75ch}
+.settings p{margin:0}
+.settings button{justify-self:start}
+.settings textarea{width:100%;min-height:5em;resize:vertical}
+.settings h3{margin:var(--s-3) 0 0;font-size:1rem;color:var(--main)}
 [hidden]{display:none!important}
 @media (max-width:40em){
   .band{padding:var(--s-3) var(--s-3) 0}
@@ -134,9 +140,63 @@ ul.lines{margin:0;padding-left:var(--s-5)}
 
 <main class="panels" id="config" data-tab hidden>
   <section class="panel">
-    <h2>Settings</h2>
-    <p>The folders, who reaches them and the index schedule are set in the
-    YunoHost webadmin, in this app's config panel.</p>
+    <h2>Index schedule</h2>
+    <p>A file added or changed is found by meaning after the next run. Each
+    run reads only the files that changed. A change here applies at once.</p>
+    <form class="settings" id="schedule-form">
+      <div class="row">
+        <label for="schedule">Refresh the index</label>
+        <select id="schedule" name="schedule">
+          <option value="hourly">Every hour, at :20</option>
+          <option value="6h">Every 6 hours, from 00:20</option>
+          <option value="nightly">Every night, at 23:20</option>
+          <option value="custom">Custom</option>
+          <option value="never">Never: only with Run now</option>
+        </select>
+      </div>
+      <div class="row" id="cron-row">
+        <label for="cron">Custom schedule</label>
+        <input id="cron" name="cron" type="text" maxlength="100" placeholder="20 6-23 * * *" class="mono">
+      </div>
+      <p class="help" id="cron-help">Cron's five fields: minute, hour, day,
+      month, weekday. <code>20 * * * *</code> runs at :20 every hour;
+      <code>0 12 * * mon-fri</code> at noon on weekdays;
+      <code>*/30 8-20 * * *</code> every half hour from 08:00 to 20:30. A day of
+      the month and a weekday cannot both be set.</p>
+      <div class="row">
+        <label for="quiet">Quiet hours</label>
+        <input id="quiet" name="quiet" type="text" maxlength="5" placeholder="01-06" class="mono">
+      </div>
+      <p class="help">From one hour to another, the second excluded, such as
+      01-06 or 22-07. No run starts then, and a run still going stops when
+      they begin and carries on at the next run. Run now in the config panel
+      ignores them. 01-06 keeps clear of the nightly backups, 01:30 to about
+      05:45. Empty for none.</p>
+      <p><strong>Next run</strong>: <span id="next">…</span></p>
+      <button class="main" type="submit">Save</button>
+      <p class="saved" id="schedule-saved" aria-live="polite"></p>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>Filters</h2>
+    <p>Per source, which files the agents and search see. One pattern per
+    line. <code>*.pdf</code> or <code>Factures</code> match any name;
+    <code>Documents/Factures</code> matches from the folder on. Case is
+    ignored, and <code>*</code> crosses folders. What a filter leaves out is
+    not listed, found, read nor searched, at once; the next run drops it from
+    the index.</p>
+    <form class="settings" id="filters-form">
+      <div id="filters"><p class="muted">Loading…</p></div>
+      <button class="main" type="submit">Save</button>
+      <p class="saved" id="filters-saved" aria-live="polite"></p>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>In the config panel</h2>
+    <p>Who and what the app reaches stay in the YunoHost webadmin, in this
+    app's config panel: the user, the sources and their folders, which are
+    writable, Whoopy's folders, the Nextcloud login, the MCP token, the
+    embedding model, Run now and Rebuild, and the healthchecks.io ping.</p>
     <p><a href="/yunohost/admin/#/apps/cheruby-docs-mcp/config" target="_blank" rel="noopener">Open the config panel<svg class="ext-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
       <path d="M7 3H3v10h10V9"/><path d="M9 2h5v5M14 2 7 9"/></svg><span class="sr">(opens in a new tab)</span></a></p>
@@ -227,6 +287,90 @@ $("search-form").addEventListener("submit", async ev => {
     button.disabled = false;
   }
 });
+
+// The Config tab: the settings as saved, sent back whole on each save.
+const SOURCE_NAMES = {syncthing: "Syncthing", local: "Local storage", nextcloud: "Nextcloud"};
+let saved = null;
+
+function lines(text) {
+  return text.split("\n").map(l => l.trim()).filter(l => l);
+}
+
+function showSettings(d) {
+  saved = d.settings;
+  $("schedule").value = saved.schedule;
+  $("cron").value = saved.cron;
+  $("quiet").value = saved.quiet;
+  $("next").textContent = d.next;
+  showCron();
+  const sources = [...new Set([...d.sources, ...Object.keys(saved.filters)])];
+  $("filters").innerHTML = sources.map(src => {
+    const f = saved.filters[src] || {only: [], skip: []};
+    const name = esc(SOURCE_NAMES[src] || src);
+    return `<h3>${name}</h3>`
+      + `<div class="row"><label for="only-${src}">Only these files</label>`
+      + `<textarea id="only-${src}" data-source="${src}" data-list="only" class="mono" placeholder="Empty keeps every file">${esc(f.only.join("\n"))}</textarea></div>`
+      + `<div class="row"><label for="skip-${src}">Leave out</label>`
+      + `<textarea id="skip-${src}" data-source="${src}" data-list="skip" class="mono" placeholder="*.tmp">${esc(f.skip.join("\n"))}</textarea></div>`;
+  }).join("") || '<p class="muted">No folder is open: choose them in the config panel.</p>';
+}
+
+function showCron() {
+  const custom = $("schedule").value === "custom";
+  $("cron-row").hidden = !custom;
+  $("cron-help").hidden = !custom;
+  $("quiet").disabled = $("schedule").value === "never";
+}
+$("schedule").addEventListener("change", showCron);
+
+async function loadSettings() {
+  try {
+    const r = await fetch("api/settings", {cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    showSettings(await r.json());
+  } catch (e) {
+    $("filters").innerHTML = '<p class="bad">The settings could not be read.</p>';
+  }
+}
+loadSettings();
+
+async function save(ev, out) {
+  ev.preventDefault();
+  if (!saved) return;
+  const button = ev.target.querySelector("button");
+  const filters = {};
+  for (const t of document.querySelectorAll("#filters textarea")) {
+    const f = filters[t.dataset.source] ||= {only: [], skip: []};
+    f[t.dataset.list] = lines(t.value);
+  }
+  for (const [src, f] of Object.entries(filters)) {
+    if (!f.only.length && !f.skip.length) delete filters[src];
+  }
+  const body = {schedule: $("schedule").value, cron: $("cron").value.trim(),
+                quiet: $("quiet").value.trim(), filters};
+  button.disabled = true;
+  out.className = "saved";
+  out.textContent = "Saving…";
+  try {
+    const r = await fetch("api/settings", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify(body),
+    });
+    const d = await r.json().catch(() => ({error: `the server answered ${r.status}`}));
+    if (!r.ok) { out.className = "saved bad"; out.textContent = d.error || r.status; return; }
+    showSettings(d);
+    out.className = "saved ok";
+    out.textContent = "Saved. Next run: " + d.next;
+  } catch (e) {
+    out.className = "saved bad";
+    out.textContent = "The server did not answer.";
+  } finally {
+    button.disabled = false;
+  }
+}
+$("schedule-form").addEventListener("submit", ev => save(ev, $("schedule-saved")));
+$("filters-form").addEventListener("submit", ev => save(ev, $("filters-saved")));
 </script>
 </body>
 </html>

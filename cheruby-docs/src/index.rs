@@ -8,8 +8,9 @@
 //!     DOCS_EMBED_URL      the embedding server, e.g. http://127.0.0.1:8771
 //!     DOCS_EMBED_MODEL    the model's identity; when it changes, everything is redone
 //!     DOCS_EMBED_NAME     the model's family (embed::passage)
-//!     DOCS_QUIET_HOURS    optional, such as 01-06: no run in these hours, and one
-//!                         still going stops when they begin. A file run-now in
+//!     DOCS_SETTINGS_FILE  the quiet hours and the filters (settings::Settings):
+//!                         no run in the quiet hours, and one still going stops
+//!                         when they begin. A file run-now in
 //!                         the index folder, left by the panel's Run now, lifts
 //!                         this for one run.
 //!     DOCS_REMOTE_URL     optional: Whoopy on loopback, e.g. http://127.0.0.1:4000
@@ -59,10 +60,12 @@ use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
 use crate::{
+    calendar,
     embed::{self, EmbedError, Embedder},
     folders::{self, Error, Item, Source, TEXT_SUFFIXES, Tree, UserFolders, image_format, suffix},
     nextcloud::{Entry, Nextcloud, hex},
     passages::{PASSAGES_VERSION, passages, without_running_lines},
+    settings,
     text::{DOCUMENT_SUFFIXES, PyTrim, document_text, html_text, pdf_pages},
 };
 
@@ -167,27 +170,6 @@ fn write_status(base: &Path, fields: Value) {
 
 fn now() -> String {
     chrono::Local::now().format("%Y-%m-%d %H:%M").to_string()
-}
-
-/// Whether the hour is within quiet hours "<from>-<to>", to excluded.
-pub fn quiet_now(quiet: &str) -> bool {
-    use chrono::Timelike;
-    quiet_at(quiet, chrono::Local::now().hour())
-}
-
-pub fn quiet_at(quiet: &str, hour: u32) -> bool {
-    let Some((a, b)) = quiet.split_once('-') else {
-        return false;
-    };
-    let (Ok(a), Ok(b)) = (a.trim().parse::<u32>(), b.trim().parse::<u32>()) else {
-        return false;
-    };
-    let (a, b) = (a % 24, b % 24);
-    if a < b {
-        a <= hour && hour < b
-    } else {
-        hour >= a || hour < b
-    }
 }
 
 /// Copy the working index to <base>.sqlite in one step, stamped with the
@@ -535,7 +517,7 @@ fn index_user(
     let mut last_publish = Instant::now();
     for (shown, item) in &found {
         // The rest waits for the next run, which skips what this one did.
-        if quiet_now(quiet) {
+        if calendar::quiet_now(quiet) {
             counts.insert("paused".into(), 1);
             publish(db, base)?;
             return Ok((counts, unreachable));
@@ -866,7 +848,6 @@ pub struct Settings {
     pub embed_url: String,
     pub embed_model: String,
     pub family: String,
-    pub quiet: String,
     pub remote_url: String,
     pub remote_model: String,
     pub remote_key: String,
@@ -889,7 +870,6 @@ impl Settings {
             embed_url: need("DOCS_EMBED_URL")?,
             embed_model: need("DOCS_EMBED_MODEL")?,
             family,
-            quiet: var("DOCS_QUIET_HOURS"),
             remote_url: var("DOCS_REMOTE_URL"),
             remote_model: var("DOCS_REMOTE_MODEL"),
             remote_key: var("DOCS_REMOTE_KEY"),
@@ -918,8 +898,11 @@ pub fn main(s: &Settings) -> Result<(), String> {
     let _lock = std::fs::File::create(s.index_dir.join(RUN_LOCK))
         .ok()
         .and_then(|f| nix::fcntl::Flock::lock(f, nix::fcntl::FlockArg::LockExclusive).ok());
-    // Taken first, so a run that fails to start leaves no "remote" for the timer.
-    let mut quiet = s.quiet.clone();
+    // A bad file fails the run in run_all, after the requests are taken:
+    // one left behind would start the run again and again.
+    let saved = settings::Settings::from_env();
+    // Taken first, so a run that fails to start leaves no "remote" for the next one.
+    let mut quiet = saved.as_ref().map(|v| v.quiet.clone()).unwrap_or_default();
     let run_now = s.index_dir.join("run-now");
     let wanted = match std::fs::read(&run_now) {
         Ok(data) => {
@@ -939,6 +922,7 @@ pub fn main(s: &Settings) -> Result<(), String> {
     let tools = wanted.is_none();
     let result = run_all(
         s,
+        &saved,
         &quiet,
         wanted.as_deref(),
         requests.as_ref().filter(|_| tools),
@@ -977,11 +961,12 @@ pub fn main(s: &Settings) -> Result<(), String> {
 /// The run itself: None when it ran, or why it did not.
 fn run_all(
     s: &Settings,
+    saved: &Result<settings::Settings, String>,
     quiet: &str,
     wanted: Option<&str>,
     requests: Option<&Requests>,
 ) -> Result<Option<String>, String> {
-    let users = folders::load_folders(&s.folders_file)?;
+    let users = folders::load_folders(&s.folders_file, saved.as_ref().map_err(Clone::clone)?)?;
     let nextcloud = Nextcloud::from_env()?;
     needs_nextcloud(&users, nextcloud.as_ref())?;
     // A password refused before is not tried again: each try counts against loopback.
@@ -992,7 +977,7 @@ fn run_all(
     {
         nc.refused.store(true, std::sync::atomic::Ordering::Relaxed);
     }
-    if quiet_now(quiet) {
+    if calendar::quiet_now(quiet) {
         // A timer catching up after a stop: the next run outside them will do.
         println!("quiet hours {quiet}: no run now.");
         return Ok(Some(format!("no run in the quiet hours, {quiet}.")));
@@ -1218,12 +1203,5 @@ mod tests {
         assert_eq!(counts, Counts::from([("paused".to_string(), 1)]));
         assert!(base.with_extension("sqlite").exists());
         std::fs::remove_dir_all(dir).unwrap();
-    }
-
-    #[test]
-    fn quiet_hours_wrap() {
-        assert!(quiet_at("01-06", 1) && quiet_at("01-06", 5) && !quiet_at("01-06", 6));
-        assert!(quiet_at("22-02", 23) && quiet_at("22-02", 1) && !quiet_at("22-02", 2));
-        assert!(!quiet_at("", 3));
     }
 }

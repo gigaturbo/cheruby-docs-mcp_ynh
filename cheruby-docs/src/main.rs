@@ -12,7 +12,9 @@ mod folders;
 mod index;
 mod nextcloud;
 mod passages;
+mod schedule;
 mod serve;
+mod settings;
 mod status;
 #[cfg(test)]
 mod testing;
@@ -118,8 +120,6 @@ enum Command {
     },
     /// Print Syncthing's folders from its config.xml, a tab-separated line each.
     SyncthingFolders { config: PathBuf },
-    /// Print the OnCalendar of a cron schedule without the quiet hours, or nothing.
-    Calendar { cron: String, quiet: String },
     /// Check that the desktop's vectors, through Whoopy, agree with this server's.
     CheckDesktop,
 }
@@ -176,7 +176,8 @@ fn drop_root(docs: &tools::Docs, user: &str) -> Result<(), String> {
     let owner = std::fs::metadata(&docs.index_dir)
         .map_err(|e| format!("{}: {e}", docs.index_dir.display()))?;
     let mut groups: Vec<Gid> = Vec::new();
-    for (_, root) in docs
+    let live = docs.live();
+    for (_, root) in live
         .users
         .get(user)
         .map(|u| u.roots.as_slice())
@@ -199,7 +200,7 @@ fn drop_root(docs: &tools::Docs, user: &str) -> Result<(), String> {
 fn shell_ctx(gateway: bool) -> Result<tools::Ctx, String> {
     let docs = serve::load_docs()?;
     let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
-    let grants = serve::load_users(&env, &docs.users)?;
+    let grants = serve::load_users(&env, &docs.live().users)?;
     let gateway_user = env.get("DOCS_GATEWAY_USER").cloned().unwrap_or_default();
     let grant = if gateway {
         grants
@@ -219,6 +220,7 @@ fn shell_ctx(gateway: bool) -> Result<tools::Ctx, String> {
     let grant = grant.ok_or("no such token is set.")?;
     drop_root(&docs, &grant.user)?;
     Ok(tools::Ctx {
+        live: docs.live(),
         docs: Arc::new(docs),
         grant: Arc::new(grant),
     })
@@ -258,27 +260,21 @@ fn run(cli: Cli) -> Result<(), String> {
             let index_dir = index_dir
                 .or_else(|| std::env::var_os("DOCS_INDEX_DIR").map(PathBuf::from))
                 .ok_or("no index folder: give --index-dir.")?;
+            // Read as root: Settings::load does not follow a link.
+            let settings = settings::Settings::from_env()?;
             let user = match user {
                 Some(u) => u,
                 None => {
                     let file =
                         std::env::var("DOCS_FOLDERS_FILE").map_err(|_| "no user: give --user.")?;
-                    folders::load_folders(&file)?
+                    folders::load_folders(&file, &settings)?
                         .into_keys()
                         .next()
                         .ok_or("no user in the folders file.")?
                 }
             };
             let state = status::systemd(&format!("{unit}.service"), "ActiveState");
-            let next = status::systemd(&format!("{unit}.timer"), "NextElapseUSecRealtime");
-            // A timer has no next run while its run goes on; "never" stops it.
-            let next = if !next.is_empty() && next != "n/a" {
-                next
-            } else if status::systemd(&format!("{unit}.timer"), "ActiveState") == "active" {
-                "after this run.".to_string()
-            } else {
-                "none: the schedule is never.".to_string()
-            };
+            let next = status::next_run(&settings, state == "activating");
             let watching = status::systemd(&format!("{unit}.path"), "ActiveState");
             println!(
                 "{}",
@@ -354,12 +350,6 @@ fn run(cli: Cli) -> Result<(), String> {
                 .unwrap_or_default();
             for line in lines {
                 println!("{line}");
-            }
-            Ok(())
-        }
-        Command::Calendar { cron, quiet } => {
-            if let Some(expr) = calendar::calendar(&cron, &quiet) {
-                println!("{expr}");
             }
             Ok(())
         }

@@ -1,4 +1,6 @@
-//! The page: Status and Search for the docs user, behind the YunoHost portal.
+//! The page: Status, Search and Config for the docs user, behind the YunoHost
+//! portal. Config changes the settings that do not confine the app
+//! (settings::Settings): the schedule, the quiet hours and the filters.
 //! Served by the tool server's process on its own loopback port, apart from
 //! /mcp. Settings, from docs.env:
 //!
@@ -28,7 +30,9 @@ use serde_json::{Value, json};
 
 use crate::{
     folders::NEXTCLOUD,
-    index, status,
+    index,
+    settings::{SOURCES, Settings},
+    status,
     tools::{self, Ctx, Docs, Grant},
 };
 
@@ -44,8 +48,20 @@ const MAX_QUERY_CHARS: usize = 500;
 
 #[derive(Clone)]
 struct Page {
-    ctx: Ctx,
+    docs: Arc<Docs>,
+    grant: Arc<Grant>,
     token: Arc<String>,
+}
+
+impl Page {
+    /// A request's context, with the settings as they are now.
+    fn ctx(&self) -> Ctx {
+        Ctx {
+            live: self.docs.live(),
+            docs: Arc::clone(&self.docs),
+            grant: Arc::clone(&self.grant),
+        }
+    }
 }
 
 /// The page served until the process stops.
@@ -67,15 +83,14 @@ pub async fn bind(docs: Arc<Docs>) -> Result<Option<Serving>, String> {
     }
     let user = var("DOCS_PAGE_USER");
     let folders = docs
+        .live()
         .users
         .get(&user)
         .map(|u| u.roots.clone())
         .ok_or_else(|| format!("DOCS_PAGE_USER: no folders for {user:?}."))?;
     let page = Page {
-        ctx: Ctx {
-            docs,
-            grant: Arc::new(Grant { user, folders }),
-        },
+        docs,
+        grant: Arc::new(Grant { user, folders }),
         token: Arc::new(token),
     };
     let app = Router::new()
@@ -105,6 +120,7 @@ pub async fn bind(docs: Arc<Docs>) -> Result<Option<Serving>, String> {
         )
         .route("/api/status", get(status_json))
         .route("/api/search", post(search_json))
+        .route("/api/settings", get(settings_json).post(save_settings))
         .layer(middleware::from_fn_with_state(page.clone(), guard))
         .with_state(page);
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
@@ -143,7 +159,7 @@ async fn guard(State(page): State<Page>, req: Request, next: Next) -> Response {
     if !same(given, page.token.as_bytes()) {
         return (StatusCode::UNAUTHORIZED, "not through the portal\n").into_response();
     }
-    if portal_user(headers).as_deref() != Some(page.ctx.grant.user.as_str()) {
+    if portal_user(headers).as_deref() != Some(page.grant.user.as_str()) {
         return (StatusCode::FORBIDDEN, "this page is another user's\n").into_response();
     }
     if req.method() != Method::GET && !same_origin(headers) {
@@ -185,18 +201,19 @@ async fn up(http: &reqwest::Client, url: &str) -> Option<bool> {
 
 /// The index runs, the servers and the folders, for the Status tab.
 async fn status_json(State(page): State<Page>) -> Json<Value> {
-    let docs = &page.ctx.docs;
-    let grant = &page.ctx.grant;
+    let ctx = page.ctx();
+    let docs = &ctx.docs;
+    let grant = &ctx.grant;
     let base = docs.index_dir.join(&grant.user);
     let running = index::running(&docs.index_dir);
     let run = index::read_status(&base);
     let lines = status::render(
         &run,
         if running { "activating" } else { "inactive" },
-        None,
+        Some(&status::next_run(&ctx.live.settings, running)),
         "cheruby-docs-mcp-index",
     );
-    let own = &docs.users[&grant.user];
+    let own = &ctx.live.users[&grant.user];
     let folders: Vec<Value> = grant
         .folders
         .iter()
@@ -221,6 +238,36 @@ async fn status_json(State(page): State<Page>) -> Json<Value> {
     }))
 }
 
+/// The Config tab: the settings, the sources the user has folders in, and
+/// when the next run comes.
+async fn settings_json(State(page): State<Page>) -> Json<Value> {
+    let ctx = page.ctx();
+    let own = &ctx.live.users[&ctx.grant.user];
+    let sources: Vec<&str> = SOURCES
+        .into_iter()
+        .filter(|s| own.sources.values().any(|v| v == s))
+        .collect();
+    let running = index::running(&ctx.docs.index_dir);
+    Json(json!({
+        "settings": ctx.live.settings,
+        "sources": sources,
+        "next": status::next_run(&ctx.live.settings, running),
+    }))
+}
+
+/// Saved and in use at once, for the tools as for the schedule.
+async fn save_settings(State(page): State<Page>, Json(settings): Json<Settings>) -> Response {
+    let docs = Arc::clone(&page.docs);
+    let saved = tokio::task::spawn_blocking(move || docs.set(settings))
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|r| r);
+    if let Err(e) = saved {
+        return (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response();
+    }
+    settings_json(State(page)).await.into_response()
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct SearchArgs {
@@ -238,7 +285,16 @@ async fn search_json(State(page): State<Page>, Json(a): Json<SearchArgs>) -> Res
         )
             .into_response();
     }
-    match tools::search(&page.ctx, a.query, a.path, String::new(), String::new(), 10).await {
+    match tools::search(
+        &page.ctx(),
+        a.query,
+        a.path,
+        String::new(),
+        String::new(),
+        10,
+    )
+    .await
+    {
         Ok(found) => Json(found).into_response(),
         Err(e) => (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response(),
     }

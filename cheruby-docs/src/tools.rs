@@ -10,7 +10,11 @@
 //! replace a text file, or move a file or folder within its folder, never
 //! delete anything, never through a link.
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    path::PathBuf,
+    sync::{Arc, RwLock},
+};
 
 use chrono::{Local, TimeZone};
 use rusqlite::{functions::FunctionFlags, types::Value as Sql};
@@ -18,12 +22,13 @@ use serde_json::Value;
 use unicode_normalization::{UnicodeNormalization, char::canonical_combining_class};
 
 use crate::{
-    embed,
+    calendar, embed,
     folders::{
         Error, Item, TEXT_SUFFIXES, Tree, UserFolders, hidden, image_format, kept, py_repr, suffix,
     },
     index,
     nextcloud::Nextcloud,
+    settings::Settings,
     text::{DOCUMENT_SUFFIXES, PyTrim, document_text, pdf_pages, py_split},
 };
 
@@ -53,16 +58,44 @@ const FULL_RUN_GAP_MIN: i64 = 15;
 
 /// What every tool reads: the folders, Nextcloud, the index and the servers.
 pub struct Docs {
-    pub users: BTreeMap<String, UserFolders>,
+    /// Read through live(), changed through set() only.
+    pub live: RwLock<Arc<Live>>,
+    /// Where the page saves the settings; empty, they are not saved.
+    pub settings_file: PathBuf,
     pub nextcloud: Option<Nextcloud>,
     pub index_dir: PathBuf,
     pub embed_url: String,
     pub embed_model: String,
     pub query_prefix: &'static str,
     pub rerank_url: String,
-    /// The index's quiet hours, such as 01-06, when run_index is refused.
-    pub quiet: String,
     pub http: reqwest::Client,
+}
+
+/// What the page can change while the server runs: its settings, and each
+/// user's folders with the filters they give.
+pub struct Live {
+    pub settings: Settings,
+    pub users: BTreeMap<String, UserFolders>,
+}
+
+impl Docs {
+    /// The settings and folders now; a call keeps the one it took.
+    pub fn live(&self) -> Arc<Live> {
+        Arc::clone(&self.live.read().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// Checked, saved, then in use for every call that starts after.
+    pub fn set(&self, settings: Settings) -> Result<(), String> {
+        settings.check()?;
+        let mut live = self.live.write().unwrap_or_else(|e| e.into_inner());
+        settings.save(&self.settings_file)?;
+        let mut users = live.users.clone();
+        for own in users.values_mut() {
+            settings.apply(own);
+        }
+        *live = Arc::new(Live { settings, users });
+        Ok(())
+    }
 }
 
 /// What a token opens: one user, and all or some of their folders.
@@ -77,6 +110,8 @@ pub struct Grant {
 pub struct Ctx {
     pub docs: Arc<Docs>,
     pub grant: Arc<Grant>,
+    /// Taken when the call starts, so one call sees one set of filters.
+    pub live: Arc<Live>,
 }
 
 /// What a tool returns: text, or a picture.
@@ -89,7 +124,7 @@ type ToolResult<T> = Result<T, String>;
 
 impl Ctx {
     fn own(&self) -> &UserFolders {
-        &self.docs.users[&self.grant.user]
+        &self.live.users[&self.grant.user]
     }
 
     fn labels(&self) -> Vec<&str> {
@@ -786,8 +821,8 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
         Ok(shown)
     })
     .await??;
-    let quiet = &ctx.docs.quiet;
-    if index::quiet_now(quiet) {
+    let quiet = &ctx.live.settings.quiet;
+    if calendar::quiet_now(quiet) {
         let end = quiet.split('-').nth(1).unwrap_or("").trim();
         return Err(format!(
             "the index does not run in its quiet hours, {quiet}; the next run after {end}:00 picks the changes up."

@@ -5,7 +5,8 @@
 //!     DOCS_BIND               address to listen on, default 127.0.0.1
 //!     DOCS_PORT               default 8770
 //!     DOCS_TOKEN_<user>       a request carrying "Authorization: Bearer <it>" acts as <user>
-//!     DOCS_FOLDERS_FILE       each user's folders and their filters (folders::load_folders)
+//!     DOCS_FOLDERS_FILE       each user's folders and their sources (folders::load_folders)
+//!     DOCS_SETTINGS_FILE      the schedule, quiet hours and filters (settings::Settings)
 //!     DOCS_GATEWAY_TOKEN      optional: a token for the AI gateway, acting as
 //!     DOCS_GATEWAY_USER       this user, on
 //!     DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
@@ -21,7 +22,10 @@
 //! the process sees only these folders on disk and the index, read-only but
 //! for the writable folders.
 
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, RwLock},
+};
 
 use axum::{
     Router,
@@ -47,7 +51,8 @@ use crate::{
     folders::{self, UserFolders, py_repr},
     index,
     nextcloud::Nextcloud,
-    tools::{self, Ctx, Docs, Grant, Reply},
+    settings::Settings,
+    tools::{self, Ctx, Docs, Grant, Live, Reply},
 };
 
 /// Each token, and what it opens.
@@ -126,8 +131,10 @@ pub fn load_users(
 /// What every command that reads the folders needs, from the environment.
 pub fn load_docs() -> Result<Docs, String> {
     let var = |k: &str| std::env::var(k).unwrap_or_default();
+    let settings = Settings::from_env()?;
     let users = folders::load_folders(
         &std::env::var("DOCS_FOLDERS_FILE").map_err(|_| "DOCS_FOLDERS_FILE is not set.")?,
+        &settings,
     )?;
     let nextcloud = Nextcloud::from_env()?;
     index::needs_nextcloud(&users, nextcloud.as_ref())?;
@@ -154,14 +161,14 @@ pub fn load_docs() -> Result<Docs, String> {
         .build()
         .map_err(|e| e.to_string())?;
     Ok(Docs {
-        users,
+        live: RwLock::new(Arc::new(Live { settings, users })),
+        settings_file: var("DOCS_SETTINGS_FILE").into(),
         nextcloud,
         index_dir,
         embed_url: var("DOCS_EMBED_URL"),
         embed_model: var("DOCS_EMBED_MODEL"),
         query_prefix,
         rerank_url: var("DOCS_RERANK_URL"),
-        quiet: var("DOCS_QUIET_HOURS"),
         http,
     })
 }
@@ -266,6 +273,7 @@ impl Tools {
             .cloned()
             .ok_or_else(|| ErrorData::internal_error("no grant", None))?;
         Ok(Ctx {
+            live: self.docs.live(),
             docs: Arc::clone(&self.docs),
             grant,
         })
@@ -463,11 +471,12 @@ async fn require_token(State(tokens): State<Tokens>, mut req: Request, next: Nex
 /// neither made nor dropped inside the runtime: the caller keeps one handle.
 pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
     let env: BTreeMap<String, String> = std::env::vars().collect();
-    let tokens: Vec<(String, Arc<Grant>)> = load_users(&env, &docs.users)?
+    let live = docs.live();
+    let tokens: Vec<(String, Arc<Grant>)> = load_users(&env, &live.users)?
         .into_iter()
         .map(|(t, g)| (t, Arc::new(g)))
         .collect();
-    let writable = docs.users.values().any(|u| !u.writable.is_empty());
+    let writable = live.users.values().any(|u| !u.writable.is_empty());
     let mut instructions = "The user's own files. To find a document by what it says, \
         use search_documents; by its name, find_files; to browse, list_folder. Then read_file. \
         Paths start with a folder name such as Documents/. Cite the paths you used."
@@ -482,6 +491,7 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
         tool_router.remove_route("move_file");
     }
     let page_docs = Arc::clone(&docs);
+    tokio::spawn(crate::schedule::run(Arc::clone(&docs)));
     let tools = Tools {
         docs,
         instructions,

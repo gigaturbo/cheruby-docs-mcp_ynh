@@ -395,13 +395,27 @@ class FakeNextcloud(BaseHTTPRequestHandler):
 
 
 def write_folders(path, folders):
-    """The folders file: {user: {label: (root, only, skip[, writable])}}, a root in
+    """The folders file: {user: {label: (root, source[, writable])}}, a root in
     Nextcloud written as nextcloud:<path in the account>."""
-    def entry(root, only, skip, writable=False):
+    def entry(root, source, writable=False):
         where = {"nextcloud": root[len("nextcloud:"):]} if root.startswith("nextcloud:") else {"path": root}
-        return {**where, "only": only, "skip": skip, **({"writable": True} if writable else {})}
+        return {**where, "source": source, **({"writable": True} if writable else {})}
     with open(path, "w") as f:
         json.dump({user: {label: entry(*e) for label, e in entries.items()} for user, entries in folders.items()}, f)
+
+
+def write_settings(path, filters=None, schedule="never", quiet="", cron=""):
+    """The page's settings: {source: (only, skip)}. Never by default, so no
+    scheduled request lands in the middle of a check."""
+    with open(path, "w") as f:
+        json.dump({"schedule": schedule, "cron": cron, "quiet": quiet,
+                   "filters": {src: {"only": o, "skip": k} for src, (o, k) in (filters or {}).items()}}, f)
+
+
+# Documents is a Syncthing folder, Notes and Papiers local ones, Cloud in Nextcloud.
+FILTERS = {"syncthing": ([], ["brouillons", "/Documents/*.tmp.md"]),
+           "local": (["*.md"], []),
+           "nextcloud": ([], ["vieux"])}
 
 
 def build(base):
@@ -460,16 +474,16 @@ def build(base):
     os.makedirs(f"{base}/nextcloud/Partage/Sous dossier")
     with open(f"{base}/nextcloud/Partage/Sous dossier/plan d'été.pdf", "wb") as f:
         f.write(tiny_pdf("Plan du jardin partage"))
-    folders = {"alice": {"Documents": (docs, [], ["brouillons", "/Documents/*.tmp.md"]),
-                         "Notes": (notes, ["*.md"], [], True),
-                         "Cloud": ("nextcloud:/Partage", [], ["vieux"], True)},
-               "ju": {"Papiers": (papiers, [], [])}}
+    folders = {"alice": {"Documents": (docs, "syncthing"),
+                         "Notes": (notes, "local", True),
+                         "Cloud": ("nextcloud:/Partage", "nextcloud", True)},
+               "ju": {"Papiers": (papiers, "local")}}
     write_folders(f"{base}/folders.json", folders)
-    write_folders(f"{base}/open.json", {user: {label: (e[0], [], []) for label, e in entries.items()}
-                                        for user, entries in folders.items()})
+    write_settings(f"{base}/settings.json", FILTERS)
+    write_settings(f"{base}/open-settings.json")
     write_folders(f"{base}/documents.json", {"alice": {"Documents": folders["alice"]["Documents"]},
                                              "ju": folders["ju"]})
-    write_folders(f"{base}/moved.json", {"alice": {**folders["alice"], "Notes": (papiers, [], [])},
+    write_folders(f"{base}/moved.json", {"alice": {**folders["alice"], "Notes": (papiers, "local")},
                                          "ju": folders["ju"]})
     return {
         "PATH": os.environ.get("PATH", ""),
@@ -481,6 +495,7 @@ def build(base):
         "DOCS_EMBED_NAME": "embeddinggemma",
         "DOCS_RERANK_URL": f"http://127.0.0.1:{RERANK_PORT}",
         "DOCS_FOLDERS_FILE": f"{base}/folders.json",
+        "DOCS_SETTINGS_FILE": f"{base}/settings.json",
         "DOCS_TOKEN_alice": ALICE,
         "DOCS_TOKEN_ju": BOB,
         "DOCS_GATEWAY_TOKEN": GATEWAY,
@@ -700,6 +715,79 @@ def page_checks(base):
     yield "page: unknown fields refused", r.status_code, r.status_code >= 400
 
 
+def settings_body(filters=FILTERS, **fields):
+    return {"schedule": "never", "cron": "", "quiet": "",
+            "filters": {src: {"only": o, "skip": k} for src, (o, k) in filters.items()}, **fields}
+
+
+def settings_checks(base, env):
+    """The Config tab: the settings saved, refused, and in use at once."""
+    d = page("api/settings").json()
+    yield "settings: read as saved", d, d["settings"]["schedule"] == "never" \
+        and d["sources"] == ["syncthing", "local", "nextcloud"] and d["next"].startswith("none")
+    r = page("api/settings", body=settings_body(), site=None)
+    yield "settings: a POST without the page's mark gets 403", r.status_code, r.status_code == 403
+    r = page("api/settings", body=settings_body(), user="ju")
+    yield "settings: another portal user gets 403", r.status_code, r.status_code == 403
+    r = page("api/settings", body=settings_body(schedule="custom", cron="0 3 1 * 1"))
+    yield "settings: a bad cron is refused", r.text[:200], r.status_code == 400 and "Not a cron schedule" in r.text
+    r = page("api/settings", body=settings_body(schedule="custom", cron="0 3 * * *", quiet="01-06"))
+    yield "settings: a schedule the quiet hours empty is refused", r.text[:200], \
+        r.status_code == 400 and "no time to run" in r.text
+    r = page("api/settings", body=settings_body(filters={"ftp": ([], [])}))
+    yield "settings: an unknown source is refused", r.text[:200], r.status_code == 400
+    r = page("api/settings", body={**settings_body(), "remote_url": "http://example.org"})
+    yield "settings: unknown fields refused", r.status_code, r.status_code >= 400
+    with open(f"{base}/settings.json") as f:
+        yield "settings: nothing refused is saved", None, json.load(f) == settings_body()
+    before = tool("list_folder", path="Notes")
+    hidden = {**FILTERS, "local": (["*.md"], ["liste.md"])}
+    r = page("api/settings", body=settings_body(hidden))
+    after = tool("list_folder", path="Notes")
+    yield "settings: a filter saved hides a file at once", (before, after), \
+        r.status_code == 200 and "liste.md" in before[1] and "liste.md" not in after[1]
+    yield "settings: and reading it says not found", None, error_with("not found")(tool("read_file", path="Notes/liste.md"))
+    with open(f"{base}/settings.json") as f:
+        on_disk = json.load(f)
+    yield "settings: saved to the file, mode 600", on_disk, on_disk["filters"]["local"]["skip"] == ["liste.md"] \
+        and os.stat(f"{base}/settings.json").st_mode & 0o777 == 0o600
+    hour = time.localtime().tm_hour
+    page("api/settings", body=settings_body(quiet=f"{hour:02d}-{(hour + 1) % 24:02d}"))
+    result = tool("run_index", files=["Notes/fraise.md"])
+    yield "settings: quiet hours saved refuse run_index at once", result, error_with("quiet hours")(result)
+    r = page("api/settings", body=settings_body(schedule="hourly", quiet=""))
+    yield "settings: the next run follows the schedule", r.text[:200], \
+        r.status_code == 200 and ":20" in r.json()["next"]
+    page("api/settings", body=settings_body())
+    yield "settings: back as they were", None, "liste.md" in tool("list_folder", path="Notes")[1]
+    # A due minute passed since the last run: a server starting asks for a run, as Persistent= did.
+    late = f"{base}/late"
+    os.makedirs(f"{late}/requests")
+    with open(f"{late}/alice.status.json", "w") as f:
+        json.dump({"started": "2000-01-01 00:00", "result": "done"}, f)
+    write_settings(f"{late}/settings.json", schedule="hourly")
+    other = subprocess.Popen([BIN, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                             env={**env, "DOCS_INDEX_DIR": late, "DOCS_SETTINGS_FILE": f"{late}/settings.json",
+                                  "DOCS_PORT": "18781"})
+    try:
+        for _ in range(50):
+            if os.listdir(f"{late}/requests"):
+                break
+            time.sleep(0.2)
+    finally:
+        other.terminate()
+        said = other.communicate()[1].decode()
+    asked = sorted(os.listdir(f"{late}/requests"))
+    yield "schedule: a missed run is asked for at start, a full run per user", (asked, said[-300:]), \
+        asked == ["schedule-alice.json", "schedule-ju.json"] \
+        and json.load(open(f"{late}/requests/schedule-alice.json")) == {"user": "alice"}
+    write_settings(f"{base}/broken.json", schedule="weekly")
+    refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
+                             env={**env, "DOCS_SETTINGS_FILE": f"{base}/broken.json", "DOCS_PORT": "18782"})
+    yield "a settings file the page would refuse stops the server", refused.stderr[-200:], \
+        refused.returncode != 0 and "hourly, 6h, nightly, custom or never" in refused.stderr
+
+
 def run_indexer(env):
     out = subprocess.run([BIN, "index"], env=env, capture_output=True, text=True, timeout=120)
     return out.stdout + out.stderr
@@ -820,7 +908,8 @@ def index_checks(base, env, first):
     yield "a throttled server is said", out, "bruteforce:reset 127.0.0.1" in out
 
     hour = time.localtime().tm_hour
-    quiet = {**env, "DOCS_QUIET_HOURS": f"{hour:02d}-{(hour + 1) % 24:02d}"}
+    write_settings(f"{base}/quiet-settings.json", FILTERS, quiet=f"{hour:02d}-{(hour + 1) % 24:02d}")
+    quiet = {**env, "DOCS_SETTINGS_FILE": f"{base}/quiet-settings.json"}
     out = run_indexer(quiet)
     yield "no run in the quiet hours", out, "quiet hours" in out and "alice:" not in out
     open(f"{base}/index/run-now", "w").close()
@@ -832,7 +921,7 @@ def index_checks(base, env, first):
     yield "how passages are cut is part of the index's model", model, model == "fake-64/passages-3"
     # Another family: its own passage template, in a throwaway index.
     os.makedirs(f"{base}/jina")
-    write_folders(f"{base}/jina.json", {"alice": {"Notes": (f"{base}/notes", ["*.md"], [])}})
+    write_folders(f"{base}/jina.json", {"alice": {"Notes": (f"{base}/notes", "local")}})
     EMBEDDED[:] = []
     run_indexer({**env, "DOCS_EMBED_NAME": "jina-embeddings-v5-text-nano", "DOCS_INDEX_DIR": f"{base}/jina",
                  "DOCS_FOLDERS_FILE": f"{base}/jina.json"})
@@ -1122,9 +1211,8 @@ def run_checks(base, env):
     result = tool("run_index", files=["Notes/liste.md"])
     os.remove(stale)
     yield "a request left untaken is said", result, error_with("not taking them")(result)
-    hour = time.localtime().tm_hour
     refused = subprocess.run([BIN, "run-index", "Notes/liste.md"], capture_output=True, text=True,
-                             env={**env, "DOCS_QUIET_HOURS": f"{hour:02d}-{(hour + 1) % 24:02d}"})
+                             env={**env, "DOCS_SETTINGS_FILE": f"{base}/quiet-settings.json"})
     yield "run-index refused in the quiet hours", refused.stderr, \
         refused.returncode != 0 and "quiet hours" in refused.stderr and requests_left(base) == []
 
@@ -1140,7 +1228,7 @@ def main():
     threading.Thread(target=nextcloud.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:
         env = build(base)
-        first = run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/open.json"})
+        first = run_indexer({**env, "DOCS_SETTINGS_FILE": f"{base}/open-settings.json"})
         # The unit's UMask.
         server = subprocess.Popen([BIN, "serve"], env={**env, **PAGE_ENV}, umask=0o007,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -1160,6 +1248,7 @@ def main():
             results += list(run_checks(base, env))
             results += list(panel_checks())
             results += list(page_checks(base))
+            results += list(settings_checks(base, env))
             refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
                                      env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
             results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],

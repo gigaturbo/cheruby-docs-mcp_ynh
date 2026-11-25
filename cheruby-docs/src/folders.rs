@@ -24,7 +24,10 @@ use nix::{
 };
 use serde_json::Value;
 
-use crate::nextcloud::{Entry, Nextcloud};
+use crate::{
+    nextcloud::{Entry, Nextcloud},
+    settings::Settings,
+};
 
 /// A write never leaves the disk, shared with everything else, fuller than this.
 pub const MIN_FREE_BYTES: u64 = 2_000_000_000;
@@ -118,17 +121,24 @@ pub struct Rules {
 pub struct UserFolders {
     /// (label, root): a root is a real path, or NEXTCLOUD and the account path.
     pub roots: Vec<(String, String)>,
+    /// What each folder keeps, from the settings' filters of its source.
     pub rules: HashMap<String, Rules>,
     pub writable: HashSet<String>,
+    /// syncthing, local or nextcloud: whose filters apply.
+    pub sources: HashMap<String, String>,
 }
 
-/// Each user's folders, from the folders file.
+/// Each user's folders, from the folders file, with the settings' filters.
 ///
-/// The file is {user: {label: {"path": ..., "only": [...], "skip": [...]}}},
-/// written by the package from the config panel's sources; a Nextcloud folder
-/// has "nextcloud": <path in the account> in place of "path", and a writable
-/// one "writable": true.
-pub fn load_folders(path: &str) -> Result<BTreeMap<String, UserFolders>, String> {
+/// The file is {user: {label: {"path": ..., "source": ...}}}, written by the
+/// package from the config panel's sources; a Nextcloud folder has
+/// "nextcloud": <path in the account> in place of "path", and a writable one
+/// "writable": true. The filters come from the settings only, so no folder is
+/// ever opened without them.
+pub fn load_folders(
+    path: &str,
+    settings: &Settings,
+) -> Result<BTreeMap<String, UserFolders>, String> {
     let text = std::fs::read_to_string(path).map_err(|e| format!("{path}: {e}"))?;
     let data: Value = serde_json::from_str(&text).map_err(|e| format!("{path}: {e}"))?;
     let mut users = BTreeMap::new();
@@ -147,28 +157,20 @@ pub fn load_folders(path: &str) -> Result<BTreeMap<String, UserFolders>, String>
                     .ok_or(format!("{path}: {label} has no path."))?;
                 realpath(Path::new(real)).to_string_lossy().into_owned()
             };
-            let patterns = |key: &str| -> Vec<String> {
-                entry[key]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(Value::as_str)
-                    .filter(|p| !p.trim_matches('/').is_empty())
-                    .map(|p| p.to_lowercase().trim_matches('/').to_string())
-                    .collect()
-            };
-            own.rules.insert(
-                label.clone(),
-                Rules {
-                    only: patterns("only"),
-                    skip: patterns("skip"),
-                },
-            );
+            let source = entry["source"]
+                .as_str()
+                .unwrap_or(if root.starts_with(NEXTCLOUD) {
+                    "nextcloud"
+                } else {
+                    "local"
+                });
+            own.sources.insert(label.clone(), source.to_string());
             if entry["writable"].as_bool() == Some(true) {
                 own.writable.insert(label.clone());
             }
             own.roots.push((label.clone(), root));
         }
+        settings.apply(&mut own);
         users.insert(user.clone(), own);
     }
     Ok(users)
