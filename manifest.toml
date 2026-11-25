@@ -43,8 +43,8 @@ ram.runtime = "2500M"
     # The tool server, the indexer and their commands, built from cheruby-docs/
     # on the Pi and published as a release of this repository.
     [resources.sources.cheruby_docs]
-    url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/cheruby-docs-0.12.0/cheruby-docs-aarch64-linux"
-    sha256 = "e59d81dd2bde9a80de9833aa9aa60ef27c6f1a1bba980be218c0c199042af58f"
+    url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/cheruby-docs-0.12.1/cheruby-docs-aarch64-linux"
+    sha256 = "eab5de7b1845b5ea533474f622ce6615ae285a5e030c059469de5883291ab4d5"
     extract = false
     rename = "cheruby-docs"
 
