@@ -86,6 +86,10 @@ restart. The upgrade moves the panel's values there. healthchecks.io gets
 a fail ping only, so B-P-3's `tools-run` marker goes. The models are
 F-P-12, the engine F-P-13.
 
+2026-11-25: built as 0.14.0~ynh1 (`a4d2f8e`): `check_server.py` 238 of 238,
+`cargo test` 31 of 31, the Config tab without fault at the six sizes. Not
+yet released nor installed: T-P-4, T-P-6, T-P-7, T-P-1 and T-P-2 then.
+
 ### F-P-12 · the embedding model chosen on the page
 
 `todo` `medium` `filed 2026-11-25`
@@ -177,8 +181,9 @@ by hand.
 **Check:** through the portal, the docs user opens the page, Status matches
 `sudo cheruby-docs-mcp status`, Search finds a known document; another user
 is refused by the portal; `curl` on the loopback port without the panel
-token gets 401; `check_page.py` at every size, with no fault; the panel
-token in no log.
+token gets 401; on Config, a filter saved hides its files from the agents
+at once and a bad cron is refused; `check_page.py` at every size, with no
+fault; the panel token in no log.
 
 ### T-M-5 · an agent's run_index reaches the index and nothing else
 
@@ -192,15 +197,25 @@ Reopened by B-P-3: the index unit's first step decides a tools' run, and a reque
 
 **Check:** the skill's T-M-5, plus: after a `run_index`, `journalctl -u 'cheruby-docs-mcp-ping@*'` shows the ping units skipped on their condition, and healthchecks.io logged nothing; "Run now" still pings start and success.
 
-### T-P-6 · the index runs on the chosen schedule, from the panel
+### T-P-6 · the index runs on the schedule chosen on the page
 
 `todo` `playtest` `filed 2026-11-21`
 
-**Last:** 2026-11-21 at `ed08fb3`: every schedule and quiet hours followed, Run now, Rebuild (B-P-4 found).
+**Last:** 2026-11-21 at `ed08fb3`, from the panel and its timer: every schedule and quiet hours followed, Run now, Rebuild (B-P-4 found).
 
-Reopened by B-P-4: the status's next run.
+Reopened by F-P-10: the tool server runs the schedule, set on the page; no timer.
 
-**Check:** the skill's T-P-6, plus: during an hourly run, `sudo cheruby-docs-mcp status` and the panel say "Next run: after this run."; with the schedule never, "none: the schedule is never."
+**Check:** the skill's T-P-6.
+
+### T-P-4 · the upgrade keeps the folders and filters, and the sources choose them
+
+`todo` `playtest` `filed 2026-11-10`
+
+**Last:** 2026-11-21 at `ed08fb3`: Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed.
+
+Reopened by F-P-10: the filters move from the panel to the page's settings.json.
+
+**Check:** the skill's T-P-4.
 
 ### T-P-1 · the installed server reads only its folders
 
@@ -208,9 +223,10 @@ Reopened by B-P-4: the status's next run.
 
 **Last:** 2026-11-25 at `b649caf`, on 0.12.0~ynh1: the loopback table loaded, the units' ports only.
 
-Reopened by B-P-3: `conf/index.service` and `conf/ping@.service` changed.
+Reopened by B-P-3, then F-P-10: `/var/lib` is a read-only tmpfs in the
+tool server and the indexer, with the app's settings folder bound back.
 
-**Check:** the skill's T-P-1, and the index unit's first step runs in its sandbox as the app.
+**Check:** the skill's T-P-1.
 
 ### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
 
@@ -245,9 +261,12 @@ Last done 2026-11-21 at `ed08fb3`: backup 2 s, remove, restore 37 s; the 38 sett
 tokens the same and answering; no secret in the operation files or the CLI
 log.
 
+Reopened by F-P-10: the backup carries `/var/lib/cheruby-docs-mcp`.
+
 **Check:** a backup made before the upgrade restores with the same Whoopy
 token under `mcp_token` and no `whoopy_token`; `/usr/local/bin/cheruby-docs-mcp`
-there after restore, gone after remove.
+there after restore, gone after remove; a backup made after it restores
+`settings.json` as it was, owned by the app, mode 600.
 
 ## Closed
 
@@ -262,7 +281,6 @@ there after restore, gone after remove.
 - `F-P-7` done 2026-11-22 · `sudo cheruby-docs-mcp token [--new]` and the gateway token named `mcp_token`, as in the other MCP apps; the read and status commands pass to the binary (0.11.0~ynh2, installed 2026-11-22)
 - `F-M-18` done `small` 2026-11-22 · each tool, its arguments and its limits in `doc/mcp.md`, in the layout the other MCP apps share; the README keeps a short list and the commands name the tool each mirrors; `search_documents`' `before` documented as inclusive
 - `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
-- `T-P-4` done `playtest` 2026-11-21 at `ed08fb3` · Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed
 - `T-P-5` done `playtest` 2026-11-21 at `ed08fb3` · no `nextcloud` group; a wrong app password refused at save, with no failed login counted; a PDF in Notes read, found and searched; an unchanged run sent one PROPFIND; a revoked password refused once each by the server, the indexer and the panel, then nothing sent, the panel naming it; a new one brought Notes back; no password in the logs. No share from another account to try
 - `T-M-4` done `playtest` 2026-11-21 at `ed08fb3` · 340 files indexed on the desktop in 2 min, the same search as the Pi's index; Whoopy stopped 30 s into a run: the run went on on the Pi and ended done in 36 min, no file failed for it; the key in no log. The Whoopy key first allowed only `ollama/...` and got 403, the run then on the Pi as it should
 - `F-M-17` done `medium` 2026-11-21 · `run_index` asks the index unit through a request in `requests/` and a path unit, for some files or everything; each request answered in the status file; refused in the quiet hours, past 50 files or 20 waiting requests, for one waiting 5 minutes, and for everything within 15 minutes of the last full run (0.11.0)
