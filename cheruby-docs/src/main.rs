@@ -270,10 +270,13 @@ fn run(cli: Cli) -> Result<(), String> {
             };
             let state = status::systemd(&format!("{unit}.service"), "ActiveState");
             let next = status::systemd(&format!("{unit}.timer"), "NextElapseUSecRealtime");
-            let next = if next.is_empty() || next == "n/a" {
-                "none: the schedule is never.".to_string()
-            } else {
+            // A timer has no next run while its run goes on; "never" stops it.
+            let next = if !next.is_empty() && next != "n/a" {
                 next
+            } else if status::systemd(&format!("{unit}.timer"), "ActiveState") == "active" {
+                "after this run.".to_string()
+            } else {
+                "none: the schedule is never.".to_string()
             };
             let watching = status::systemd(&format!("{unit}.path"), "ActiveState");
             println!(
