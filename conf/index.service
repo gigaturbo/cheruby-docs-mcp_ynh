@@ -16,6 +16,11 @@ SupplementaryGroups=__GROUPS__
 
 # Folders, index settings and the Nextcloud app password, no MCP token. Root 600.
 EnvironmentFile=__INSTALL_DIR__/index.env
+# A run the tools asked for (requests waiting, no Run now) pings nothing, so
+# an agent cannot keep the check green while the timer is stopped (B-P-3).
+# Decided here, before the start ping, and left as tools-run: the ping unit's
+# condition reads it, and the indexer follows it.
+ExecStartPre=/bin/sh -c 'cd __DATA_DIR__ && rm -f tools-run && set -- requests/*.json && if [ ! -e run-now ] && [ -e "$$1" ]; then : > tools-run; fi'
 # The start ping is sent only when a run really starts: as a Wants=, the
 # timer firing during a long run sent it again. "+" runs it outside the
 # sandbox, which blocks the socket systemctl talks through.

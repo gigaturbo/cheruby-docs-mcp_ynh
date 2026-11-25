@@ -1,5 +1,7 @@
 [Unit]
 Description=Cheruby Docs: tell healthchecks.io about the index run (%i) (__APP__)
+# Not for a run the tools asked for: the index unit leaves this file then.
+ConditionPathExists=!__DATA_DIR__/tools-run
 
 [Service]
 Type=oneshot

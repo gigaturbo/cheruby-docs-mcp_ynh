@@ -1013,9 +1013,20 @@ def requests_left(base):
     return [n for n in os.listdir(f"{base}/index/requests") if n.endswith(".json")]
 
 
+def first_step(base):
+    """The index unit's first ExecStartPre, from conf/index.service: it leaves
+    tools-run when the run is the tools' own."""
+    unit = open(os.path.join(os.path.dirname(__file__), "..", "conf", "index.service")).read()
+    line = next(l for l in unit.splitlines() if l.startswith("ExecStartPre=/bin/sh -c "))
+    script = line.removeprefix("ExecStartPre=/bin/sh -c ").strip("'")
+    script = script.replace("__DATA_DIR__", f"{base}/index").replace("$$", "$")
+    subprocess.run(["/bin/sh", "-c", script], check=True)
+    return os.path.exists(f"{base}/index/tools-run")
+
+
 def asked(base, env, **arguments):
     """run_index called as an agent would, with the index run its request
-    starts: (the tool's answer, the indexer's output)."""
+    starts, the unit's first step included: (the tool's answer, the indexer's output)."""
     answer = {}
     caller = threading.Thread(target=lambda: answer.update(r=tool("run_index", **arguments)))
     caller.start()
@@ -1023,6 +1034,7 @@ def asked(base, env, **arguments):
         if requests_left(base):
             break
         time.sleep(0.1)
+    first_step(base)
     out = run_indexer(env)
     caller.join()
     return answer["r"], out
@@ -1040,9 +1052,22 @@ def run_checks(base, env):
     result = tool("search_documents", query="fraises")
     yield "then search finds it", result, ok_with("--- Notes/fraise.md")(result)
     yield "the request is taken", requests_left(base), requests_left(base) == []
+    yield "a run the tools asked for keeps tools-run for the ping unit", None, os.path.exists(f"{base}/index/tools-run")
+    yield "a run with no request leaves no tools-run", None, not first_step(base)
     result, out = asked(base, env)
     yield "run_index of everything answers at once", result, ok_with("all the folders is asked for", "The index holds")(result)
     yield "and its run checks every file of the user", out, "alice:" in out and "unchanged" in out and "ju:" not in out
+    open(f"{base}/index/run-now", "w").close()
+    yield "Run now is no tools' run", None, not first_step(base)
+    with open(f"{base}/index/requests/late.json", "w") as f:
+        json.dump({"user": "alice", "files": ["Notes/fraise.md"]}, f)
+    out = run_indexer(env)
+    yield "a request with Run now gets the full run, answered done", out, \
+        "ju:" in out and json.load(open(f"{base}/index/alice.status.json"))["answered"].get("late") == "done"
+    open(f"{base}/index/tools-run", "w").close()
+    open(f"{base}/index/run-now", "w").close()
+    run_indexer(env)
+    yield "a Run now after the first step drops tools-run", None, not os.path.exists(f"{base}/index/tools-run")
     result = tool("run_index")
     yield "not again within 15 minutes", result, error_with("ask again after")(result) and requests_left(base) == []
     for name, files, needle in [(".. refused", ["Notes/../secret.md"], "not allowed"),

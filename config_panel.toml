@@ -306,7 +306,7 @@ name = "Cheruby Docs"
 
     [main.monitoring]
     name = "Index monitoring"
-    help = "Pings a healthchecks.io check when each index run starts, succeeds or fails, so a run that fails or never comes raises an alert. Suggested check: the period of the schedule above, grace 2 hours; none when it is never."
+    help = "Pings a healthchecks.io check when each scheduled or Run now index run starts, succeeds or fails, so a run that fails or never comes raises an alert. Runs an agent asks for with run_index send nothing. Suggested check: the period of the schedule above, grace 2 hours; none when it is never."
 
         [main.monitoring.healthcheck_enabled]
         ask = "Ping healthchecks.io on each index run"

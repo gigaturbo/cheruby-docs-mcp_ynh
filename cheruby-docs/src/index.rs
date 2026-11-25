@@ -43,6 +43,10 @@
 //!
 //! <user>.status.json, for the config panel: when the last run started and
 //! ended, how it ended, what it did, and the index's files by status.
+//!
+//! The requests run_index leaves in requests/ are all taken at the start. They
+//! are run on their own only when the unit's first step left TOOLS_RUN, which
+//! also keeps the healthchecks.io pings off; otherwise the full run answers them.
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -695,6 +699,10 @@ struct Requests {
     names: BTreeMap<String, String>,
 }
 
+/// Left in the index folder by the index unit's first step when the run is the
+/// tools' own: the ping unit's condition skips it while the file is there.
+const TOOLS_RUN: &str = "tools-run";
+
 /// The requests in <index dir>/requests, deleted as they are read; None when there are none.
 fn claim_requests(index_dir: &Path) -> Option<Requests> {
     let mut out: Option<Requests> = None;
@@ -914,11 +922,17 @@ pub fn main(s: &Settings) -> Result<(), String> {
     };
     // Taken in any case, quiet hours included: the path unit starts again while any is left.
     let requests = claim_requests(&s.index_dir);
+    // A Run now that came after the unit's first step makes it a full run, pinged.
+    let marker = s.index_dir.join(TOOLS_RUN);
+    let tools = wanted.is_none() && marker.exists();
+    if !tools {
+        let _ = std::fs::remove_file(&marker);
+    }
     let result = run_all(
         s,
         &quiet,
         wanted.as_deref(),
-        requests.as_ref().filter(|_| wanted.is_none()),
+        requests.as_ref().filter(|_| tools),
     );
     if let Some(requests) = &requests {
         let answer = match &result {
@@ -1134,7 +1148,8 @@ fn run_all(
     {
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_file = entry.file_type().is_ok_and(|t| t.is_file());
-        if is_file && !users.contains_key(name.split('.').next().unwrap_or("")) {
+        if is_file && name != TOOLS_RUN && !users.contains_key(name.split('.').next().unwrap_or(""))
+        {
             let _ = std::fs::remove_file(entry.path());
         }
     }
