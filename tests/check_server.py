@@ -56,6 +56,9 @@ EMBEDDED = []
 WHOOPY_PORT = 18776
 WHOOPY_KEY = "w" * 40
 WHOOPY = {"calls": 0, "left": -1, "skew": False, "gone": 503}
+PAGE_PORT = 18779
+PANEL_TOKEN = "p" * 48
+PAGE_ENV = {"DOCS_PAGE_PORT": str(PAGE_PORT), "DOCS_PANEL_TOKEN": PANEL_TOKEN, "DOCS_PAGE_USER": "alice"}
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 
@@ -648,6 +651,55 @@ CHECKS = [
 ]
 
 
+def page(path, token=PANEL_TOKEN, body=None, site="same-origin", user="alice"):
+    """The page through nginx: its token, the portal's user, and a browser's mark on a POST."""
+    headers = {"X-Panel-Token": token} if token else {}
+    if user:
+        headers["Authorization"] = "Basic " + base64.b64encode(f"{user}:-".encode()).decode()
+    url = f"http://127.0.0.1:{PAGE_PORT}/{path}"
+    if body is None:
+        return httpx.get(url, headers=headers, timeout=30)
+    if site:
+        headers["Sec-Fetch-Site"] = site
+    return httpx.post(url, headers=headers, json=body, timeout=60)
+
+
+def page_checks(base):
+    """The page: its guard, Status, Search, and the run lock it reads."""
+    yield "page: no panel token gets 401", page("").status_code, page("", token="").status_code == 401
+    yield "page: a wrong one gets 401", None, page("api/status", token="q" * 48).status_code == 401
+    yield "page: another portal user gets 403", None, page("api/status", user="ju").status_code == 403
+    yield "page: no portal user gets 403", None, page("api/status", user=None).status_code == 403
+    r = page("")
+    yield "page: served with the token", r.status_code, r.status_code == 200 and "Cheruby Docs" in r.text
+    s = page("api/status").json()
+    labels = [f["label"] for f in s["folders"]]
+    yield "page: Status shows alice's folders only", labels, sorted(labels) == ["Cloud", "Documents", "Notes"]
+    yield "page: and which are writable", s["folders"], \
+        {f["label"]: f["writable"] for f in s["folders"]} == {"Documents": False, "Notes": True, "Cloud": True}
+    yield "page: the embedding server answers", s, s["embed"] is True and not s["running"] and s["index"]
+    import fcntl
+    with open(f"{base}/index/run.lock", "a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        held = page("api/status").json()
+        fcntl.flock(lock, fcntl.LOCK_UN)
+    yield "page: a run holding the lock shows as running", held["index"], \
+        held["running"] is True and held["index"][0].startswith("- **Running now**")
+    r = page("api/search", body={"query": "conseil syndical"}, site=None)
+    yield "page: a POST without the page's mark gets 403", r.status_code, r.status_code == 403
+    r = page("api/search", body={"query": "conseil syndical"}, site="cross-site")
+    yield "page: a cross-site POST gets 403", r.status_code, r.status_code == 403
+    r = page("api/search", body={"query": "conseil syndical"})
+    hits = r.json().get("hits", []) if r.status_code == 200 else []
+    yield "page: Search finds the passage", r.text[:300], any(h["place"] == "Cloud/compte-rendu.md" for h in hits)
+    r = page("api/search", body={"query": "x" * 501})
+    yield "page: a long query is refused", r.status_code, r.status_code == 400
+    r = page("api/search", body={"query": "loyer", "path": "Papiers"})
+    yield "page: bob's folder is not alice's", r.text[:200], r.status_code == 400 and "no folder named" in r.text
+    r = page("api/search", body={"query": "loyer", "extra": 1})
+    yield "page: unknown fields refused", r.status_code, r.status_code >= 400
+
+
 def run_indexer(env):
     out = subprocess.run([BIN, "index"], env=env, capture_output=True, text=True, timeout=120)
     return out.stdout + out.stderr
@@ -716,7 +768,7 @@ def index_checks(base, env, first):
     run_indexer(env)
     left = sorted(os.listdir(f"{base}/index"))
     yield "a removed user's index goes", left, left == ["alice.sqlite", "alice.status.json", "alice.work.sqlite",
-                                                        "ju.sqlite", "ju.status.json", "ju.work.sqlite", "requests"]
+                                                        "ju.sqlite", "ju.status.json", "ju.work.sqlite", "requests", "run.lock"]
     with open(f"{base}/index/alice.status.json") as f:
         status = json.load(f)
     yield "the status file says how the run ended", status, status["result"] == "done" and status["ended"] \
@@ -1109,7 +1161,7 @@ def main():
         env = build(base)
         first = run_indexer({**env, "DOCS_FOLDERS_FILE": f"{base}/open.json"})
         # The unit's UMask.
-        server = subprocess.Popen([BIN, "serve"], env=env, umask=0o007,
+        server = subprocess.Popen([BIN, "serve"], env={**env, **PAGE_ENV}, umask=0o007,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         try:
             for _ in range(50):
@@ -1126,6 +1178,7 @@ def main():
             results += list(write_checks(base))
             results += list(run_checks(base, env))
             results += list(panel_checks())
+            results += list(page_checks(base))
             refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
                                      env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
             results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],

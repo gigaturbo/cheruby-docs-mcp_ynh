@@ -18,6 +18,7 @@ mod status;
 mod testing;
 mod text;
 mod tools;
+mod web;
 
 use std::{
     path::{Path, PathBuf},

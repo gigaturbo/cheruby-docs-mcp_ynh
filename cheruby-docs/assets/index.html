@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#5a0a22">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<title>Cheruby Docs</title>
+<style>
+/* cheruby: cherry pink, leaf green */
+:root{--bg:#1c0a10;--panel:#28101a;--panel-2:#351522;--line:#7a1f3e;
+--ink:#fdeef2;--muted:#d9a7b6;--main:#ff6f8c;--main-ink:#1c0a10;
+--second:#8fd16a;--second-ink:#1c0a10;--band-1:#9c1a3c;--band-2:#5a0a22}
+:root{--ok:#4cc38a;--warn:#f2b33d;--bad:#ff6b5e;
+--s-1:.25rem;--s-2:.5rem;--s-3:.75rem;--s-4:1rem;--s-5:1.5rem;--s-6:2rem}
+*,*::before,*::after{box-sizing:border-box;border-radius:0}
+@font-face{font-family:Fredoka;src:url(fredoka.woff2) format("woff2");font-display:swap}
+html{background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;color-scheme:dark}
+body{margin:0}
+h1,h2,h3,.tabs a,button,.btn,.chip{font-family:Fredoka,system-ui,sans-serif}
+code,.mono{font-family:ui-monospace,"DejaVu Sans Mono",monospace;overflow-wrap:anywhere}
+a{color:var(--main)}
+:focus-visible{outline:3px solid var(--main);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+.band{display:flex;align-items:center;gap:var(--s-4);padding:var(--s-4) var(--s-5) 0;
+  background:radial-gradient(circle at 20% 30%,var(--band-1),var(--band-2));
+  border-bottom:4px solid var(--second)}
+.band h1{margin:0;color:#fff;font-size:2rem;text-shadow:3px 3px 0 var(--band-2)}
+.mascot{width:7em;height:auto;margin-bottom:-2.5em;flex:none;position:relative;z-index:1}
+.chip{margin-left:auto;padding:var(--s-1) var(--s-3);border:2px solid currentColor;
+  background:var(--panel);color:var(--muted);text-decoration:none;white-space:nowrap}
+.chip.ok{color:var(--ok)}.chip.warn{color:var(--warn)}.chip.bad{color:var(--bad)}
+.tabs{display:flex;gap:var(--s-1);padding:0 var(--s-5) 0 calc(7em + var(--s-6));position:relative;
+  background:var(--panel);border-bottom:2px solid var(--line);overflow-x:auto}
+.tabs a{padding:var(--s-3) var(--s-4);min-height:44px;color:var(--ink);text-decoration:none;
+  border-bottom:4px solid transparent;white-space:nowrap}
+.tabs a[aria-current=page]{border-bottom-color:var(--main);color:var(--main)}
+.ext-icon{width:.8em;height:.8em;margin-left:.25em;vertical-align:-.05em}
+.panels{display:grid;gap:var(--s-5);padding:var(--s-6) var(--s-5);max-width:60em;margin:0 auto}
+.panel{background:var(--panel);border:2px solid var(--line);box-shadow:5px 5px 0 var(--second);
+  padding:var(--s-4) var(--s-5);min-width:0}
+.panel h2{margin:0 0 var(--s-3);font-size:1.25rem;color:var(--second)}
+.panel>p{max-width:75ch}
+@media (min-width:75em){
+  .panels{max-width:120em;grid-template-columns:repeat(auto-fit,minmax(max(26em,calc((100% - 2*var(--s-5))/3)),1fr));grid-auto-flow:row dense}
+  .panel.wide{grid-column:1/-1}}
+.scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%}
+th{background:var(--panel-2);text-align:left}
+th,td{padding:var(--s-2) var(--s-3);border-bottom:1px solid var(--line);vertical-align:top}
+td{overflow-wrap:anywhere}
+td.date,td.num{white-space:nowrap}
+button,.btn{min-height:44px;padding:var(--s-2) var(--s-4);border:2px solid var(--muted);
+  background:var(--panel-2);color:var(--ink);font-size:1rem;cursor:pointer;
+  box-shadow:3px 3px 0 var(--bg)}
+button.main,.btn.main{background:var(--main);color:var(--main-ink);border-color:var(--main)}
+button:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--bg)}
+.row{display:grid;grid-template-columns:minmax(10em,1fr) 2fr;gap:var(--s-2) var(--s-4);align-items:center}
+input,select,textarea{min-height:44px;padding:var(--s-2);background:var(--panel-2);color:var(--ink);
+  border:2px solid var(--muted);font:inherit;min-width:0}
+.ok{color:var(--ok)}.warn{color:var(--warn)}.bad{color:var(--bad)}.muted{color:var(--muted)}
+ul.lines{margin:0;padding-left:var(--s-5)}
+.search{display:flex;gap:var(--s-2);flex-wrap:wrap}
+.search input{flex:1 1 16em}
+.hit{border-top:1px solid var(--line);padding:var(--s-3) 0}
+.hit h3{margin:0;font-size:1rem;color:var(--main)}
+.hit .when{color:var(--muted);font-size:.9rem}
+.hit p{margin:var(--s-2) 0 0;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}
+.note{color:var(--warn)}
+[hidden]{display:none!important}
+@media (max-width:40em){
+  .band{padding:var(--s-3) var(--s-3) 0}
+  .band h1{font-size:1.5rem}
+  .mascot{width:4.5em;margin-bottom:-1.5em}
+  .tabs{padding-left:calc(4.5em + var(--s-4))}
+  .tabs a{flex:1 0 auto;text-align:center;padding:var(--s-3) var(--s-2)}
+  .panels{padding:var(--s-5) var(--s-3)}
+  .row{grid-template-columns:1fr}
+  table.cards thead{display:none}
+  table.cards tr{display:block;border:2px solid var(--line);margin-bottom:var(--s-3)}
+  table.cards td{display:grid;grid-template-columns:8em 1fr;gap:var(--s-2);border:0}
+  table.cards td::before{content:attr(data-label);color:var(--muted)}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<header class="band">
+  <img class="mascot" src="mascot.svg" alt="">
+  <h1>Cheruby Docs</h1>
+  <a class="chip" id="chip" href="#status">…</a>
+</header>
+<nav class="tabs" aria-label="Sections">
+  <a href="#status">Status</a>
+  <a href="#search">Search</a>
+  <a href="#config">Config</a>
+</nav>
+
+<main class="panels" id="status" data-tab>
+  <section class="panel">
+    <h2>Index runs</h2>
+    <ul class="lines" id="index"><li>Loading…</li></ul>
+  </section>
+  <section class="panel">
+    <h2>Servers</h2>
+    <div class="scroll"><table class="cards">
+      <thead><tr><th>Server</th><th>State</th></tr></thead>
+      <tbody id="servers"></tbody>
+    </table></div>
+  </section>
+  <section class="panel wide">
+    <h2>Folders</h2>
+    <div class="scroll"><table class="cards">
+      <thead><tr><th>Folder</th><th>Read</th><th>Write</th></tr></thead>
+      <tbody id="folders"></tbody>
+    </table></div>
+  </section>
+</main>
+
+<main class="panels" id="search" data-tab hidden>
+  <section class="panel wide">
+    <h2>Search by meaning</h2>
+    <form class="search" id="search-form">
+      <label class="sr" for="query">Search</label>
+      <input id="query" name="query" type="search" maxlength="500" placeholder="What the document says, in your words" required>
+      <label class="sr" for="path">In folder</label>
+      <input id="path" name="path" type="text" placeholder="In folder, such as Documents (optional)">
+      <button class="main" type="submit">Search</button>
+    </form>
+    <div id="results" aria-live="polite"></div>
+  </section>
+</main>
+
+<main class="panels" id="config" data-tab hidden>
+  <section class="panel">
+    <h2>Settings</h2>
+    <p>The folders, who reaches them and the index schedule are set in the
+    YunoHost webadmin, in this app's config panel.</p>
+    <p><a href="/yunohost/admin/#/apps/cheruby-docs-mcp/config" target="_blank" rel="noopener">Open the config panel<svg class="ext-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none"
+      stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
+      <path d="M7 3H3v10h10V9"/><path d="M9 2h5v5M14 2 7 9"/></svg><span class="sr">(opens in a new tab)</span></a></p>
+  </section>
+</main>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+}
+// The status lines are "- **Label**: text"; only the bold is markup.
+function line(s) {
+  return "<li>" + esc(s.replace(/^- /, "")).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>") + "</li>";
+}
+
+function show() {
+  const tab = (location.hash || "#status").slice(1);
+  const known = [...document.querySelectorAll("[data-tab]")].some(m => m.id === tab);
+  const current = known ? tab : "status";
+  for (const m of document.querySelectorAll("[data-tab]")) m.hidden = m.id !== current;
+  for (const a of document.querySelectorAll(".tabs a")) {
+    if (a.getAttribute("href") === "#" + current) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  }
+}
+window.addEventListener("hashchange", show);
+show();
+
+function server(name, up) {
+  const state = up === null ? ["muted", "not used"] : up ? ["ok", "answers"] : ["bad", "does not answer"];
+  return `<tr><td data-label="Server">${name}</td><td data-label="State" class="${state[0]}">${state[1]}</td></tr>`;
+}
+
+async function refresh() {
+  if (document.hidden) return;
+  let s;
+  try {
+    const r = await fetch("api/status", {cache: "no-store"});
+    if (!r.ok) throw new Error(r.status);
+    s = await r.json();
+  } catch (e) {
+    $("chip").className = "chip bad";
+    $("chip").textContent = "offline";
+    return;
+  }
+  $("index").innerHTML = s.index.map(line).join("");
+  $("servers").innerHTML = server("Embedding, for search", s.embed) + server("Ranking of results", s.rerank);
+  $("folders").innerHTML = s.folders.map(f => {
+    const read = f.state === "unreadable" ? "bad" : "ok";
+    return `<tr><td data-label="Folder" class="mono">${esc(f.label)}</td>`
+      + `<td data-label="Read" class="${read}">${esc(f.state)}</td>`
+      + `<td data-label="Write">${f.writable ? "writable" : "read-only"}</td></tr>`;
+  }).join("") || '<tr><td colspan="3">No folder is open: choose them in the config panel.</td></tr>';
+  const chip = $("chip");
+  if (s.embed === false) { chip.className = "chip bad"; chip.textContent = "engine down"; }
+  else if (s.running) { chip.className = "chip warn"; chip.textContent = "indexing"; }
+  else { chip.className = "chip ok"; chip.textContent = "idle"; }
+}
+refresh();
+setInterval(refresh, 5000);
+document.addEventListener("visibilitychange", refresh);
+
+$("search-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const out = $("results");
+  const button = ev.target.querySelector("button");
+  button.disabled = true;
+  out.innerHTML = "<p>Searching…</p>";
+  try {
+    const r = await fetch("api/search", {
+      method: "POST",
+      headers: {"content-type": "application/json"},
+      body: JSON.stringify({query: $("query").value, path: $("path").value}),
+    });
+    const d = await r.json().catch(() => ({error: `the server answered ${r.status}`}));
+    if (!r.ok) { out.innerHTML = `<p class="bad">${esc(d.error || r.status)}</p>`; return; }
+    let html = `<p class="muted">Index updated ${esc(d.updated)}.</p>`;
+    html += d.notes.map(n => `<p class="note">${esc(n)}.</p>`).join("");
+    html += d.hits.length ? d.hits.map(h =>
+      `<article class="hit"><h3 class="mono">${esc(h.place)}</h3><span class="when">${esc(h.date)}</span><p>${esc(h.text)}</p></article>`
+    ).join("") : "<p>Nothing matches.</p>";
+    out.innerHTML = html;
+  } catch (e) {
+    out.innerHTML = '<p class="bad">The server did not answer.</p>';
+  } finally {
+    button.disabled = false;
+  }
+});
+</script>
+</body>
+</html>

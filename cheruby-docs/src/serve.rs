@@ -481,6 +481,7 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
         tool_router.remove_route("create_folder");
         tool_router.remove_route("move_file");
     }
+    let page_docs = Arc::clone(&docs);
     let tools = Tools {
         docs,
         instructions,
@@ -507,18 +508,29 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
     let listener = tokio::net::TcpListener::bind(format!("{bind}:{port}"))
         .await
         .map_err(|e| format!("{bind}:{port}: {e}"))?;
+    // Bound before the line docs_start waits for, so a page that cannot
+    // start fails the install or the upgrade instead of the unit later.
+    let page = crate::web::bind(page_docs).await?;
     // "cheruby-docs: MCP at" is what docs_start waits for in the journal.
     eprintln!("cheruby-docs: MCP at http://{bind}:{port}/mcp");
-    axum::serve(listener, app)
-        .with_graceful_shutdown(async {
-            let mut term =
-                tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-                    .expect("a signal handler");
-            tokio::select! {
-                _ = term.recv() => {}
-                _ = tokio::signal::ctrl_c() => {}
-            }
-        })
-        .await
-        .map_err(|e| e.to_string())
+    let mcp = axum::serve(listener, app).with_graceful_shutdown(async {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("a signal handler");
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    });
+    // The page ends only on an error, which stops the server; without a
+    // page port, /mcp goes on alone.
+    let page = async {
+        match page {
+            Some(serving) => serving.await,
+            None => std::future::pending().await,
+        }
+    };
+    tokio::select! {
+        r = mcp => r.map_err(|e| e.to_string()),
+        r = page => r,
+    }
 }
