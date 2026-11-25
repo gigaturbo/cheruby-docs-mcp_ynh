@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="310" height="310" viewBox="90 78 350 350">
+  <defs>
+    <radialGradient id="cherry" cx="38%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#ff6f8c"/>
+      <stop offset="1" stop-color="#c8133f"/>
+    </radialGradient>
+    <radialGradient id="cherrySmall" cx="38%" cy="30%" r="75%">
+      <stop offset="0" stop-color="#f58aa2"/>
+      <stop offset="1" stop-color="#b8325a"/>
+    </radialGradient>
+  </defs>
+  <title>cheruby-docs favicon</title>
+  <!-- the badge's cherries, with strokes thickened for small sizes -->
+  <g fill="none" stroke="#4f8a34" stroke-width="12" stroke-linecap="round">
+    <path d="M 232,212 Q 246,160 300,128"/>
+    <path d="M 352,206 Q 344,160 300,128"/>
+  </g>
+  <path d="M 300,128 C 280,96 246,84 214,96 C 230,124 262,138 300,128 Z"
+     fill="#6fbf4e" stroke="#3f7a2c" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M 300,128 C 314,98 340,84 370,92 C 360,118 340,132 300,128 Z"
+     fill="#6fbf4e" stroke="#3f7a2c" stroke-width="10" stroke-linejoin="round"/>
+  <circle cx="354" cy="256" r="54" fill="url(#cherrySmall)" stroke="#7a0f2e" stroke-width="12"/>
+  <g fill="#a8103a" stroke="#7a0f2e" stroke-width="12">
+    <ellipse cx="196" cy="402" rx="20" ry="16"/>
+    <ellipse cx="268" cy="402" rx="20" ry="16"/>
+  </g>
+  <circle cx="232" cy="300" r="110" fill="url(#cherry)" stroke="#7a0f2e" stroke-width="14"/>
+  <ellipse cx="192" cy="298" rx="21" ry="26" fill="#3a0716"/>
+  <ellipse cx="272" cy="298" rx="21" ry="26" fill="#3a0716"/>
+  <circle cx="199" cy="288" r="9" fill="#ffffff"/>
+  <circle cx="279" cy="288" r="9" fill="#ffffff"/>
+  <ellipse cx="164" cy="336" rx="17" ry="11" fill="#ffb3c4"/>
+  <ellipse cx="300" cy="336" rx="17" ry="11" fill="#ffb3c4"/>
+  <path d="m 212,334 q 10,13 20,0 q 10,13 20,0" fill="none" stroke="#3a0716" stroke-width="9"
+     stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

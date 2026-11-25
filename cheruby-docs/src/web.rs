@@ -34,7 +34,10 @@ use crate::{
 
 const PAGE: &str = include_str!("../assets/index.html");
 const FONT: &[u8] = include_bytes!("../assets/fredoka.woff2");
-const LOGO: &[u8] = include_bytes!("../../doc/logo.svg");
+const MASCOT: &[u8] = include_bytes!("../assets/mascot.svg");
+const FAVICON: &[u8] = include_bytes!("../assets/favicon.svg");
+const FAVICON_ICO: &[u8] = include_bytes!("../assets/favicon.ico");
+const TOUCH_ICON: &[u8] = include_bytes!("../assets/apple-touch-icon.png");
 /// Refused below this, as the MCP tokens are.
 const MIN_TOKEN_LEN: usize = 32;
 const MAX_QUERY_CHARS: usize = 500;
@@ -86,11 +89,19 @@ pub async fn bind(docs: Arc<Docs>) -> Result<Option<Serving>, String> {
         )
         .route(
             "/favicon.svg",
-            get(|| async { asset("image/svg+xml", LOGO) }),
+            get(|| async { asset("image/svg+xml", FAVICON) }),
+        )
+        .route(
+            "/favicon.ico",
+            get(|| async { asset("image/x-icon", FAVICON_ICO) }),
+        )
+        .route(
+            "/apple-touch-icon.png",
+            get(|| async { asset("image/png", TOUCH_ICON) }),
         )
         .route(
             "/mascot.svg",
-            get(|| async { asset("image/svg+xml", LOGO) }),
+            get(|| async { asset("image/svg+xml", MASCOT) }),
         )
         .route("/api/status", get(status_json))
         .route("/api/search", post(search_json))

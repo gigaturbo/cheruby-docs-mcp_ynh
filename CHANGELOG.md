@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The page shows the new cherry mascot and its favicons, and its green is a darker leaf green, no longer lime.
+
 ## 0.13.0~ynh2
 
 - The page answered 404: its address in nginx was the last folder's path, not the app's.

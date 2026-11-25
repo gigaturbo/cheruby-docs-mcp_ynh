@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="66 58 399 399">
+  <defs>
+    <radialGradient id="cherry" gradientUnits="userSpaceOnUse" cx="206" cy="262" r="170">
+      <stop offset="0" stop-color="#ff6f8c"/>
+      <stop offset="1" stop-color="#c8133f"/>
+    </radialGradient>
+    <radialGradient id="cherrySmall" gradientUnits="userSpaceOnUse" cx="344" cy="232" r="100">
+      <stop offset="0" stop-color="#f58aa2"/>
+      <stop offset="1" stop-color="#b8325a"/>
+    </radialGradient>
+    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#8fd16a"/>
+      <stop offset="1" stop-color="#4f9a3a"/>
+    </linearGradient>
+    <linearGradient id="shade" gradientUnits="userSpaceOnUse" x1="0" y1="320" x2="0" y2="398">
+      <stop offset="0" stop-color="#7a0f2e" stop-opacity="0"/>
+      <stop offset="1" stop-color="#7a0f2e" stop-opacity="0.35"/>
+    </linearGradient>
+    <path id="body" d="M 240,212 C 262,198 340,214 340,302 C 340,358 296,402 240,402 C 184,402 140,358 140,302 C 140,214 218,198 240,212 Z"/>
+    <clipPath id="bodyClip"><use href="#body"/></clipPath>
+  </defs>
+  <title>cheruby docs mascot</title>
+  <!-- the cherries hopping, both paws up, eyes shut with joy -->
+  <ellipse cx="242" cy="440" rx="80" ry="9" fill="#7a0f2e" opacity="0.15"/>
+  <g fill="none" stroke="#f08aa4" stroke-width="4" stroke-linecap="round">
+    <path d="M 170,436 Q 154,434 144,426"/>
+    <path d="M 314,436 Q 330,434 340,426"/>
+  </g>
+
+  <g transform="rotate(-6,240,300)">
+    <!-- stems meeting under the leaves, with a node where they join -->
+    <g fill="none" stroke="#4f8a34" stroke-width="7" stroke-linecap="round">
+      <path d="M 240,214 Q 244,160 300,122"/>
+      <path d="M 360,208 Q 354,158 300,122"/>
+    </g>
+    <circle cx="300" cy="122" r="7" fill="#5f9a40" stroke="#3f7a2c" stroke-width="3"/>
+    <!-- leaves, midrib and side veins -->
+    <g fill="url(#leaf)" stroke="#3f7a2c" stroke-width="5" stroke-linejoin="round">
+      <path d="M 300,120 C 280,88 244,78 208,92 C 228,122 262,134 300,120 Z"/>
+      <path d="M 300,120 C 314,90 342,76 374,82 C 364,112 340,128 300,120 Z"/>
+    </g>
+    <g fill="none" stroke="#3f7a2c" stroke-width="2.5" stroke-linecap="round">
+      <path d="M 294,116 Q 256,100 220,94"/>
+      <path d="M 262,104 L 254,92 M 242,98 L 236,88 M 264,108 L 256,118 M 242,100 L 236,110"/>
+      <path d="M 306,116 Q 334,98 364,86"/>
+      <path d="M 330,102 L 334,90 M 348,94 L 352,84 M 330,104 L 340,112 M 348,96 L 356,104"/>
+    </g>
+    <path d="M 226,96 Q 250,92 268,104" fill="none" stroke="#c9f0a8" stroke-width="3"
+       stroke-linecap="round" opacity="0.8"/>
+
+    <!-- small cherry, behind -->
+    <path d="M 360,206 C 372,198 416,208 416,256 C 416,288 392,312 360,312 C 328,312 304,288 304,256 C 304,208 348,198 360,206 Z" fill="url(#cherrySmall)" stroke="#7a0f2e" stroke-width="5"/>
+    <path d="M 348,210 Q 360,216 372,210" fill="none" stroke="#7a0f2e" stroke-width="4"
+       stroke-linecap="round"/>
+    <ellipse cx="336" cy="232" rx="15" ry="8" transform="rotate(-30,336,232)" fill="#ffffff"
+       opacity="0.55"/>
+
+    <g transform="rotate(18,204,408)">
+      <path d="M 186,408 C 186,390 222,390 222,408 C 222,422 186,422 186,408 Z"
+         fill="#a8103a" stroke="#7a0f2e" stroke-width="5"/>
+      <path d="M 198,412 V 418 M 210,412 V 418" stroke="#7a0f2e" stroke-width="3"
+         stroke-linecap="round"/>
+    </g>
+    <g transform="rotate(-18,276,408)">
+      <path d="M 258,408 C 258,390 294,390 294,408 C 294,422 258,422 258,408 Z"
+         fill="#a8103a" stroke="#7a0f2e" stroke-width="5"/>
+      <path d="M 270,412 V 418 M 282,412 V 418" stroke="#7a0f2e" stroke-width="3"
+         stroke-linecap="round"/>
+    </g>
+
+
+    <!-- big cherry: dimple at the top, shade below, gloss and rim light -->
+    <use href="#body" fill="url(#cherry)"/>
+    <g clip-path="url(#bodyClip)">
+      <rect x="130" y="318" width="220" height="90" fill="url(#shade)"/>
+    </g>
+    <use href="#body" fill="none" stroke="#7a0f2e" stroke-width="6" stroke-linejoin="round"/>
+    <path d="M 226,216 Q 240,226 254,216" fill="none" stroke="#7a0f2e" stroke-width="5"
+       stroke-linecap="round"/>
+    <path d="M 168,250 C 176,232 194,222 210,222 C 206,236 190,252 172,262 C 164,264 164,256 168,250 Z"
+       fill="#ffffff" opacity="0.6"/>
+    <circle cx="222" cy="236" r="5" fill="#ffffff" opacity="0.6"/>
+    <path d="M 156,330 Q 166,366 200,384" fill="none" stroke="#ffffff" stroke-width="4"
+       stroke-linecap="round" opacity="0.35"/>
+
+    <!-- face: eyes shut with joy, open cat mouth, blush -->
+    <g fill="none" stroke="#3a0716" stroke-width="7" stroke-linecap="round">
+      <path d="M 188,306 Q 204,286 220,306"/>
+      <path d="M 260,306 Q 276,286 292,306"/>
+    </g>
+    <ellipse cx="172" cy="334" rx="18" ry="10" fill="#ffb3c4" opacity="0.9"/>
+    <ellipse cx="308" cy="334" rx="18" ry="10" fill="#ffb3c4" opacity="0.9"/>
+    <g stroke="#ffffff" stroke-width="2.5" stroke-linecap="round" opacity="0.9">
+      <path d="M 164,338 L 170,329"/>
+      <path d="M 172,338 L 178,329"/>
+      <path d="M 300,338 L 306,329"/>
+      <path d="M 308,338 L 314,329"/>
+    </g>
+    <path d="M 224,322 Q 232,330 240,322 Q 248,330 256,322 Q 254,346 240,346 Q 226,346 224,322 Z"
+       fill="#3a0716" stroke="#3a0716" stroke-width="4" stroke-linejoin="round"/>
+    <path d="M 231,340 Q 240,333 249,340 Q 246,346 240,346 Q 234,346 231,340 Z" fill="#ff8fa8"/>
+
+    <g transform="rotate(-30,136,270)">
+      <path d="M 121,274 C 120,256 152,256 151,274 C 150,288 122,288 121,274 Z"
+         fill="#d81e4a" stroke="#7a0f2e" stroke-width="5"/>
+      <path d="M 131,262 V 268 M 141,262 V 268" stroke="#7a0f2e" stroke-width="3"
+         stroke-linecap="round"/>
+    </g>
+    <g transform="rotate(30,340,286)">
+      <path d="M 325,290 C 324,272 356,272 355,290 C 354,304 326,304 325,290 Z"
+         fill="#d81e4a" stroke="#7a0f2e" stroke-width="5"/>
+      <path d="M 335,278 V 284 M 345,278 V 284" stroke="#7a0f2e" stroke-width="3"
+         stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>
