@@ -702,6 +702,18 @@ struct Requests {
 /// Left in the index folder by the index unit's first step when the run is the
 /// tools' own: the ping unit's condition skips it while the file is there.
 const TOOLS_RUN: &str = "tools-run";
+/// Locked by a run from start to end, so the page can tell one is going:
+/// the server cannot ask systemd.
+const RUN_LOCK: &str = "run.lock";
+
+/// Whether an index run holds RUN_LOCK now.
+pub fn running(index_dir: &Path) -> bool {
+    use nix::fcntl::{Flock, FlockArg};
+    let Ok(file) = std::fs::File::open(index_dir.join(RUN_LOCK)) else {
+        return false;
+    };
+    Flock::lock(file, FlockArg::LockSharedNonblock).is_err()
+}
 
 /// The requests in <index dir>/requests, deleted as they are read; None when there are none.
 fn claim_requests(index_dir: &Path) -> Option<Requests> {
@@ -905,6 +917,11 @@ const ANSWERS_KEPT: usize = 100;
 /// is the run's failure, said once. Every request taken is answered in its
 /// user's status file, run or not.
 pub fn main(s: &Settings) -> Result<(), String> {
+    // Held until the run returns. Blocking: the page holds it only for a
+    // moment. A lock that fails only blinds the page.
+    let _lock = std::fs::File::create(s.index_dir.join(RUN_LOCK))
+        .ok()
+        .and_then(|f| nix::fcntl::Flock::lock(f, nix::fcntl::FlockArg::LockExclusive).ok());
     // Taken first, so a run that fails to start leaves no "remote" for the timer.
     let mut quiet = s.quiet.clone();
     let run_now = s.index_dir.join("run-now");
@@ -1148,7 +1165,10 @@ fn run_all(
     {
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_file = entry.file_type().is_ok_and(|t| t.is_file());
-        if is_file && name != TOOLS_RUN && !users.contains_key(name.split('.').next().unwrap_or(""))
+        if is_file
+            && name != TOOLS_RUN
+            && name != RUN_LOCK
+            && !users.contains_key(name.split('.').next().unwrap_or(""))
         {
             let _ = std::fs::remove_file(entry.path());
         }
