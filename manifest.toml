@@ -7,7 +7,7 @@ name = "Cheruby Docs"
 description.en = "MCP tools that let a user's AI agents list, find, read and search that user's folders, and write where allowed"
 description.fr = "Outils MCP : les agents IA d'un utilisateur listent, cherchent, lisent et fouillent ses dossiers, et écrivent là où c'est permis"
 
-version = "0.13.1~ynh1"
+version = "0.14.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -41,8 +41,8 @@ ram.runtime = "2500M"
     [install.docs_user]
     ask.en = "User whose folders the AI agents reach"
     ask.fr = "Utilisateur dont les agents IA atteignent les dossiers"
-    help.en = "The folders are chosen after the install, in the config panel: Syncthing folders, local folders, and what to leave out of them. Only this user may open the app's page."
-    help.fr = "Les dossiers se choisissent après l'installation, dans le panneau de configuration : dossiers Syncthing, dossiers locaux, et ce qu'il faut en exclure."
+    help.en = "The folders are chosen after the install, in the config panel: Syncthing folders, local folders, and which are writable. What to leave out of them is set on the app's page, which only this user may open."
+    help.fr = "Les dossiers se choisissent après l'installation, dans le panneau de configuration : dossiers Syncthing, dossiers locaux, et lesquels sont modifiables. Ce qu'il faut en exclure se règle sur la page de l'app, que seul cet utilisateur peut ouvrir."
     type = "user"
 
 [resources]
@@ -141,7 +141,7 @@ ram.runtime = "2500M"
     owner = "root:rwx"
     group = "__APP__:rx"
 
-    # The search index, one SQLite file per user. Rebuilt by the timer, so not
+    # The search index, one SQLite file per user. Rebuilt on the schedule, so not
     # backed up; kept on remove unless --purge, and cleared at install and restore.
     [resources.data_dir]
     owner = "__APP__:rwx"

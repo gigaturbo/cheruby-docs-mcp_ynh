@@ -33,13 +33,14 @@ IPAddressAllow=127.0.0.0/8
 IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6
 
-# As the tool server, plus the index folder, the only place it writes.
+# As the tool server, plus the index folder, the only place it writes. The
+# settings it reads (quiet hours, filters) are the page's, read-only here.
 ProtectSystem=strict
 ProtectHome=tmpfs
-TemporaryFileSystem=/var/www:ro
-BindReadOnlyPaths=__INSTALL_DIR__ __BIND_PATHS__
+TemporaryFileSystem=/var/www:ro /var/lib:ro
+BindReadOnlyPaths=__INSTALL_DIR__ /var/lib/__APP__ __BIND_PATHS__
 BindPaths=__DATA_DIR__
-InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
+InaccessiblePaths=-/var/log -/var/cache -/mnt -/media -/srv -/snapshots
 
 UMask=077
 NoNewPrivileges=true

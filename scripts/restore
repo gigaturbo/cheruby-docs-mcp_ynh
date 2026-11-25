@@ -3,10 +3,14 @@
 source ../settings/scripts/_common.sh
 source /usr/share/yunohost/helpers
 
+# The page's settings. ynh_restore leaves the folder root's.
+ynh_restore "/var/lib/$app"
+chown -R "$app:$app" "/var/lib/$app"
+chmod 700 "/var/lib/$app"
 docs_default_settings
 
 # Needs the network: the binaries and models are fetched again from the
-# pinned sources, not restored. The search index is rebuilt by the timer.
+# pinned sources, not restored. The search index is rebuilt on the schedule.
 ynh_script_progression "Fetching the embedding server and its models..."
 docs_fetch_llama
 

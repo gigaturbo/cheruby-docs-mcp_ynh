@@ -4,9 +4,11 @@ source ../settings/scripts/_common.sh
 source /usr/share/yunohost/helpers
 
 # The folders and tokens are app settings, which every Yunohost backup
-# carries. The binaries and models are fetched again on restore. The
-# search index is left out: the timer rebuilds it from the folders.
+# carries; the schedule, quiet hours and filters are the page's settings.json.
+# The binaries and models are fetched again on restore. The search index is
+# left out: the schedule rebuilds it from the folders.
 
 ynh_backup "/etc/systemd/system/$app.service"
+ynh_backup "/var/lib/$app"
 
 ynh_print_info "Backup script completed for $app."

@@ -18,6 +18,13 @@ docs_check_downloads
 ynh_script_progression "Stopping the tool server..."
 docs_stop
 
+# Before 0.14 a timer ran the index; the tool server runs the schedule now.
+if [ -e "/etc/systemd/system/$app-index.timer" ]; then
+    systemctl disable --now "$app-index.timer" --quiet 2>/dev/null || true
+    ynh_safe_rm "/etc/systemd/system/$app-index.timer"
+    systemctl daemon-reload
+fi
+
 # The Python of 0.10 and before, replaced by the binary.
 for old in venv .uv requirements.txt cheruby_docs_mcp.py docs_files.py docs_index.py docs_text.py; do
     ynh_safe_rm "$install_dir/$old"

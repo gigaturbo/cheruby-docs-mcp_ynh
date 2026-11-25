@@ -25,20 +25,22 @@ IPAddressAllow=127.0.0.0/8
 IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6
 
-# The process sees the configured folders on disk, the index and its own
-# code, read-only but for the folders marked writable and the index's
-# requests folder, and none of what the
+# The process sees the configured folders on disk, the index, its own code
+# and its settings, read-only but for the folders marked writable, the
+# index's requests folder and the settings folder, and none of what the
 # joined groups could otherwise read: Nextcloud's and Syncthing's code and
 # config under /var/www, PHP sessions under /var/lib, their logs and caches.
 ProtectSystem=strict
 ProtectHome=tmpfs
-TemporaryFileSystem=/var/www:ro
+TemporaryFileSystem=/var/www:ro /var/lib:ro
 # First: both options fill one list, and an empty BindPaths= empties it.
 BindPaths=__WRITE_PATHS__
 # Where run_index leaves its requests: the one place of the index folder it writes.
 BindPaths=__DATA_DIR__/requests
+# The page's settings (settings.json), saved from the page.
+BindPaths=/var/lib/__APP__
 BindReadOnlyPaths=__INSTALL_DIR__ __DATA_DIR__ __READ_PATHS__
-InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
+InaccessiblePaths=-/var/log -/var/cache -/mnt -/media -/srv -/snapshots
 
 # What write_file creates is 660 or 770, so the folder's group can change it.
 UMask=0007

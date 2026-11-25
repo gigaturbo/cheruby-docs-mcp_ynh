@@ -92,19 +92,6 @@ set__remote_key() {
 }
 validate__whoopy_folders() { docs_check_folders; }
 
-# The schedule and the quiet hours must leave a time to run.
-validate__index_calendar() {
-    [ "${index_schedule:-hourly}" != never ] || return 0
-    [ -z "$(docs_calendar "$(docs_index_cron)" "${index_quiet:-}")" ] || return 0
-    if [ "${index_schedule:-}" = custom ] && [ -z "$(docs_calendar "$(docs_index_cron)" "")" ]; then
-        echo "Not a cron schedule: minute 0-59, hour 0-23, day 1-31, month 1-12, weekday 0-7 or sun-sat, and not both a day and a weekday. Such as 20 6-23 * * *."
-    else
-        echo "The quiet hours leave this schedule no time to run."
-    fi
-}
-validate__index_schedule() { validate__index_calendar; }
-validate__index_quiet() { validate__index_calendar; }
-
 # Refused before it is saved when the model cannot be downloaded now.
 validate__embed_model() {
     docs_embed_model
@@ -255,27 +242,16 @@ ynh_app_config_apply() {
         ynh_safe_rm "$data_dir/${old[docs_user]}.work.sqlite"
         ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
     fi
-    # A run going on, or one the timer starts before the embedding server
-    # restarts, would mix two models' vectors in one index. docs_start arms
-    # the timer again; the next run sees the new model and reads every file.
+    # A run going on, or one started before the embedding server restarts,
+    # would mix two models' vectors in one index. docs_start starts the path
+    # unit again; the next run sees the new model and reads every file.
     if [ "${changed[embed_model]:-}" = "true" ]; then
-        systemctl stop "$app-index.path" "$app-index.timer" "$app-index.service"
+        systemctl stop "$app-index.path" "$app-index.service"
         docs_fetch_model
         docs_configure
         docs_start
         ynh_print_info "The embedding model is $embed_model. The next index run reads every file again; Run now starts it."
         return
-    fi
-    # The quiet hours also go to the indexer, through index.env, and to the
-    # tool server, which refuses run_index in them.
-    if [ "${changed[index_schedule]:-}" = "true" ] || [ "${changed[index_calendar]:-}" = "true" ] \
-        || [ "${changed[index_quiet]:-}" = "true" ]; then
-        docs_configure
-        docs_start_timer
-    fi
-    if [ "${changed[index_quiet]:-}" = "true" ]; then
-        ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
-            --wait_until="cheruby-docs: MCP at" --timeout=60
     fi
     # The indexer reads index.env at each run: nothing to restart.
     if [ "${remote_key_set:-0}" = 1 ] || [ "${changed[remote_model]:-}" = "true" ] \
@@ -290,9 +266,8 @@ ynh_app_config_apply() {
             --wait_until="cheruby-docs: MCP at" --timeout=60
         return
     fi
-    for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_only syncthing_skip \
-        syncthing_writable local_enabled local_folders local_only local_skip local_writable nextcloud_enabled \
-        nextcloud_account nextcloud_folders nextcloud_only nextcloud_skip nextcloud_writable; do
+    for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_writable local_enabled \
+        local_folders local_writable nextcloud_enabled nextcloud_account nextcloud_folders nextcloud_writable; do
         if [ "${changed[$key]:-}" = "true" ]; then
             docs_configure
             ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \

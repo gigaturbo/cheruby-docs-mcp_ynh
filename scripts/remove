@@ -3,10 +3,6 @@
 source _common.sh
 source /usr/share/yunohost/helpers
 
-if [ -e "/etc/systemd/system/$app-index.timer" ]; then
-    systemctl disable --now "$app-index.timer" --quiet 2>/dev/null || true
-    ynh_safe_rm "/etc/systemd/system/$app-index.timer"
-fi
 if [ -e "/etc/systemd/system/$app-index.path" ]; then
     systemctl disable --now "$app-index.path" --quiet 2>/dev/null || true
     ynh_safe_rm "/etc/systemd/system/$app-index.path"
@@ -32,6 +28,9 @@ nft delete table inet "$app" 2>/dev/null || true
 
 # A link: removed without following it.
 rm -f "/usr/local/bin/$app"
+
+# The page's settings go with the app, as its panel settings do.
+ynh_safe_rm "/var/lib/$app"
 
 # The install dir and the user go with the manifest's resources; the index
 # stays unless the app is removed with --purge. The folders are only read,

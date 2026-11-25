@@ -48,10 +48,8 @@ config panel, from three sources, each turned on or off:
   give another login, holding read-only shares of the folders, to keep the
   app from changing anything.
 
-Each source also has "Only these files" and "Leave out" patterns, such as
-`*.pdf`, `Archives` or `Documents/Old`. What they leave out cannot be listed,
-found, read or searched. Under each source, the panel shows which folders hold
-files the app cannot read.
+Under each source, the panel shows which folders hold files the app cannot
+read. Which files of a source the agents see is set on the app's page (below).
 
 "Writable folders", per source, lists the folders the agents may write in.
 A change to a Syncthing folder goes to every device, and its old content
@@ -61,12 +59,28 @@ and the panel says which are not. The multimedia and backup shares always
 stay read-only. A Nextcloud folder needs a
 login allowed to change it; Nextcloud keeps the old versions.
 
-Under "Search index", the index is refreshed every hour, every 6 hours,
-every night, never, or on a custom schedule in cron's five fields, and
-never in the quiet hours (01 to 06 by default, around the backups): no run
-starts then, and one still going stops and carries on at the next run. "Index runs" shows how the last run ended, what the
-index holds and when the next run comes, with "Run now" and "Rebuild",
-which makes the next run read every file again.
+"Index runs" shows how the last run ended, what the index holds and when
+the next run comes, with "Run now" and "Rebuild", which makes the next run
+read every file again. "Index monitoring" pings a healthchecks.io check's
+`/fail` when a run fails, and nothing otherwise.
+
+## The page
+
+The app's page, at its domain and path behind the portal, opens for the
+docs user only. Status shows the index runs, the servers and the folders;
+Search finds documents as the agents' search does. Config holds what does
+not confine the app, applied at once with no restart:
+
+- **Index schedule**: every hour, every 6 hours, every night, never, or a
+  custom schedule in cron's five fields, and never in the quiet hours (01 to
+  06 by default, around the backups): no run starts then, and one still
+  going stops and carries on at the next run.
+- **Filters**: per source, "Only these files" and "Leave out" patterns, such
+  as `*.pdf`, `Archives` or `Documents/Old`. What they leave out cannot be
+  listed, found, read or searched.
+
+They are kept in `/var/lib/cheruby-docs-mcp/settings.json`, backed up with
+the app.
 
 "Embedding model" picks what search compares meanings with: EmbeddingGemma
 300M (the default), jina-embeddings-v5-text-nano or Qwen3-Embedding 0.6B,

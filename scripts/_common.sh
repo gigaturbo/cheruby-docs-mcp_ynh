@@ -13,9 +13,6 @@ docs_default_settings() {
     ynh_app_setting_set_default --key=docs_user \
         --value="${whoopy_user:-$(awk 'NF {print $1; exit}' <<< "${folders:-}")}"
     ynh_app_setting_set_default --key=whoopy_folders --value=""
-    ynh_app_setting_set_default --key=index_schedule --value=hourly
-    ynh_app_setting_set_default --key=index_calendar --value=""
-    ynh_app_setting_set_default --key=index_quiet --value="01-06"
     ynh_app_setting_set_default --key=embed_model --value=embeddinggemma-300m-q8
     ynh_app_setting_set_default --key=remote_url --value="http://127.0.0.1:4000"
     ynh_app_setting_set_default --key=remote_model --value=""
@@ -41,10 +38,11 @@ docs_default_settings() {
     for key in syncthing_enabled local_enabled nextcloud_enabled; do
         ynh_app_setting_set_default --key="$key" --value=0
     done
-    for key in syncthing_folders syncthing_only syncthing_skip syncthing_writable local_folders local_only \
-        local_skip local_writable nextcloud_account nextcloud_folders nextcloud_only nextcloud_skip nextcloud_writable; do
+    for key in syncthing_folders syncthing_writable local_folders local_writable nextcloud_account \
+        nextcloud_folders nextcloud_writable; do
         ynh_app_setting_set_default --key="$key" --value=""
     done
+    docs_move_page_settings
 
     # Installs from before the sources: each of the user's folders becomes the
     # Syncthing folder on that path and with that label, or a local folder.
@@ -87,6 +85,34 @@ docs_default_settings() {
         ynh_app_setting_delete --key=whoopy_user
     fi
     docs_embed_model
+}
+
+# Installs from before 0.14: the schedule, the quiet hours and the filters
+# leave the panel for the page's settings.json, unless it is there already.
+# Written as the app, so root never writes through a link in its folder.
+docs_move_page_settings() {
+    local file="/var/lib/$app/settings.json" key
+    mkdir -p "/var/lib/$app"
+    chown "$app:$app" "/var/lib/$app"
+    chmod 700 "/var/lib/$app"
+    if [ -n "${index_schedule:-}" ] && [ ! -e "$file" ]; then
+        # Tags settings hold their values joined by ",".
+        jq -n --arg schedule "$index_schedule" --arg cron "${index_calendar:-}" --arg quiet "${index_quiet:-}" \
+            --arg so "${syncthing_only:-}" --arg sk "${syncthing_skip:-}" --arg lo "${local_only:-}" \
+            --arg lk "${local_skip:-}" --arg no "${nextcloud_only:-}" --arg nk "${nextcloud_skip:-}" '
+            def tags: split(",") | map(select(length > 0));
+            {schedule: $schedule, cron: $cron, quiet: $quiet,
+             filters: ({syncthing: {only: ($so | tags), skip: ($sk | tags)},
+                        local: {only: ($lo | tags), skip: ($lk | tags)},
+                        nextcloud: {only: ($no | tags), skip: ($nk | tags)}}
+                       | with_entries(select((.value.only + .value.skip) | length > 0)))}' \
+            | runuser -u "$app" -- sh -c 'umask 077 && cat > "$1"' sh "$file"
+        ynh_print_info "The index schedule, the quiet hours and the filters are now on the app's page, Config tab."
+    fi
+    for key in index_schedule index_calendar index_quiet syncthing_only syncthing_skip local_only local_skip \
+        nextcloud_only nextcloud_skip; do
+        ynh_app_setting_delete --key="$key"
+    done
 }
 
 # Syncthing's folders, one "<label>\t<path>\t<ignorePerms>\t<type>" per line,
@@ -332,13 +358,13 @@ docs_check_downloads() {
 }
 
 # The sources' settings become: folders.json (the user's folders and their
-# filters), index.env (the Nextcloud app password, no MCP token) and docs.env
+# sources; the filters are the page's, in settings.json), index.env (the Nextcloud app password, no MCP token) and docs.env
 # (the tokens), both root 600, the units' read-only bind mounts, and the
 # groups the units join to read the folders on disk. Each token is made once
 # and kept in the settings.
 # Never name a local "path" here: ynh_config_add_nginx fills __PATH__ from $path.
 docs_configure() {
-    local label folder group token only skip line nextcloud_env="" nc_ready=0
+    local label folder group token line nextcloud_env="" nc_ready=0
     local -A groups_seen=()
     # Every folder on disk for the indexer; read-only or writable for the tool server.
     bind_paths=""
@@ -376,17 +402,14 @@ docs_configure() {
     fi
     [ ${#folder_path[@]} -gt 0 ] || ynh_print_warn "No folder is open: turn on a source in the config panel."
 
-    # Tags settings hold their values joined by ",".
+    # The source picks the page's filters for the folder.
     local entries="{}"
     for label in "${!folder_path[@]}"; do
         folder=${folder_path[$label]}
-        only=${folder_source[$label]}_only
-        skip=${folder_source[$label]}_skip
-        entries=$(jq -c --arg l "$label" --arg p "$folder" --arg only "${!only:-}" --arg skip "${!skip:-}" \
+        entries=$(jq -c --arg l "$label" --arg p "$folder" --arg s "${folder_source[$label]}" \
             --arg w "${folder_writable[$label]:-}" \
             '.[$l] = (if $p | startswith("nextcloud:") then {nextcloud: ($p | ltrimstr("nextcloud:"))} else {path: $p} end)
-                     + {only: ($only | split(",") | map(select(length > 0))),
-                        skip: ($skip | split(",") | map(select(length > 0)))}
+                     + {source: $s}
                      + (if $w == "1" then {writable: true} else {} end)' <<< "$entries")
         # Nextcloud's folders are read through Nextcloud, not on disk.
         [ "${folder_source[$label]}" = nextcloud ] && continue
@@ -439,8 +462,8 @@ docs_configure() {
         echo "DOCS_EMBED_URL=http://127.0.0.1:$port_embed"
         echo "DOCS_EMBED_MODEL=$model"
         echo "DOCS_EMBED_NAME=$model_family"
-        echo "DOCS_QUIET_HOURS=${index_quiet:-}"
-        # Used by "Run now on the desktop" only, never by the timer.
+        echo "DOCS_SETTINGS_FILE=/var/lib/$app/settings.json"
+        # Used by "Run now on the desktop" only, never by the schedule.
         echo "DOCS_REMOTE_URL=${remote_url:-}"
         echo "DOCS_REMOTE_MODEL=${remote_model:-}"
         echo "DOCS_REMOTE_KEY=$(ynh_app_setting_get --key=remote_key)"
@@ -455,8 +478,8 @@ docs_configure() {
         echo "DOCS_EMBED_MODEL=$model"
         echo "DOCS_EMBED_NAME=$model_family"
         echo "DOCS_RERANK_URL=http://127.0.0.1:$port_rerank"
-        # run_index is refused in them.
-        echo "DOCS_QUIET_HOURS=${index_quiet:-}"
+        # The schedule, the quiet hours and the filters, which the page changes.
+        echo "DOCS_SETTINGS_FILE=/var/lib/$app/settings.json"
         token=$(ynh_app_setting_get --key="token_$docs_user")
         token=${token:-$(ynh_string_random --length=48)}
         ynh_app_setting_set --key="token_$docs_user" --value="$token"
@@ -493,9 +516,8 @@ docs_configure() {
     ynh_config_add_systemd
     ynh_config_add_systemd --service="$app-embed" --template="embed.service"
     ynh_config_add_systemd --service="$app-rerank" --template="rerank.service"
-    # Started by its timer only, so written, not enabled.
+    # Started by its path unit only, so written, not enabled.
     ynh_config_add --template="index.service" --destination="/etc/systemd/system/$app-index.service"
-    docs_write_timer
     ynh_config_add --template="index.path" --destination="/etc/systemd/system/$app-index.path"
     ynh_config_add --template="ping@.service" --destination="/etc/systemd/system/$app-ping@.service"
     systemctl daemon-reload
@@ -571,57 +593,13 @@ docs_start() {
     done
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="cheruby-docs: MCP at" --timeout=60
-    docs_start_timer
-    # Watches for run_index's requests, whatever the schedule.
+    # Starts the runs the tool server asks for: its schedule's and run_index's.
     systemctl enable "$app-index.path" --quiet
     systemctl restart "$app-index.path"
 }
 
-# The index timer at the schedule chosen in the panel, never in its quiet
-# hours, by default 01 to 06, around the nightly backups (01:30 to about 05:45).
-docs_write_timer() {
-    on_calendar=$(docs_calendar "$(docs_index_cron)" "${index_quiet:-}")
-    if [ -z "$on_calendar" ]; then
-        ynh_print_warn "Search index: the schedule '$(docs_index_cron)' with quiet hours '${index_quiet:-}' leaves no time to run; the index runs hourly."
-        on_calendar=$(docs_calendar "20 * * * *" "${index_quiet:-}")
-        on_calendar=${on_calendar:-*:20}
-    fi
-    ynh_config_add --template="index.timer" --destination="/etc/systemd/system/$app-index.timer"
-}
-
-# The cron schedule of the panel's choice: a preset, or the custom one.
-docs_index_cron() {
-    local -A preset=([hourly]="20 * * * *" [6h]="20 */6 * * *" [nightly]="20 23 * * *")
-    if [ "${index_schedule:-hourly}" = custom ]; then
-        echo "${index_calendar:-}"
-    else
-        echo "${preset[${index_schedule:-hourly}]:-20 * * * *}"
-    fi
-}
-
-# The OnCalendar of a cron schedule (minute hour day month weekday), its
-# minutes and hours listed one by one so the quiet hours (<from>-<to>, to
-# excluded, empty for none) can be left out. Prints nothing when cron's
-# meaning cannot be kept, no hour is left, or systemd does not take it.
-docs_calendar() { # <cron> <quiet hours>
-    local expr
-    expr=$("$install_dir/bin/cheruby-docs" calendar "$1" "$2") || return 0
-    [ -n "$expr" ] || return 0
-    systemd-analyze calendar "$expr" > /dev/null 2>&1 && echo "$expr" || true
-}
-
-# Started, or stopped when the schedule is never. A restart applies a new schedule.
-docs_start_timer() {
-    if [ "${index_schedule:-hourly}" = never ]; then
-        systemctl disable --now "$app-index.timer" --quiet
-    else
-        systemctl enable "$app-index.timer" --quiet
-        systemctl restart "$app-index.timer"
-    fi
-}
-
 # An index left by an earlier install may cover other folders or belong to an
-# older user id; the timer rebuilds it.
+# older user id; the schedule rebuilds it.
 docs_clear_index() {
     local file
     for file in "$data_dir"/*; do
@@ -630,10 +608,10 @@ docs_clear_index() {
     return 0
 }
 
-# Stops everything before files change under it; the path unit and the timer
-# first, so no index run starts.
+# Stops everything before files change under it; the path unit first, so no
+# index run starts.
 docs_stop() {
-    systemctl stop "$app-index.path" "$app-index.timer" "$app-index.service" --quiet 2>/dev/null || true
+    systemctl stop "$app-index.path" "$app-index.service" --quiet 2>/dev/null || true
     ynh_systemctl --service="$app" --action="stop"
     systemctl stop "$app-embed" "$app-rerank" --quiet 2>/dev/null || true
 }

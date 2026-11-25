@@ -14,7 +14,7 @@ name = "Cheruby Docs"
 
     [main.syncthing]
     name = "Syncthing"
-    help = "Folders that Syncthing syncs on this server, each under its Syncthing label."
+    help = "Folders that Syncthing syncs on this server, each under its Syncthing label. Which files of them the agents see is set on the app's page, Config tab."
 
         [main.syncthing.syncthing_enabled]
         ask = "Open Syncthing folders"
@@ -27,20 +27,6 @@ name = "Cheruby Docs"
         type = "tags"
         optional = true
         help = "Empty opens all of Syncthing's folders, photo folders included. One added in Syncthing later opens at the next save or upgrade."
-        bind = "settings"
-
-        [main.syncthing.syncthing_only]
-        ask = "Only these files"
-        type = "tags"
-        optional = true
-        help = "Empty keeps every file. Otherwise only what matches, or lies in a folder that matches. *.pdf or Factures match any name; Documents/Factures matches from the folder on. Case is ignored, and * crosses folders."
-        bind = "settings"
-
-        [main.syncthing.syncthing_skip]
-        ask = "Leave out"
-        type = "tags"
-        optional = true
-        help = "What matches is left out with all it holds: not listed, found, read nor searched. *.tmp or Old match any name; Documents/Old matches from the folder on. Case is ignored, and * crosses folders."
         bind = "settings"
 
         [main.syncthing.syncthing_writable]
@@ -61,7 +47,7 @@ name = "Cheruby Docs"
 
     [main.local]
     name = "Local storage"
-    help = "Any folder on this server. The app joins each folder's group to read it, so its files must be readable by that group."
+    help = "Any folder on this server. The app joins each folder's group to read it, so its files must be readable by that group. Which files of them the agents see is set on the app's page, Config tab."
 
         [main.local.local_enabled]
         ask = "Open local folders"
@@ -74,20 +60,6 @@ name = "Cheruby Docs"
         optional = true
         example = "Archives=/home/yunohost.app/archives"
         help = "One per line: <Label>=<path>. The label is what the AI agents see: letters, digits, _ . - and no space."
-        bind = "settings"
-
-        [main.local.local_only]
-        ask = "Only these files"
-        type = "tags"
-        optional = true
-        help = "Empty keeps every file. Otherwise only what matches, or lies in a folder that matches. *.pdf or Factures match any name; Documents/Factures matches from the folder on. Case is ignored, and * crosses folders."
-        bind = "settings"
-
-        [main.local.local_skip]
-        ask = "Leave out"
-        type = "tags"
-        optional = true
-        help = "What matches is left out with all it holds: not listed, found, read nor searched. *.tmp or Old match any name; Documents/Old matches from the folder on. Case is ignored, and * crosses folders."
         bind = "settings"
 
         [main.local.local_writable]
@@ -108,7 +80,7 @@ name = "Cheruby Docs"
 
     [main.nextcloud]
     name = "Nextcloud"
-    help = "Folders of a Nextcloud account, shares from others included, read through Nextcloud with an app password you make there and paste here."
+    help = "Folders of a Nextcloud account, shares from others included, read through Nextcloud with an app password you make there and paste here. Which files of them the agents see is set on the app's page, Config tab."
 
         [main.nextcloud.nextcloud_enabled]
         ask = "Open Nextcloud folders"
@@ -138,20 +110,6 @@ name = "Cheruby Docs"
         optional = true
         example = "Cloud=/Documents"
         help = "One per line: <Label>=<folder in the account>, / for all of it. Empty opens the whole account as Nextcloud. The label is what the AI agents see: letters, digits, _ . - and no space."
-        bind = "settings"
-
-        [main.nextcloud.nextcloud_only]
-        ask = "Only these files"
-        type = "tags"
-        optional = true
-        help = "Empty keeps every file. Otherwise only what matches, or lies in a folder that matches. *.pdf or Factures match any name; Cloud/Factures matches from the folder on. Case is ignored, and * crosses folders."
-        bind = "settings"
-
-        [main.nextcloud.nextcloud_skip]
-        ask = "Leave out"
-        type = "tags"
-        optional = true
-        help = "What matches is left out with all it holds: not listed, found, read nor searched. *.tmp or Old match any name; Cloud/Old matches from the folder on. Case is ignored, and * crosses folders."
         bind = "settings"
 
         [main.nextcloud.nextcloud_writable]
@@ -205,38 +163,7 @@ name = "Cheruby Docs"
 
     [main.index]
     name = "Search index"
-    help = "The index is how search finds documents by meaning. Each run reads only the files that changed; the first one reads them all, which takes hours on many files."
-
-        [main.index.index_schedule]
-        ask = "Refresh the index"
-        type = "select"
-        choices.hourly = "Every hour, at :20"
-        choices.6h = "Every 6 hours, from 00:20"
-        choices.nightly = "Every night, at 23:20"
-        choices.custom = "Custom"
-        choices.never = "Never: only with Run now"
-        help = "A file added or changed is found by meaning after the next run. No run starts in the quiet hours below."
-        bind = "settings"
-
-        [main.index.index_calendar]
-        ask = "Custom schedule"
-        type = "string"
-        optional = true
-        visible = "index_schedule == 'custom'"
-        example = "20 6-23 * * *"
-        help = "Cron's five fields: minute, hour, day, month, weekday. 20 * * * * runs at :20 every hour; 0 12 * * mon-fri at noon on weekdays; */30 8-20 * * * every half hour from 08:00 to 20:30. A day of the month and a weekday cannot both be set. The quiet hours are left out; the next run shows under Index runs."
-        bind = "settings"
-
-        [main.index.index_quiet]
-        ask = "Quiet hours"
-        type = "string"
-        optional = true
-        visible = "index_schedule != 'never'"
-        example = "01-06"
-        help = "From one hour to another, the second excluded, such as 01-06 or 22-07. No run starts then, and a run still going stops when they begin and carries on at the next run. Run now ignores them. 01-06 keeps clear of the nightly backups, 01:30 to about 05:45. Empty for none."
-        pattern.regexp = '^$|^([01]?[0-9]|2[0-4])-([01]?[0-9]|2[0-4])$'
-        pattern.error = "Two hours, such as 01-06"
-        bind = "settings"
+    help = "The index is how search finds documents by meaning. Each run reads only the files that changed; the first one reads them all, which takes hours on many files. When it runs, and its quiet hours, are set on the app's page, Config tab."
 
         [main.index.embed_model]
         ask = "Embedding model"
@@ -283,7 +210,7 @@ name = "Cheruby Docs"
     # Its own section: a section holding a button runs actions and saves nothing.
     [main.index_runs]
     name = "Index runs"
-    help = "Run now starts a run without waiting for the schedule, even in the quiet hours, and does nothing while one runs. Run now on the desktop does the same with the desktop's GPU (Desktop embedding above); when Whoopy cannot be reached or the vectors do not agree, the run goes on here. The schedule never uses the desktop. Rebuild stops a run and drops the index: the next run reads every file again, which takes hours on many, and search answers from the old index only for its first ten minutes."
+    help = "Run now starts a run without waiting for the schedule set on the app's page, even in the quiet hours, and does nothing while one runs. Run now on the desktop does the same with the desktop's GPU (Desktop embedding above); when Whoopy cannot be reached or the vectors do not agree, the run goes on here. The schedule never uses the desktop. Rebuild stops a run and drops the index: the next run reads every file again, which takes hours on many, and search answers from the old index only for its first ten minutes."
 
         # Filled when the panel opens, from the status file the indexer writes.
         [main.index_runs.index_status]
