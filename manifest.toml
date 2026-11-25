@@ -7,7 +7,7 @@ name = "Cheruby Docs"
 description.en = "MCP tools that let a user's AI agents list, find, read and search that user's folders, and write where allowed"
 description.fr = "Outils MCP : les agents IA d'un utilisateur listent, cherchent, lisent et fouillent ses dossiers, et écrivent là où c'est permis"
 
-version = "0.12.0~ynh1"
+version = "0.12.1~ynh1"
 
 maintainers = ["gigaturbo"]
 

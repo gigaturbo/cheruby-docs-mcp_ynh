@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.1~ynh1
+
+- An index run an agent asks for with `run_index` no longer pings healthchecks.io, so the check stays an alert on the scheduled runs alone. A request waiting when the timer fires is answered by the full run.
+- While a run goes on, the panel's next run says "after this run", no longer that the schedule is never.
+
 ## 0.12.0~ynh1
 
 - `move_file`: an agent moves or renames a file or a folder within a writable folder, never replacing anything.
