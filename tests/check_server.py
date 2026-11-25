@@ -48,7 +48,7 @@ RERANK = {"favour": None, "down": False, "docs": []}
 DAV_PORT = 18773
 DAV_PASSWORD = "n" * 72
 DAV_LOG = []
-DAV = {"root": "", "down": False, "fail": None}
+DAV = {"root": "", "down": False, "fail": None, "locked": set(), "bob": ""}
 URL = f"http://127.0.0.1:{PORT}/mcp"
 BIN = os.environ.get("DOCS_BIN", "cheruby-docs/target/release/cheruby-docs")
 PDFIUM = os.environ.get("DOCS_PDFIUM", "cheruby-docs/target/pdfium/lib/libpdfium.so")
@@ -255,7 +255,9 @@ def reranked(favour=None, down=False, **arguments):
 
 class FakeNextcloud(BaseHTTPRequestHandler):
     """WebDAV on DAV["root"] as alice's account, at /dav/files/alice: PROPFIND
-    at depth 0 or 1, GET, PUT and MKCOL. A folder's ETag changes with anything
+    at depth 0 or 1, GET, PUT, MKCOL and MOVE. A path in DAV["locked"] answers
+    PUT and MOVE with 423, as a file Text holds open does. What lies under
+    DAV["bob"] is owned by bob, as a share from him is. A folder's ETag changes with anything
     below it, as Nextcloud's does. Every request goes to DAV_LOG as (method,
     depth, path).
     """
@@ -298,7 +300,9 @@ class FakeNextcloud(BaseHTTPRequestHandler):
         href = urllib.parse.quote(self.base + ("" if rel == "." else "/" + rel) + ("/" if os.path.isdir(real) else ""))
         kind = "<d:resourcetype><d:collection/></d:resourcetype>" if os.path.isdir(real) else \
             f"<d:resourcetype/><d:getcontentlength>{os.path.getsize(real)}</d:getcontentlength>"
+        owner = "bob" if DAV["bob"] and (rel + "/").startswith(DAV["bob"] + "/") else "alice"
         return (f"<d:response><d:href>{href}</d:href><d:propstat><d:prop>{kind}"
+                f"<oc:owner-id>{owner}</oc:owner-id>"
                 f"<d:getlastmodified>{formatdate(os.path.getmtime(real), usegmt=True)}</d:getlastmodified>"
                 f'<d:getetag>"{self.etag(real)}"</d:getetag></d:prop><d:status>HTTP/1.1 200 OK</d:status>'
                 f"</d:propstat></d:response>")
@@ -311,7 +315,7 @@ class FakeNextcloud(BaseHTTPRequestHandler):
         found = [real]
         if self.headers.get("Depth") == "1" and os.path.isdir(real):
             found += [os.path.join(real, n) for n in sorted(os.listdir(real))]
-        body = ('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:">'
+        body = ('<?xml version="1.0"?><d:multistatus xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns">'
                 + "".join(self.response(r) for r in found) + "</d:multistatus>").encode()
         self.send_response(207)
         self.send_header("Content-Length", str(len(body)))
@@ -334,10 +338,36 @@ class FakeNextcloud(BaseHTTPRequestHandler):
         real = self.target(exists=False)
         if real is None:
             return
+        if self.locked():
+            return
         existed = os.path.exists(real)
         with open(real, "wb") as f:
             f.write(data)
         self.send_response(204 if existed else 201)
+        self.end_headers()
+
+    def locked(self):
+        if urllib.parse.unquote(urllib.parse.urlsplit(self.path).path)[len(self.base):] not in DAV["locked"]:
+            return False
+        self.send_response(423)
+        self.end_headers()
+        return True
+
+    def do_MOVE(self):
+        real = self.target()
+        if real is None or self.locked():
+            return
+        dest = urllib.parse.unquote(urllib.parse.urlsplit(self.headers.get("Destination", "")).path)
+        new = os.path.join(DAV["root"], dest[len(self.base):].strip("/"))
+        if self.headers.get("Overwrite") != "F" or not dest.startswith(self.base):
+            self.send_response(400)
+        elif os.path.exists(new):
+            self.send_response(412)
+        elif not os.path.isdir(os.path.dirname(new)):
+            self.send_response(409)
+        else:
+            os.rename(real, new)
+            self.send_response(201)
         self.end_headers()
 
     def do_MKCOL(self):
@@ -490,9 +520,9 @@ def error_with(needle):
 CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
-    ("seven tools listed", lambda: call("tools/list"),
+    ("eight tools listed", lambda: call("tools/list"),
      lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file create_folder "
-                                              "run_index".split())),
+                                              "move_file run_index".split())),
     ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
      lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
@@ -912,6 +942,71 @@ def write_checks(base):
     yield "Nextcloud's filters refuse too", result, error_with("filters leave this name out")(result)
     methods = {m for m, _, _ in DAV_LOG}
     yield "Nextcloud is never asked to delete or move", methods, methods <= {"PROPFIND", "GET", "PUT", "MKCOL"}
+    yield from move_checks(base)
+
+
+def move_checks(base):
+    """move_file on disk and in Nextcloud, after write_checks, which made the files."""
+    notes, cloud = f"{base}/notes", f"{base}/nextcloud/Partage"
+    os.symlink("long.md", f"{notes}/interne.md")
+    result = tool("move_file", source="Notes/idees.md", destination="Notes/Projets/idees.md")
+    yield "a file is moved", result, ok_with("Moved Notes/idees.md to Notes/Projets/idees.md")(result) \
+        and not os.path.exists(f"{notes}/idees.md") \
+        and oct(os.stat(f"{notes}/Projets/idees.md").st_mode & 0o777) == "0o660"
+    result = tool("move_file", source="Notes/Jardin", destination="Notes/Potager")
+    yield "a folder is renamed", result, ok_with("Moved")(result) \
+        and os.path.isfile(f"{notes}/Potager/2026/semis.md")
+    for name, source, destination, needle in [
+            ("nothing is replaced", "Notes/long.md", "Notes/Projets/idees.md", "already exists"),
+            ("a link is not moved", "Notes/interne.md", "Notes/lien2.md", "is a link"),
+            ("not into itself", "Notes/Potager", "Notes/Potager/x", "same place or inside it"),
+            ("not a folder whose files the filters would judge otherwise", "Notes/Potager", "Notes/Potager.md",
+             "filters judge files by their folders"),
+            ("not to another folder", "Notes/long.md", "Cloud/long.md", "within one folder"),
+            ("not from a read-only folder", "Documents/x.md", "Documents/y.md", "Documents is read-only"),
+            ("the new folder must exist", "Notes/long.md", "Notes/Nulle/part.md", "create_folder"),
+            ("not to a name the filters leave out", "Notes/long.md", "Notes/x.txt", "filters leave"),
+            ("not what the filters leave out", "Notes/x.txt", "Notes/y.md", "not found"),
+            ("not a missing file", "Notes/absent.md", "Notes/present.md", "not found"),
+            ("not through a link", "Notes/dehors/secret.md", "Notes/x.md", "leads out"),
+            (".. refused", "Notes/long.md", "Notes/../long.md", "not allowed"),
+            ("not the folder itself", "Notes", "Notes/Autre", "name something inside")]:
+        result = tool("move_file", source=source, destination=destination)
+        yield f"move: {name}", result, error_with(needle)(result)
+    yield "a refused move changes nothing", None, os.path.isfile(f"{notes}/long.md") \
+        and os.path.islink(f"{notes}/interne.md") and os.path.isfile(f"{notes}/Projets/idees.md")
+    DAV_LOG.clear()
+    result = tool("move_file", source="Cloud/Sous dossier/Neuf/note.md", destination="Cloud/Archives/note.md")
+    yield "a Nextcloud file is moved", result, ok_with("Moved")(result) \
+        and os.path.isfile(f"{cloud}/Archives/note.md") and not os.path.exists(f"{cloud}/Sous dossier/Neuf/note.md")
+    result = tool("move_file", source="Cloud/compte-rendu.md", destination="Cloud/Archives/note.md")
+    yield "nothing is replaced in Nextcloud", result, error_with("already exists")(result)
+    result = tool("move_file", source="Cloud/compte-rendu.md", destination="Cloud/Nulle/part.md")
+    yield "Nextcloud's new folder must exist", result, error_with("create_folder")(result)
+    os.makedirs(f"{cloud}/De bob")
+    with open(f"{cloud}/De bob/sien.md", "w") as f:
+        f.write("à bob")
+    DAV["bob"] = "Partage/De bob"
+    result = tool("move_file", source="Cloud/De bob/sien.md", destination="Cloud/sien.md")
+    yield "nothing leaves a share", result, error_with("one account's files")(result) \
+        and os.path.isfile(f"{cloud}/De bob/sien.md")
+    result = tool("move_file", source="Cloud/compte-rendu.md", destination="Cloud/De bob/cr.md")
+    yield "nothing goes into a share", result, error_with("one account's files")(result)
+    DAV["bob"] = ""
+    DAV["locked"] = {"/Partage/compte-rendu.md"}
+    result = tool("write_file", path="Cloud/compte-rendu.md", content="x")
+    yield "a locked Nextcloud file says why", result, error_with("Text editor")(result)
+    result = tool("move_file", source="Cloud/compte-rendu.md", destination="Cloud/cr.md")
+    yield "and is not moved", result, error_with("Text editor")(result)
+    DAV["locked"] = set()
+    # Back where the checks after these expect them.
+    os.remove(f"{notes}/interne.md")
+    for source, destination in [("Notes/Projets/idees.md", "Notes/idees.md"), ("Notes/Potager", "Notes/Jardin"),
+                                ("Cloud/Archives/note.md", "Cloud/Sous dossier/Neuf/note.md")]:
+        result = tool("move_file", source=source, destination=destination)
+        yield f"moved back to {destination}", result, ok_with("Moved")(result)
+    methods = {m for m, _, _ in DAV_LOG}
+    yield "Nextcloud is never asked to delete or copy", methods, methods <= {"PROPFIND", "GET", "PUT", "MKCOL", "MOVE"}
 
 
 def requests_left(base):

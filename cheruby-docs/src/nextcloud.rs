@@ -1,5 +1,6 @@
 //! One Nextcloud account over WebDAV, on loopback. It sends PROPFIND and GET,
-//! and PUT and MKCOL for `Tree::write` only: never DELETE, MOVE or COPY.
+//! PUT and MKCOL for `Tree::write` only, MOVE for `Tree::rename` only, never
+//! replacing what is there: never DELETE or COPY.
 //!
 //! After one refusal it sends nothing more: each failed login counts against
 //! every app on loopback. `refused` carries that across runs through `mark`,
@@ -24,6 +25,7 @@ const REFUSED: &str = "Nextcloud refused the app password; it is not tried again
 const THROTTLED: &str = "Nextcloud is holding back logins from this server after failed ones; \
                          as root, occ security:bruteforce:reset 127.0.0.1 clears it.";
 const PROPFIND: &str = r#"<?xml version="1.0"?><d:propfind xmlns:d="DAV:"><d:prop><d:resourcetype/><d:getcontentlength/><d:getlastmodified/><d:getetag/></d:prop></d:propfind>"#;
+const OWNER: &str = r#"<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:owner-id/></d:prop></d:propfind>"#;
 /// What Python's urllib.parse.quote(safe="") leaves as it is.
 const QUOTED: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'-')
@@ -259,6 +261,29 @@ impl Nextcloud {
         Ok(Some(entries))
     }
 
+    /// The account that owns path: another one for what is shared with this
+    /// one. None when it does not exist or Nextcloud does not say.
+    pub fn owner(&self, path: &str) -> Result<Option<String>, Error> {
+        let resp = self
+            .request("PROPFIND", path)?
+            .header("Depth", "0")
+            .header("Content-Type", "application/xml")
+            .body(OWNER)
+            .send()
+            .map_err(unreachable)?;
+        let resp = self.answer(resp)?;
+        match resp.status().as_u16() {
+            404 => return Ok(None),
+            207 => {}
+            code => return Err(answered(code)),
+        }
+        let body = resp.text().map_err(unreachable)?;
+        Ok(parse_multistatus(&body)
+            .and_then(|r| r.into_iter().next())
+            .map(|r| r.owner)
+            .filter(|o| !o.is_empty()))
+    }
+
     /// The bytes of a file, refused past limit.
     pub fn get(&self, path: &str, limit: u64) -> Result<Vec<u8>, Error> {
         let resp = self.request("GET", path)?.send().map_err(unreachable)?;
@@ -281,17 +306,24 @@ impl Nextcloud {
         Ok(data)
     }
 
-    /// The status of a PUT or MKCOL, one of expected; a refusal is a user error.
+    /// The status of a PUT, MKCOL or MOVE, one of expected; a refusal is a
+    /// user error. to, for MOVE: the account path it goes to, never replaced.
     pub fn send(
         &self,
         method: &str,
         path: &str,
         data: Option<&[u8]>,
+        to: Option<&str>,
         expected: &[u16],
     ) -> Result<u16, Error> {
         let mut req = self.request(method, path)?;
         if let Some(data) = data {
             req = req.body(data.to_vec());
+        }
+        if let Some(to) = to {
+            req = req
+                .header("Destination", format!("{}{}", self.url, quote(to)))
+                .header("Overwrite", "F");
         }
         let resp = self.answer(req.send().map_err(unreachable)?)?;
         let code = resp.status().as_u16();
@@ -339,6 +371,7 @@ struct Response {
     size: i64,
     modified: Option<String>,
     etag: String,
+    owner: String,
 }
 
 /// The responses of a WebDAV multistatus body; None when it is not XML.
@@ -351,6 +384,7 @@ fn parse_multistatus(body: &str) -> Option<Vec<Response>> {
     loop {
         let (ns, event) = reader.read_resolved_event().ok()?;
         let dav = matches!(ns, ResolveResult::Bound(n) if n.as_ref() == "DAV:");
+        let oc = matches!(ns, ResolveResult::Bound(n) if n.as_ref() == "http://owncloud.org/ns");
         match event {
             Event::Start(e) | Event::Empty(e) if dav => {
                 let local = e.local_name().as_ref().to_string();
@@ -371,6 +405,14 @@ fn parse_multistatus(body: &str) -> Option<Vec<Response>> {
                 text.push_str(&html_escape::decode_html_entities(&format!("&{name};")));
             }
             Event::CData(t) => text.push_str(&t.html_content()),
+            Event::End(e) if oc => {
+                if e.local_name().as_ref() == "owner-id"
+                    && let Some(r) = current.as_mut()
+                {
+                    r.owner = text.trim().to_string();
+                }
+                text.clear();
+            }
             Event::End(e) if dav => {
                 let local = e.local_name().as_ref().to_string();
                 if let Some(r) = current.as_mut() {

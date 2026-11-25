@@ -32,11 +32,18 @@ Paths start with a folder's label, such as `Documents/Factures`.
 
 ## What the tools cannot do
 
-- **No delete.** `write_file` creates or replaces a file whole and
-  `create_folder` creates folders; nothing removes a file or a folder.
+- **No delete.** `write_file` creates or replaces a file whole,
+  `create_folder` creates folders and `move_file` moves or renames them;
+  nothing removes a file or a folder, and a move never replaces one.
 - **Write only in the folders marked writable**, text files only, never
-  through a link, and never into the last 2 GB of the disk. The two write
+  through a link, and never into the last 2 GB of the disk. The three write
   tools are offered only when a folder is writable.
+- **A file open in Nextcloud's Text editor cannot be changed.** Text locks
+  the file while it is open, and Nextcloud refuses every other write. With
+  Text 8.0.0 the lock can outlive the editor, for days: an upstream bug
+  (nextcloud/text#9042), fixed for Nextcloud 34.0.7. Until then the admin
+  unlocks it with `occ files:lock --unlock <file id> <user>`, once nobody
+  has it open.
 - **Only the token's folders.** Search keeps to them too.
 - **No scans or images in search yet.** Find them by name with `find_files`;
   `read_file` returns an image as the picture.
@@ -111,6 +118,20 @@ exists already is left as it is.
 | Argument | Default | Effect |
 |---|---|---|
 | `path` | required | Such as `Notes/Recettes/Pains`. |
+
+## move_file
+
+Moves or renames a file or a folder, of any kind, within one writable
+folder. Never replaces what is at the new place, never moves a link, never
+a folder into itself. A folder whose files the folder's filters would judge
+otherwise at its new place is not moved; move its files instead. In
+Nextcloud, nothing moves into or out of a folder shared from another
+account. Search finds it under its new name after the next index run.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `source` | required | Such as `Notes/brouillon.md`. |
+| `destination` | required | Its new path in the same folder, such as `Notes/Recettes/pain.md`. The folder it goes in must exist (`create_folder`). |
 
 ## run_index
 

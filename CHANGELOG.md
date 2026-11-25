@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `move_file`: an agent moves or renames a file or a folder within a writable folder, never replacing anything.
 - A write Nextcloud refuses because the file is locked says it is, or was, open in Nextcloud's Text editor.
 - The app's services reach on this server only what they use: the embedding and reranking models, Nextcloud and Whoopy, no longer its databases or other services. The Whoopy address for desktop embedding must be `http://127.0.0.1:<port>`.
 - How to add the server to Whoopy since its 0.2.0~ynh5: on Whoopy's status page, as the server `docs`; a new token is given to it in Whoopy's admin page.

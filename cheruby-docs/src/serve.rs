@@ -224,6 +224,12 @@ struct FolderArgs {
     path: String,
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+struct MoveArgs {
+    source: String,
+    destination: String,
+}
+
 fn one() -> i64 {
     1
 }
@@ -383,6 +389,21 @@ impl Tools {
     }
 
     #[tool(
+        description = "Move or rename a file or a folder, of any kind, within one folder listed\n\
+        as writable. Never replaces anything at the new place, never deletes.\n\n\
+        source: such as \"Notes/brouillon.md\".\n\
+        destination: its new path, such as \"Notes/Recettes/pain.md\"; the folder it goes\n\
+        in must exist (create_folder)."
+    )]
+    async fn move_file(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(a): Parameters<MoveArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        answer(tools::move_file(&self.ctx(&parts)?, a.source, a.destination).await)
+    }
+
+    #[tool(
         description = "Ask for an index run, so search_documents finds what changed: of some\n\
         files, such as one just written, or of all the folders.\n\n\
         files: up to 50 paths such as \"Notes/Recettes/pain.md\"; empty asks for all the\n\
@@ -453,11 +474,12 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
         .to_string();
     let mut tool_router = Tools::tool_router();
     if writable {
-        instructions += " Folders listed as writable also take write_file and create_folder; the others are read-only.";
+        instructions += " Folders listed as writable also take write_file, create_folder and move_file; the others are read-only.";
     } else {
         // Offered only where a folder takes them.
         tool_router.remove_route("write_file");
         tool_router.remove_route("create_folder");
+        tool_router.remove_route("move_file");
     }
     let tools = Tools {
         docs,

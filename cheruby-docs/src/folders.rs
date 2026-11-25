@@ -18,8 +18,8 @@ use std::{
 
 use nix::{
     errno::Errno,
-    fcntl::{OFlag, openat},
-    sys::stat::{Mode, fstat, mkdirat},
+    fcntl::{AtFlags, OFlag, RenameFlags, openat, renameat2},
+    sys::stat::{Mode, fstat, fstatat, mkdirat},
     unistd::{Gid, UnlinkatFlags, fchown, unlinkat},
 };
 use serde_json::Value;
@@ -638,45 +638,12 @@ impl<'a> Tree<'a> {
         if let Some(account) = root.strip_prefix(NEXTCLOUD) {
             return self.write_cloud(label, account, parts, data);
         }
-        let shown_upto = |n: usize| {
-            std::iter::once(label)
-                .chain(parts[..n].iter().map(String::as_str))
-                .collect::<Vec<_>>()
-                .join("/")
-        };
-        // Each folder is opened from the one above it, never by its path, so
-        // no link swapped in on the way is followed.
-        let mut d = File::open(&root)?.into();
-        let mut made = false;
         let folders = if data.is_none() {
             parts.len()
         } else {
             parts.len() - 1
         };
-        for (n, name) in parts[..folders].iter().enumerate() {
-            made = match mkdirat(&d, name.as_str(), Mode::from_bits_truncate(0o770)) {
-                Ok(()) => true,
-                Err(Errno::EEXIST) => false,
-                Err(e) => return Err(e.into()),
-            };
-            let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
-            let inner = match openat(&d, name.as_str(), flags, Mode::empty()) {
-                Ok(fd) => fd,
-                Err(Errno::ENOTDIR | Errno::ELOOP) => {
-                    return Err(Error::User(format!(
-                        "{} is a file or a link.",
-                        shown_upto(n + 1)
-                    )));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            if made && let Err(e) = group(&inner, &d) {
-                drop(inner);
-                let _ = unlinkat(&d, name.as_str(), UnlinkatFlags::RemoveDir);
-                return Err(e);
-            }
-            d = inner;
-        }
+        let (d, made) = open_folders(label, &root, &parts[..folders], true)?;
         let Some(data) = data else {
             return Ok(if made { "created" } else { "exists" });
         };
@@ -748,7 +715,7 @@ impl<'a> Tree<'a> {
             match nc.list(&at, 0)? {
                 None => {
                     made = true;
-                    nc.send("MKCOL", &at, None, &[201])?;
+                    nc.send("MKCOL", &at, None, None, &[201])?;
                 }
                 Some(entries) => {
                     made = false;
@@ -771,12 +738,183 @@ impl<'a> Tree<'a> {
         {
             return Err(Error::User("is a folder.".into()));
         }
-        Ok(if nc.send("PUT", &at, Some(data), &[201, 204])? == 201 {
-            "created"
-        } else {
-            "replaced"
-        })
+        Ok(
+            if nc.send("PUT", &at, Some(data), None, &[201, 204])? == 201 {
+                "created"
+            } else {
+                "replaced"
+            },
+        )
     }
+}
+
+impl Tree<'_> {
+    /// Move or rename label/from to label/to, a file or a folder of any
+    /// kind, in one folder. Never replaces what is at to, never moves a
+    /// link, never a folder into itself; to's folder must exist. Both
+    /// names must be ones the filters keep. The caller checks that the
+    /// folder is writable and that from and to hold no "..", no hidden name.
+    pub fn rename(&self, label: &str, from: &[String], to: &[String]) -> Result<(), Error> {
+        let Some(item) = self.item(label, from)? else {
+            return Err(Error::NotFound);
+        };
+        let shown = std::iter::once(label)
+            .chain(to.iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join("/");
+        if !kept(self.rules, &shown, item.is_dir) {
+            return Err(Error::User(format!(
+                "the folder's filters leave {shown} out, so it could not be found again."
+            )));
+        }
+        // Moving a folder changes the folders above each file in it. A pattern
+        // with a / may then judge them otherwise, and so may an "only" name
+        // that matches one path's folders but not the other's: the move could
+        // show what the filters hide, or hide what they show. A skip name
+        // cannot: no name of the source matches it, and kept() checked to's.
+        let lower = |parts: &[String]| {
+            std::iter::once(label)
+                .chain(parts.iter().map(String::as_str))
+                .map(str::to_lowercase)
+                .collect::<Vec<_>>()
+        };
+        let (old, new) = (lower(from), lower(to));
+        let (old, new): (Vec<&str>, Vec<&str>) = (
+            old.iter().map(String::as_str).collect(),
+            new.iter().map(String::as_str).collect(),
+        );
+        if item.is_dir
+            && let Some(rule) = self.rules.get(label)
+            && (rule.only.iter().chain(&rule.skip).any(|p| p.contains('/'))
+                || rule
+                    .only
+                    .iter()
+                    .any(|p| matches(p, &old) != matches(p, &new)))
+        {
+            return Err(Error::User(format!(
+                "{label}'s filters judge files by their folders, so its folders are not moved; move the files."
+            )));
+        }
+        if to.starts_with(from) {
+            return Err(Error::User(format!(
+                "{shown} is the same place or inside it."
+            )));
+        }
+        let (Some((name, from_up)), Some((new_name, to_up))) = (from.split_last(), to.split_last())
+        else {
+            return Err(Error::User("name something inside the folder.".into()));
+        };
+        if let Location::Cloud(place) = &item.location {
+            let account = self.root(label).strip_prefix(NEXTCLOUD).unwrap_or("");
+            let target = std::iter::once(account)
+                .chain(to.iter().map(String::as_str))
+                .filter(|p| !p.is_empty())
+                .collect::<Vec<_>>()
+                .join("/");
+            // Between two owners' files Nextcloud copies then deletes: a move
+            // out of a share would take the file from its owner.
+            let nc = self.cloud()?;
+            let up = target.rsplit_once('/').map(|(u, _)| u).unwrap_or("");
+            let (here, there) = (nc.owner(place)?, nc.owner(up)?);
+            if there.is_none() {
+                return Err(Error::User(format!(
+                    "the folder {shown} would go in does not exist; create it with create_folder."
+                )));
+            }
+            if here != there {
+                return Err(Error::User(
+                    "a move stays within one account's files; this one is shared from another."
+                        .into(),
+                ));
+            }
+            return match nc.send("MOVE", place, None, Some(&target), &[201, 409, 412])? {
+                409 => Err(Error::User(format!(
+                    "the folder {shown} would go in does not exist; create it with create_folder."
+                ))),
+                412 => Err(Error::User(format!(
+                    "{shown} already exists; nothing is replaced."
+                ))),
+                _ => Ok(()),
+            };
+        }
+        let root = self.root(label).to_string();
+        let (src, _) = open_folders(label, &root, from_up, false)?;
+        let (dst, _) = open_folders(label, &root, to_up, false)?;
+        let st = fstatat(&src, name.as_str(), AtFlags::AT_SYMLINK_NOFOLLOW)?;
+        if st.st_mode & libc_s_ifmt() == libc_s_iflnk() {
+            return Err(Error::User("is a link; links are not moved.".into()));
+        }
+        match renameat2(
+            &src,
+            name.as_str(),
+            &dst,
+            new_name.as_str(),
+            RenameFlags::RENAME_NOREPLACE,
+        ) {
+            Ok(()) => Ok(()),
+            Err(Errno::EEXIST) => Err(Error::User(format!(
+                "{shown} already exists; nothing is replaced."
+            ))),
+            Err(e) => Err(e.into()),
+        }
+    }
+}
+
+/// The folder at root/parts, each opened from the one above it, never by its
+/// path, so no link swapped in on the way is followed; and whether the last
+/// one was made. With make, missing folders are made in their parent's
+/// group, mode 770 through the unit's umask; without, a missing one is an error.
+fn open_folders(
+    label: &str,
+    root: &str,
+    parts: &[String],
+    make: bool,
+) -> Result<(OwnedFd, bool), Error> {
+    let shown_upto = |n: usize| {
+        std::iter::once(label)
+            .chain(parts[..n].iter().map(String::as_str))
+            .collect::<Vec<_>>()
+            .join("/")
+    };
+    let mut d: OwnedFd = File::open(root)?.into();
+    let mut made = false;
+    for (n, name) in parts.iter().enumerate() {
+        if make {
+            made = match mkdirat(&d, name.as_str(), Mode::from_bits_truncate(0o770)) {
+                Ok(()) => true,
+                Err(Errno::EEXIST) => false,
+                Err(e) => return Err(e.into()),
+            };
+        }
+        let flags = OFlag::O_RDONLY | OFlag::O_DIRECTORY | OFlag::O_NOFOLLOW | OFlag::O_CLOEXEC;
+        let inner = match openat(&d, name.as_str(), flags, Mode::empty()) {
+            Ok(fd) => fd,
+            Err(Errno::ENOTDIR | Errno::ELOOP) => {
+                return Err(Error::User(format!(
+                    "{} is a file or a link.",
+                    shown_upto(n + 1)
+                )));
+            }
+            Err(Errno::ENOENT) => {
+                return Err(Error::User(format!(
+                    "{} does not exist; create it with create_folder.",
+                    shown_upto(n + 1)
+                )));
+            }
+            Err(e) => return Err(e.into()),
+        };
+        if made && let Err(e) = group(&inner, &d) {
+            drop(inner);
+            let _ = unlinkat(&d, name.as_str(), UnlinkatFlags::RemoveDir);
+            return Err(e);
+        }
+        d = inner;
+    }
+    Ok((d, made))
+}
+
+const fn libc_s_iflnk() -> u32 {
+    0o120000
 }
 
 const fn libc_s_ifmt() -> u32 {

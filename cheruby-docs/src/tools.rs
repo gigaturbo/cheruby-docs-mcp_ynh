@@ -5,9 +5,10 @@
 //! real path. A path is refused if it climbs out of its folder, follows a
 //! link out of it, or names a hidden file (Syncthing's .stfolder,
 //! .stversions); one the folder's filters leave out is not found. Only
-//! write_file and create_folder write, and only in the folders the folders
-//! file marks writable: they create a folder, or create or replace a text
-//! file, never delete anything, never through a link.
+//! write_file, create_folder and move_file change anything, and only in the
+//! folders the folders file marks writable: they create a folder, create or
+//! replace a text file, or move a file or folder within its folder, never
+//! delete anything, never through a link.
 
 use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
@@ -942,6 +943,28 @@ pub async fn write(ctx: &Ctx, path: String, content: Option<String>) -> ToolResu
             format!("{word} {shown}, {}.", human(size as f64))
         }
     })
+}
+
+/// What move_file returns: from moved to to, both in one writable folder.
+pub async fn move_file(ctx: &Ctx, from: String, to: String) -> ToolResult<String> {
+    let source = writable_parts(ctx, &from)?;
+    let target = writable_parts(ctx, &to)?;
+    if source[0] != target[0] {
+        return Err(format!(
+            "{to}: a move stays within one folder; {} and {} are two.",
+            source[0], target[0]
+        ));
+    }
+    let c = ctx.clone();
+    let (s, t) = (source.clone(), target.clone());
+    blocking(move || c.tree().rename(&s[0], &s[1..], &t[1..]))
+        .await?
+        .map_err(|e| format!("{from}: {e}"))?;
+    Ok(format!(
+        "Moved {} to {}. Search finds it under its new name after the next index run.",
+        source.join("/"),
+        target.join("/")
+    ))
 }
 
 #[cfg(test)]
