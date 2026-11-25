@@ -13,14 +13,6 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
-### B-P-5 · the units can reach every service on loopback
-
-`open` `medium` `filed 2026-11-24`
-
-All four units allow `localhost`, which opens every loopback TCP port on `127.0.0.1` and `::1`: PostgreSQL, LDAP, the YunoHost API, a Redis with no password. Code run inside one through a flaw in a file parser would reach them.
-
-**Fix:** the per-uid nftables table in the `mcp-server-dev` skill (`references/deploy.md`, Loopback by port), first applied in cheruby-search-mcp (its B-P-1), allowing DNS, the embedding and reranking ports and what the Nextcloud source needs; `IPAddressAllow=127.0.0.0/8` closes `::1` meanwhile.
-
 ### B-P-3 · runs the tools ask for ping healthchecks.io like scheduled runs
 
 `open` `low` `filed 2026-11-21`
@@ -67,6 +59,16 @@ CC-BY-NC-4.0.
 
 ## Tests
 
+### T-P-1 · the installed server reads only its folders
+
+`todo` `playtest` `filed 2026-11-09`
+
+Reopened by B-P-5: the units allow IPv4 loopback only, and an nftables
+table keeps the app's user to the ports it needs. Last done 2026-11-21 at
+`ed08fb3`, on 0.11.0: 401 without a token, the server's namespace hid
+Nextcloud, PHP sessions, Syncthing and the logs; the embedding and
+reranking units saw `bin/` and `model/` only.
+
 ### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
 
 `todo` `playtest` `filed 2026-11-22`
@@ -103,11 +105,11 @@ there after restore, gone after remove.
 
 ## Closed
 
+- `B-P-5` closed 2026-11-25 · the four units could reach every loopback service, PostgreSQL, LDAP, the YunoHost API and Redis among them, over IPv4 and `::1`
 - `F-P-8` done 2026-11-25 · the README, `doc/mcp.md`, the config panel, the New token message and `token --new` say to add the server `docs` on Whoopy's status page and to change its token in Whoopy's admin page
 - `F-P-7` done 2026-11-22 · `sudo cheruby-docs-mcp token [--new]` and the gateway token named `mcp_token`, as in the other MCP apps; the read and status commands pass to the binary (0.11.0~ynh2, installed 2026-11-22)
 - `F-M-18` done `small` 2026-11-22 · each tool, its arguments and its limits in `doc/mcp.md`, in the layout the other MCP apps share; the README keeps a short list and the commands name the tool each mirrors; `search_documents`' `before` documented as inclusive
 - `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
-- `T-P-1` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 401 without a token; Nextcloud's config and data, PHP sessions, Syncthing's own dir, `/mnt` and the logs absent in the server's namespace, the env files and `/etc/shadow` unreadable; code and index read-only even to root, `requests/` writable; the embedding and reranking units see `bin/` and `model/` only, `/slots` 501 on both
 - `T-M-3` done `playtest` 2026-11-21 at `ed08fb3` · on disk and in Nextcloud: created, replaced, read back; a new file 660 and folder 770 in the folder's group, a replaced file keeping its owner and mode; a `.pdf`, a hidden name, `..`, an unknown folder, a link to a folder and a link to a file refused; a read-only folder refused by the tool and by its read-only mount; another source's label and a multimedia folder refused at save; Nextcloud kept the old version; the file reached the author's device
 - `T-P-4` done `playtest` 2026-11-21 at `ed08fb3` · Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed
 - `T-P-5` done `playtest` 2026-11-21 at `ed08fb3` · no `nextcloud` group; a wrong app password refused at save, with no failed login counted; a PDF in Notes read, found and searched; an unchanged run sent one PROPFIND; a revoked password refused once each by the server, the indexer and the panel, then nothing sent, the panel naming it; a new one brought Notes back; no password in the logs. No share from another account to try
