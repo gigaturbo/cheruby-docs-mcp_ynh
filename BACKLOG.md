@@ -29,6 +29,11 @@ locks with no open session. Until then, ask first, then per file nobody
 has open: `occ files:lock --unlock <file id> <user>`. Close once 34.0.7 is
 installed and `oc_files_lock` holds no `text` lock older than a day.
 
+2026-11-25: the ten Text locks released (no session for 48 minutes or
+more), then a `write_file` of `INDEX.md`'s own text passed. The 423 message
+was seen on it before. A manual lock of 2026-09-22 on a file since deleted
+(id 1718) is kept: not Text's.
+
 ### B-P-3 · runs the tools ask for ping healthchecks.io like scheduled runs
 
 `open` `low` `filed 2026-11-21`
@@ -75,32 +80,17 @@ CC-BY-NC-4.0.
 
 ## Tests
 
-### T-M-3 · writes land in the writable folders only
-
-`todo` `playtest` `filed 2026-11-21`
-
-Reopened by F-M-19 and B-M-3: `move_file` moves and renames in the writable
-folders, the folder walk is shared with `write_file`, and a 423 names the
-Text editor. Last done 2026-11-21 at `ed08fb3`: on disk and in Nextcloud: created, replaced, read back; a new file 660 and folder 770 in the folder's group, a replaced file keeping its owner and mode; a `.pdf`, a hidden name, `..`, an unknown folder, a link to a folder and a link to a file refused; a read-only folder refused by the tool and by its read-only mount; another source's label and a multimedia folder refused at save; Nextcloud kept the old version; the file reached the author's device
-
-### T-P-1 · the installed server reads only its folders
-
-`todo` `playtest` `filed 2026-11-09`
-
-Reopened by B-P-5: the units allow IPv4 loopback only, and an nftables
-table keeps the app's user to the ports it needs. Last done 2026-11-21 at
-`ed08fb3`, on 0.11.0: 401 without a token, the server's namespace hid
-Nextcloud, PHP sessions, Syncthing and the logs; the embedding and
-reranking units saw `bin/` and `model/` only.
-
 ### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
 
 `todo` `playtest` `filed 2026-11-22`
 
-**Last:** 2026-11-22 at `940062b`, 0.11.0~ynh2 installed: `mcp_token` and
-`token_blac` keep their fingerprints, `whoopy_token` is gone, the command
-shows both and refuses `serve`, Whoopy's `/mcp/docs` lists the seven tools.
-`token --new` not run yet.
+**Last:** 2026-11-25 at `b649caf`, 0.12.0~ynh1 installed: `mcp_token`
+kept its fingerprint, neither token in the upgrade's lines of
+`yunohost-cli.log` or its operation logs. The new wording (F-P-8) not seen
+in the panel, and `token --new` still not run: it breaks Whoopy's `docs`
+server until the new token is pasted in Whoopy's admin page.
+Before: 2026-11-22 at `940062b`, `whoopy_token` gone, the command showed
+both tokens and refused `serve`, Whoopy's `/mcp/docs` listed seven tools.
 
 Reopened by F-P-7: the token's setting, panel section and rotation path
 changed. Last done 2026-11-21 at `ed08fb3`: Whoopy access narrowed to two folders then one, New
@@ -129,6 +119,8 @@ there after restore, gone after remove.
 
 ## Closed
 
+- `T-P-1` done `playtest` 2026-11-25 at `b649caf` · on 0.12.0~ynh1: the loopback table loaded (uid 984, ports 443, 4000, 8771, 8774); as the app, 3306, 5432, 389, 6379, 6787 and `::1` refused, the four ports open; units allow 127.0.0.0/8 only; list and search answer, search reranked through the table
+- `T-M-3` done `playtest` 2026-11-25 at `b649caf` · on disk (Syncthing Documents) and in Nextcloud (Notes): a file moved, a folder renamed, a move onto a name, into itself, into a missing folder and across folders refused; moved files kept 660, folders 770, the folder's group; a Text-locked file refused with the Text message and left unchanged; test files deleted
 - `F-M-19` done 2026-11-25 · `move_file` moves or renames a file or a folder within one writable folder, on disk and in Nextcloud, never replacing, never across a share, never changing what the filters keep
 - `T-M-1` done `spec` 2026-11-25 at `1d71e1a` · `tests/check_server.py` 206 of 206 against the binary, `move_file` and the Text lock included; `cargo test` 23 of 23
 - `B-P-5` closed 2026-11-25 · the four units could reach every loopback service, PostgreSQL, LDAP, the YunoHost API and Redis among them, over IPv4 and `::1`
