@@ -21,7 +21,7 @@ helpers_version = "2.1"
 architectures = ["arm64"]
 multi_instance = false
 ldap = false
-sso = false
+sso = true
 # The embedding model (up to 640 MB) and the reranker (310 MB), llama-server,
 # the tool server and PDFium; the index grows with the folders.
 disk = "1700M"
@@ -31,10 +31,17 @@ ram.build = "50M"
 ram.runtime = "2500M"
 
 [install]
+    [install.domain]
+    type = "domain"
+
+    [install.path]
+    type = "path"
+    default = "/docs"
+
     [install.docs_user]
     ask.en = "User whose folders the AI agents reach"
     ask.fr = "Utilisateur dont les agents IA atteignent les dossiers"
-    help.en = "The folders are chosen after the install, in the config panel: Syncthing folders, local folders, and what to leave out of them."
+    help.en = "The folders are chosen after the install, in the config panel: Syncthing folders, local folders, and what to leave out of them. Only this user may open the app's page."
     help.fr = "Les dossiers se choisissent après l'installation, dans le panneau de configuration : dossiers Syncthing, dossiers locaux, et ce qu'il faut en exclure."
     type = "user"
 
@@ -144,11 +151,17 @@ ram.runtime = "2500M"
     main.default = 8770
     embed.default = 8771
     rerank.default = 8774
+    page.default = 8775
 
     # llama-server's OpenMP runtime.
     [resources.apt]
     packages = ["libgomp1"]
 
-    # No web page: the AI gateway reaches the server on loopback.
+    # The page, for the docs user only (docs_page_access); the AI gateway
+    # reaches the tools on loopback, never through nginx.
     [resources.permissions]
-    main.show_tile = false
+    main.url = "/"
+    main.auth_header = true
+    main.show_tile = true
+    # Blocks adding the visitors group.
+    main.protected = true

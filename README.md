@@ -20,6 +20,17 @@ writable. Meant to sit behind an MCP gateway.
 
 Each tool, its arguments and its limits: [MCP tools](doc/mcp.md).
 
+## The page
+
+The user chosen at install, and only them, opens the app's page through the
+portal:
+
+- **Status**: how the last index run went and what the index holds, whether
+  the embedding and ranking servers answer, and which folders can be read
+  or written.
+- **Search**: the same search as `search_documents`, the best passage of
+  each file.
+
 Paths start with a folder's label, such as `Documents/Factures`.
 
 ## Install

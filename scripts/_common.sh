@@ -466,6 +466,12 @@ docs_configure() {
         echo "DOCS_GATEWAY_TOKEN=$token"
         echo "DOCS_GATEWAY_USER=$docs_user"
         echo "DOCS_GATEWAY_FOLDERS=$whoopy_labels"
+        echo "DOCS_PAGE_PORT=$port_page"
+        echo "DOCS_PAGE_USER=$docs_user"
+        token=$(ynh_app_setting_get --key=panel_token)
+        token=${token:-$(ynh_string_random --length=64)}
+        ynh_app_setting_set --key=panel_token --value="$token"
+        echo "DOCS_PANEL_TOKEN=$token"
         [ -z "$nextcloud_env" ] || echo "$nextcloud_env"
         token=""
     } > "$install_dir/docs.env"
@@ -492,9 +498,27 @@ docs_configure() {
     ynh_config_add --template="index.path" --destination="/etc/systemd/system/$app-index.path"
     ynh_config_add --template="ping@.service" --destination="/etc/systemd/system/$app-ping@.service"
     systemctl daemon-reload
+    # nginx sends the panel token, read untraced; ynh_config_add_nginx
+    # substitutes it with the trace off.
+    set +o xtrace
+    panel_token=$(ynh_app_setting_get --key=panel_token)
+    ynh_config_add_nginx
+    panel_token=""
+    set -o xtrace
+    docs_page_access
     yunohost service add "$app" --description="Cheruby Docs, MCP tools on users' folders"
     yunohost service add "$app-embed" --description="Cheruby Docs, embedding model for the search index"
     yunohost service add "$app-rerank" --description="Cheruby Docs, reranking model for search results"
+}
+
+# The page shows the docs user's folders and index: that user alone may open
+# it, whatever the permission held before, a change of user included.
+docs_page_access() {
+    local who
+    for who in $(yunohost user permission info "$app.main" --output-as json | jq -r '.allowed[]'); do
+        [ "$who" = "$docs_user" ] || ynh_permission_update --permission=main --remove="$who"
+    done
+    ynh_permission_update --permission=main --add="$docs_user"
 }
 
 # The app's user reaches on loopback only the ports it needs (B-P-5): a

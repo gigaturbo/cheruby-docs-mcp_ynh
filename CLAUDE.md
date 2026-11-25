@@ -17,6 +17,9 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   the indexer and the index format, `folders.rs` and `nextcloud.rs` the
   folders and their filters, `text.rs` and `passages.rs` the text inside a
   file and how it is cut, `embed.rs` the embedding and reranking servers.
+- `cheruby-docs/src/web.rs`, `cheruby-docs/assets/`: the page (Status,
+  Search), a static `index.html` and a JSON API, served by the tool server
+  on its own port; `conf/nginx.conf` puts it behind the portal.
 - `conf/systemd.service`, `embed.service`, `rerank.service`, `index.service`,
   `index.timer`, `index.path`: the sandboxed units.
 - `config_panel.toml`, `scripts/config`: the sources, the index schedule
@@ -38,7 +41,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 - **Four units, one user** `cheruby-docs-mcp`, all on loopback:
   - `cheruby-docs-mcp.service`, the tool server (`cheruby-docs serve`).
     Whoopy reaches it with one token, chosen in the config panel: one user,
-    some of their folders.
+    some of their folders. The same process serves the page on port setting
+    `port_page`, for the docs user only, with nginx's `X-Panel-Token`.
   - `cheruby-docs-mcp-embed.service`, llama-server (a pinned release, built
     for the Pi 5 by the repository's workflow), with the embedding model chosen in the panel: EmbeddingGemma
     300M (default), jina-embeddings-v5-text-nano or Qwen3-Embedding 0.6B,
@@ -61,7 +65,7 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   writes. The settings are the rest: `docs_user`, each source's
   `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
   `<source>_writable`, `nextcloud_account`, `nextcloud_password`,
-  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*`, `mcp_token` and `whoopy_folders`; configure renders `folders.json`, the
+  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*`, `mcp_token`, `panel_token`, `whoopy_folders`, `domain` and `path`; configure renders `folders.json`, the
   env files and the units from them.
 - **"Run now on the desktop"** has Whoopy's Ollama embed one run's
   passages, after checking its vectors agree with the Pi's; the timer
