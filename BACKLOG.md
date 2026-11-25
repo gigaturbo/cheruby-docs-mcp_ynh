@@ -58,7 +58,93 @@ vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
 which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
+### F-P-9 · a page for the docs user: Status and Search
+
+`wip` `medium` `filed 2026-11-25`
+
+The config panel has grown too many screens, and nothing shows the index or
+lets the user search without an agent.
+
+**Do:** a pokestyle page in the tool server's process, on its own loopback
+port behind nginx and the portal, for the docs user alone: Status (index
+runs, servers, folders) and Search (the best passage of each file). Read-only:
+it changes nothing yet. An install from before needs its domain and path
+set first (`doc/PRE_UPGRADE.d/0.13.0~ynh1.md`).
+
+### F-P-10 · the settings that do not confine the app move to the page
+
+`todo` `large` `filed 2026-11-25`
+
+After F-P-9. The panel keeps who and what the app reaches: the user, the
+sources and folders, writable, Whoopy's folders, the Nextcloud login, the
+MCP token and the health ping.
+
+**Do:** `/var/lib/cheruby-docs-mcp/settings.json`, the app's own, backed up:
+the embedding engine (local, or a remote OpenAI-compatible endpoint always
+or on demand, its URL resolving to loopback unless the panel's "Allowed
+remote host" opens another), the models (fetched by a root oneshot from a
+pinned table, on a request), the schedule run inside the server in place of
+the timer, the quiet hours and the only/skip filters. The upgrade moves the
+panel's values there.
+
+### F-P-11 · move the page with change_url
+
+`todo` `small` `filed 2026-11-25`
+
+Since F-P-9 the app has a domain and a path, but no `scripts/change_url`:
+`yunohost app change-url` refuses it, and the page can be moved only by a
+remove and an install.
+
+**Do:** `scripts/change_url` from the family's, re-rendering nginx.
+
+### F-M-20 · transcribe a recording on the Pi
+
+`todo` `large` `filed 2026-11-25`
+
+An agent finds a recording, has it transcribed, cleans the text, then saves
+it and moves the recording; all but the transcription exists.
+
+**Do:** whisper.cpp's `whisper-server`, built for the Pi 5 like
+llama-server, as a unit on loopback (small-q8_0 by default, large-v3-turbo-q8_0
+as the choice, Silero VAD); `transcribe_file` on an audio file of the
+folders: decoded by ffmpeg from an argument list with protocol and format
+whitelists, cut in 10-minute parts at a quiet point, timestamps by default,
+the language detected once then fixed, paged from a cache; the page's
+Transcribe tab, from a folder or an upload.
+
+### F-M-21 · transcribe on a remote OpenAI-compatible endpoint
+
+`todo` `medium` `filed 2026-11-25`
+
+After F-M-20 and F-P-10. Here the endpoint is Whoopy's LiteLLM, whose
+`speaches/*` route (Whoopy's own item) wakes the desktop and reaches
+Speaches through froaky's proxy.
+
+**Do:** the speech engine's remote, always or on demand, as for embedding;
+retries while the desktop wakes; `engine` on the tool.
+
+### F-M-22 · speaker labels in transcripts
+
+`todo` `medium` `filed 2026-11-25`
+
+Blocked: Speaches 0.9's `/v1/audio/diarization` (pyannote community-1,
+gated, a Hugging Face token) is not in froaky's image, and pyannote may not
+run on the 1080 Ti.
+
+**Do:** once it runs on the desktop, merge its speaker turns with the
+transcript's segments.
+
 ## Tests
+
+### T-P-7 · the page opens for the docs user only
+
+`todo` `playtest` `filed 2026-11-25`
+
+**Check:** through the portal, the docs user opens the page, Status matches
+`sudo cheruby-docs-mcp status`, Search finds a known document; another user
+is refused by the portal; `curl` on the loopback port without the panel
+token gets 401; `check_page.py` at every size, with no fault; the panel
+token in no log.
 
 ### T-M-5 · an agent's run_index reaches the index and nothing else
 
