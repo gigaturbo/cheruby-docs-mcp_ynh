@@ -13,6 +13,22 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
+### B-M-3 · a file once opened in Nextcloud's Text refuses writes for days
+
+`open` `medium` `filed 2026-11-25`
+
+17 `write_file` calls into `Notes` were refused since 2026-11-18 with
+"Nextcloud answered 423." Text takes a files_lock app lock on each file
+opened in it and, in Text 8.0.0, keeps it when the session ends without a
+clean close: 10 locks held on 2026-11-25, the oldest since 2026-09-11
+(nextcloud/text#9042). Not this app's doing, and no client can write past
+an app lock. The package now names the Text editor in the refusal.
+
+**Fix:** upstream, in Text 8.0.2 (NC 34.0.7), whose repair step releases
+locks with no open session. Until then, ask first, then per file nobody
+has open: `occ files:lock --unlock <file id> <user>`. Close once 34.0.7 is
+installed and `oc_files_lock` holds no `text` lock older than a day.
+
 ### B-P-3 · runs the tools ask for ping healthchecks.io like scheduled runs
 
 `open` `low` `filed 2026-11-21`
@@ -58,6 +74,14 @@ which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
 ## Tests
+
+### T-M-3 · writes land in the writable folders only
+
+`todo` `playtest` `filed 2026-11-21`
+
+Reopened by F-M-19 and B-M-3: `move_file` moves and renames in the writable
+folders, the folder walk is shared with `write_file`, and a 423 names the
+Text editor. Last done 2026-11-21 at `ed08fb3`: on disk and in Nextcloud: created, replaced, read back; a new file 660 and folder 770 in the folder's group, a replaced file keeping its owner and mode; a `.pdf`, a hidden name, `..`, an unknown folder, a link to a folder and a link to a file refused; a read-only folder refused by the tool and by its read-only mount; another source's label and a multimedia folder refused at save; Nextcloud kept the old version; the file reached the author's device
 
 ### T-P-1 · the installed server reads only its folders
 
@@ -105,12 +129,13 @@ there after restore, gone after remove.
 
 ## Closed
 
+- `F-M-19` done 2026-11-25 · `move_file` moves or renames a file or a folder within one writable folder, on disk and in Nextcloud, never replacing, never across a share, never changing what the filters keep
+- `T-M-1` done `spec` 2026-11-25 at `1d71e1a` · `tests/check_server.py` 206 of 206 against the binary, `move_file` and the Text lock included; `cargo test` 23 of 23
 - `B-P-5` closed 2026-11-25 · the four units could reach every loopback service, PostgreSQL, LDAP, the YunoHost API and Redis among them, over IPv4 and `::1`
 - `F-P-8` done 2026-11-25 · the README, `doc/mcp.md`, the config panel, the New token message and `token --new` say to add the server `docs` on Whoopy's status page and to change its token in Whoopy's admin page
 - `F-P-7` done 2026-11-22 · `sudo cheruby-docs-mcp token [--new]` and the gateway token named `mcp_token`, as in the other MCP apps; the read and status commands pass to the binary (0.11.0~ynh2, installed 2026-11-22)
 - `F-M-18` done `small` 2026-11-22 · each tool, its arguments and its limits in `doc/mcp.md`, in the layout the other MCP apps share; the README keeps a short list and the commands name the tool each mirrors; `search_documents`' `before` documented as inclusive
 - `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
-- `T-M-3` done `playtest` 2026-11-21 at `ed08fb3` · on disk and in Nextcloud: created, replaced, read back; a new file 660 and folder 770 in the folder's group, a replaced file keeping its owner and mode; a `.pdf`, a hidden name, `..`, an unknown folder, a link to a folder and a link to a file refused; a read-only folder refused by the tool and by its read-only mount; another source's label and a multimedia folder refused at save; Nextcloud kept the old version; the file reached the author's device
 - `T-P-4` done `playtest` 2026-11-21 at `ed08fb3` · Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed
 - `T-P-5` done `playtest` 2026-11-21 at `ed08fb3` · no `nextcloud` group; a wrong app password refused at save, with no failed login counted; a PDF in Notes read, found and searched; an unchanged run sent one PROPFIND; a revoked password refused once each by the server, the indexer and the panel, then nothing sent, the panel naming it; a new one brought Notes back; no password in the logs. No share from another account to try
 - `T-M-4` done `playtest` 2026-11-21 at `ed08fb3` · 340 files indexed on the desktop in 2 min, the same search as the Pi's index; Whoopy stopped 30 s into a run: the run went on on the Pi and ended done in 36 min, no file failed for it; the key in no log. The Whoopy key first allowed only `ollama/...` and got 403, the run then on the Pi as it should
@@ -118,7 +143,6 @@ there after restore, gone after remove.
 - `T-M-5` done `playtest` 2026-11-21 at `940adcd` · on 0.11.0: `run_index` of one PDF answered "indexed" in 1 s and ran that file only; everything asked for answered at once; `..` refused; inside the server's namespace the index, its status file and the code are read-only, `requests/` writable; the path unit never restarted the indexer; done with an existing file, no note written
 - `F-M-17` done `medium` 2026-11-21 · `run_index` asks the index unit through a request in `requests/` and a path unit, for some files or everything; each request answered in the status file; refused in the quiet hours, past 50 files or 20 waiting requests, for one waiting 5 minutes, and for everything within 15 minutes of the last full run (0.11.0)
 - `F-P-6` done `large` 2026-11-21 · the tool server, the indexer and their commands one Rust binary, release `cheruby-docs-0.11.0`, with PDFium chromium/8076, the build pypdfium2 shipped; the same passages as the Python on 401 files; the upgrade kept the index (model, 4,833 passages, 428 files unchanged) and search answered by meaning in 3 s (0.11.0)
-- `T-M-1` done `spec` 2026-11-21 at `d9ba5fb` · `tests/check_server.py` 177 of 177 against the binary, `run_index` included; the 6 checks of a run's inside moved to `cargo test`, 22 of 22
 - `F-P-5` done `medium` 2026-11-19 · the redrawn icon set from ynh-app-icons 0ca6205: `conf/logo.png` and `doc/logo.svg` replaced, `logo_update/` deleted (0.10.1)
 - `F-M-10` done `medium` 2026-11-19 · "Run now on the desktop" embeds a run through Whoopy's `ollama-embed/` route (Whoopy F-P-3) with a pasted key, after 20 check passages agree to 0.995 (0.9997 measured); a Whoopy error sends the rest of the run to the Pi; never used by the timer
 - `F-P-2` done `medium` 2026-11-18 · embedding model chosen in the panel (EmbeddingGemma 300M, jina-embeddings-v5-text-nano, Qwen3-Embedding 0.6B, each Q8 or Q4), pinned by commit and sha256, prompts per family, a change downloads first and re-indexes; scored on 17 queries with the time of a full index: EmbeddingGemma Q8 16/17, MRR 0.88, 38 min (kept as default); EmbeddingGemma Q4 16/17, MRR 0.81, 36 min; jina Q8 16/17, MRR 0.85, 29 min; Qwen3 Q8 15/17, MRR 0.79, 112 min.
