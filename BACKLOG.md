@@ -68,6 +68,8 @@ CC-BY-NC-4.0.
 
 Reopened by B-P-3: the index unit's first step decides a tools' run, and a request waiting at a timer run is now answered by the full run.
 
+2026-11-25 at `5b8fad7`, 0.12.1~ynh1 installed: `run-index` of one note skipped `ping@start` and `ping@0` on their condition and left `tools-run`; Run now then sent both pings and dropped it. The rest of the check not run.
+
 **Check:** the skill's T-M-5, plus: after a `run_index`, `journalctl -u 'cheruby-docs-mcp-ping@*'` shows the ping units skipped on their condition, and healthchecks.io logged nothing; "Run now" still pings start and success.
 
 ### T-P-6 · the index runs on the chosen schedule, from the panel
