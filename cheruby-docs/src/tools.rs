@@ -520,6 +520,23 @@ fn ranked(
     Ok(scores.into_iter().map(|(id, _)| id).collect())
 }
 
+/// One result of a search: the best passage of a file.
+#[derive(serde::Serialize)]
+pub struct Hit {
+    /// The file's path, with ", page N" for a page of a PDF.
+    pub place: String,
+    pub date: String,
+    pub text: String,
+}
+
+/// What a search found, best first, and what limited it.
+#[derive(serde::Serialize)]
+pub struct Search {
+    pub updated: String,
+    pub notes: Vec<&'static str>,
+    pub hits: Vec<Hit>,
+}
+
 /// Find passages of documents by what they say, in the user's words.
 pub async fn search_documents(
     ctx: &Ctx,
@@ -529,6 +546,34 @@ pub async fn search_documents(
     before: String,
     limit: i64,
 ) -> ToolResult<String> {
+    let query = query.py_trim().to_string();
+    let found = search(ctx, query.clone(), path, after, before, limit).await?;
+    let mut head = format!("[index updated {}]\n", found.updated);
+    for note in &found.notes {
+        head += &format!("[{note}]\n");
+    }
+    head += "\n";
+    if found.hits.is_empty() {
+        return Ok(format!("{head}Nothing matches {}.", py_repr(&query)));
+    }
+    let blocks: Vec<String> = found
+        .hits
+        .iter()
+        .map(|h| format!("--- {} ({}) ---\n{}", h.place, h.date, h.text))
+        .collect();
+    Ok(head + &blocks.join("\n\n"))
+}
+
+/// The search behind search_documents and the page's Search tab: the best
+/// passage of each file, at most limit of them.
+pub async fn search(
+    ctx: &Ctx,
+    query: String,
+    path: String,
+    after: String,
+    before: String,
+    limit: i64,
+) -> ToolResult<Search> {
     let query = query.py_trim().to_string();
     if query.is_empty() {
         return Err("query is empty.".into());
@@ -661,23 +706,16 @@ pub async fn search_documents(
         .filter(|id| files.insert(rows[id].0.clone()))
         .collect();
     let limit = limit.clamp(1, MAX_RESULTS as i64) as usize;
-    let mut head = format!(
-        "[index updated {}]\n",
-        found.meta.get("updated").map(String::as_str).unwrap_or("?")
-    );
+    let mut notes = Vec::new();
     if rebuilding {
-        head += "[the index is being rebuilt for a new embedding model; keyword matches only]\n";
+        notes.push("the index is being rebuilt for a new embedding model; keyword matches only");
     } else if !meaning {
-        head += "[search by meaning is unavailable; keyword matches only]\n";
+        notes.push("search by meaning is unavailable; keyword matches only");
     }
     if !ctx.docs.rerank_url.is_empty() && pages.len() > 1 && reranked.is_none() {
-        head += "[ranking by relevance is unavailable; results in a rougher order]\n";
+        notes.push("ranking by relevance is unavailable; results in a rougher order");
     }
-    head += "\n";
-    if best.is_empty() {
-        return Ok(format!("{head}Nothing matches {}.", py_repr(&query)));
-    }
-    let blocks: Vec<String> = best
+    let hits = best
         .iter()
         .take(limit)
         .map(|id| {
@@ -687,10 +725,22 @@ pub async fn search_documents(
             } else {
                 shown.clone()
             };
-            format!("--- {place} ({}) ---\n{text}", date(*mtime_ns))
+            Hit {
+                place,
+                date: date(*mtime_ns),
+                text: text.clone(),
+            }
         })
         .collect();
-    Ok(head + &blocks.join("\n\n"))
+    Ok(Search {
+        updated: found
+            .meta
+            .get("updated")
+            .cloned()
+            .unwrap_or_else(|| "?".into()),
+        notes,
+        hits,
+    })
 }
 
 /// "indexed", or what else the published index says of a file.
