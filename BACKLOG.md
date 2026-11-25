@@ -227,6 +227,7 @@ there after restore, gone after remove.
 
 ## Closed
 
+- `B-P-6` closed 2026-11-25 · the page answered 404 on 0.13.0~ynh1: configure's folder loop kept a local `path`, which ynh_config_add_nginx took for the app's path
 - `B-P-4` closed 2026-11-25 · during a run the panel said "the schedule is never." on an hourly schedule; it now says "after this run" while the timer is on
 - `B-P-3` closed 2026-11-25 · a run `run_index` started pinged healthchecks.io like a timer run, so an agent could keep the check green; such a run now pings nothing
 - `T-M-3` done `playtest` 2026-11-25 at `b649caf` · on disk (Syncthing Documents) and in Nextcloud (Notes): a file moved, a folder renamed, a move onto a name, into itself, into a missing folder and across folders refused; moved files kept 660, folders 770, the folder's group; a Text-locked file refused with the Text message and left unchanged; test files deleted

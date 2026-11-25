@@ -336,8 +336,9 @@ docs_check_downloads() {
 # (the tokens), both root 600, the units' read-only bind mounts, and the
 # groups the units join to read the folders on disk. Each token is made once
 # and kept in the settings.
+# Never name a local "path" here: ynh_config_add_nginx fills __PATH__ from $path.
 docs_configure() {
-    local label path group token only skip line nextcloud_env="" nc_ready=0
+    local label folder group token only skip line nextcloud_env="" nc_ready=0
     local -A groups_seen=()
     # Every folder on disk for the indexer; read-only or writable for the tool server.
     bind_paths=""
@@ -378,10 +379,10 @@ docs_configure() {
     # Tags settings hold their values joined by ",".
     local entries="{}"
     for label in "${!folder_path[@]}"; do
-        path=${folder_path[$label]}
+        folder=${folder_path[$label]}
         only=${folder_source[$label]}_only
         skip=${folder_source[$label]}_skip
-        entries=$(jq -c --arg l "$label" --arg p "$path" --arg only "${!only:-}" --arg skip "${!skip:-}" \
+        entries=$(jq -c --arg l "$label" --arg p "$folder" --arg only "${!only:-}" --arg skip "${!skip:-}" \
             --arg w "${folder_writable[$label]:-}" \
             '.[$l] = (if $p | startswith("nextcloud:") then {nextcloud: ($p | ltrimstr("nextcloud:"))} else {path: $p} end)
                      + {only: ($only | split(",") | map(select(length > 0))),
@@ -389,13 +390,13 @@ docs_configure() {
                      + (if $w == "1" then {writable: true} else {} end)' <<< "$entries")
         # Nextcloud's folders are read through Nextcloud, not on disk.
         [ "${folder_source[$label]}" = nextcloud ] && continue
-        bind_paths+=" \"$path\""
+        bind_paths+=" \"$folder\""
         if [ -n "${folder_writable[$label]:-}" ]; then
-            write_paths+=" \"$path\""
+            write_paths+=" \"$folder\""
         else
-            read_paths+=" \"$path\""
+            read_paths+=" \"$folder\""
         fi
-        group=$(stat -c %G "$path")
+        group=$(stat -c %G "$folder")
         if [ -z "${groups_seen[$group]:-}" ]; then
             groups_seen[$group]=1
             groups+=" $group"
