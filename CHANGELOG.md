@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.13.0~ynh1 (not released)
+## 0.13.0~ynh1
 
 - A page for the docs user, behind the portal: Status (index runs, servers, folders) and Search (the best passage of each file). Only that user may open it. An install from before needs a domain and a path set first: see [before upgrading](doc/PRE_UPGRADE.d/0.13.0~ynh1.md).
 
