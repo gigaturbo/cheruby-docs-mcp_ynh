@@ -13,6 +13,14 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
+### B-P-5 · the units can reach every service on loopback
+
+`open` `medium` `filed 2026-11-24`
+
+All four units allow `localhost`, which opens every loopback TCP port on `127.0.0.1` and `::1`: PostgreSQL, LDAP, the YunoHost API, a Redis with no password. Code run inside one through a flaw in a file parser would reach them.
+
+**Fix:** the per-uid nftables table in the `mcp-server-dev` skill (`references/deploy.md`, Loopback by port), first applied in cheruby-search-mcp (its B-P-1), allowing DNS, the embedding and reranking ports and what the Nextcloud source needs; `IPAddressAllow=127.0.0.0/8` closes `::1` meanwhile.
+
 ### B-P-3 · runs the tools ask for ping healthchecks.io like scheduled runs
 
 `open` `low` `filed 2026-11-21`
@@ -95,6 +103,7 @@ there after restore, gone after remove.
 
 ## Closed
 
+- `F-P-8` done 2026-11-25 · the README, `doc/mcp.md`, the config panel, the New token message and `token --new` say to add the server `docs` on Whoopy's status page and to change its token in Whoopy's admin page
 - `F-P-7` done 2026-11-22 · `sudo cheruby-docs-mcp token [--new]` and the gateway token named `mcp_token`, as in the other MCP apps; the read and status commands pass to the binary (0.11.0~ynh2, installed 2026-11-22)
 - `F-M-18` done `small` 2026-11-22 · each tool, its arguments and its limits in `doc/mcp.md`, in the layout the other MCP apps share; the README keeps a short list and the commands name the tool each mirrors; `search_documents`' `before` documented as inclusive
 - `T-M-2` done `playtest` 2026-11-21 at `ed08fb3` · on 0.11.0: 16 of 17 in the top 5, mean reciprocal rank 0.88, 4.1 s at most, 3.5 s a search, as on 2026-11-18; the publications list still missed; the same on an index embedded on the desktop
