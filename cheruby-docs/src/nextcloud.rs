@@ -300,6 +300,15 @@ impl Nextcloud {
                 "Nextcloud does not let the app's account change it.".into(),
             ));
         }
+        // A lock no client can write past: Text keeps one on every file opened
+        // in it, sometimes long after it is closed (nextcloud/text#9042).
+        if code == 423 {
+            return Err(Error::User(
+                "Nextcloud holds a lock on it: it is, or was, open in Nextcloud's Text editor. \
+                 Close it there, or ask the admin to unlock it."
+                    .into(),
+            ));
+        }
         if !expected.contains(&code) {
             return Err(answered(code));
         }
