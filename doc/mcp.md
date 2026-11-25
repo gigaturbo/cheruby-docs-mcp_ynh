@@ -9,9 +9,11 @@ without it the answer is 401.
 Two tokens open it:
 
 - **The Whoopy token**, for the gateway: the user's folders, or the ones
-  listed under "Whoopy access" in the config panel. Paste it in Whoopy's
-  panel, under Documents. Whoopy publishes the tools at `/mcp/docs`, to the
-  local network and WireGuard only, and to the keys granted `docs`.
+  listed under "Whoopy access" in the config panel. Add the address and
+  this token on Whoopy's status page (MCP Servers tab), or in its admin
+  page, as the server `docs`, with the token as Bearer. Whoopy publishes
+  the tools at `/mcp/docs`, to the local network and WireGuard only, and to
+  the keys granted `docs`.
 - **The user's own token**, on all their folders, for a client on the
   server itself.
 
@@ -23,7 +25,8 @@ sudo cheruby-docs-mcp token --new
 ```
 
 `--new` presses the panel's "New token" button: the old token stops working
-at once, so paste the new one in Whoopy. The user's own token has no button.
+at once, so give the new one to the server `docs` in Whoopy's admin page,
+MCP Servers. The user's own token has no button.
 
 Paths start with a folder's label, such as `Documents/Factures`.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- How to add the server to Whoopy since its 0.2.0~ynh5: on Whoopy's status page, as the server `docs`; a new token is given to it in Whoopy's admin page.
+
 ## 0.11.0~ynh2
 
 - `sudo cheruby-docs-mcp token` shows the address and the tokens, and `token --new` makes a new Whoopy token, as the panel's "New token" does. Every other command of the binary answers as `sudo cheruby-docs-mcp <command>`.

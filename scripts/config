@@ -309,7 +309,7 @@ run__new_token() {
     docs_configure
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="cheruby-docs: MCP at" --timeout=60
-    ynh_print_info "A new token is in the panel. Paste it in Whoopy: the old one no longer works."
+    ynh_print_info "A new token is in the panel: the old one no longer works. Give it to the server docs in Whoopy's admin page, MCP Servers."
 }
 
 run__run_index() {

@@ -77,9 +77,11 @@ It is one binary, built for the Pi 5 from `cheruby-docs/` in this
 repository and downloaded at install, with PDFium to read PDFs.
 
 The gateway gets its own token, shown in the config panel under "MCP
-token", with the address to paste beside it. It opens all the folders, or the
+token", with its address beside it: add both on Whoopy's status page (MCP
+Servers tab) as the server `docs`. It opens all the folders, or the
 ones listed under "Whoopy access", and searches the user's index. "New token",
-or `sudo cheruby-docs-mcp token --new`, replaces it. The user also has a token
+or `sudo cheruby-docs-mcp token --new`, replaces it; give the new one to the
+server `docs` in Whoopy's admin page, MCP Servers. The user also has a token
 of their own, on all the folders. `sudo cheruby-docs-mcp token` shows the
 address and both tokens. Whoopy publishes the tools to the local network and
 WireGuard only.

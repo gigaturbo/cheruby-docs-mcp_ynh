@@ -38,7 +38,7 @@ case "${2:-}" in
         # holds the token as a read-only value, so only its errors are shown.
         yunohost app action run __APP__ main.mcp.new_token > /dev/null
         echo "A new Whoopy token is made: the old one no longer works."
-        echo "Paste it in Whoopy's panel, under Documents. See it with: sudo __APP__ token"
+        echo "Give it to the server docs in Whoopy's admin page, MCP Servers. See it with: sudo __APP__ token"
         ;;
     *)
         echo "usage: __APP__ token [--new]" >&2
