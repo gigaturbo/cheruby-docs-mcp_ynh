@@ -501,17 +501,27 @@ docs_configure() {
 # table in /etc/nftables.d, which every boot and firewall reload loads after
 # its flush. A file nftables cannot load would leave the host with no
 # firewall at boot, so the whole set is checked before this table is loaded
-# alone, leaving the other tables as they are.
+# alone, leaving the other tables as they are. A set already broken without
+# it is the host's problem, not this table's: warned, never fatal, so an
+# upgrade or a restore does not fail on it.
 docs_firewall() {
-    local uid ports remote_port file="/etc/nftables.d/$app.conf"
+    local uid ports remote_port baseline=1 file="/etc/nftables.d/$app.conf"
     uid=$(id -u "$app")
     ports="$port_embed, $port_rerank, 443"
     remote_port=$(sed -n 's|^http://127\.0\.0\.1:\([0-9]*\)/\?$|\1|p' <<< "${remote_url:-}")
     [ -z "$remote_port" ] || ports+=", $remote_port"
+    [ -e "$file" ] && mv "$file" "$file.previous"
+    nft -c -f /etc/nftables.conf > /dev/null 2>&1 || baseline=0
     ynh_config_add --template="nftables.conf" --destination="$file"
-    if ! nft -c -f /etc/nftables.conf; then
+    if [ "$baseline" = 1 ] && ! nft -c -f /etc/nftables.conf; then
         ynh_safe_rm "$file"
-        ynh_die "nftables refuses $file; it is removed and nothing was loaded."
+        [ -e "$file.previous" ] && mv "$file.previous" "$file"
+        ynh_die "nftables refuses the new $file; the previous one is kept and nothing was loaded."
+    fi
+    ynh_safe_rm "$file.previous"
+    if [ "$baseline" = 0 ]; then
+        ynh_print_warn "The host's nftables set fails to load without this app's table: check /etc/nftables.conf and /etc/nftables.d. This table is loaded alone meanwhile."
+        nft -c -f "$file" || ynh_die "nftables refuses $file."
     fi
     nft -f "$file"
 }

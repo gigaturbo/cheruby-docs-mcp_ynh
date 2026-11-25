@@ -24,6 +24,13 @@ for old in venv .uv requirements.txt cheruby_docs_mcp.py docs_files.py docs_inde
 done
 ynh_app_setting_delete --key=build_fingerprint
 
+# The units reach 127.0.0.1 only, and the loopback table opens Whoopy's port
+# from this address alone (B-P-5).
+if [[ "${remote_url:-}" =~ ^http://(localhost|\[::1\])(:[0-9]+/?)$ ]]; then
+    remote_url="http://127.0.0.1${BASH_REMATCH[2]}"
+    ynh_app_setting_set --key=remote_url --value="$remote_url"
+fi
+
 if [ "$fetch_llama" = 1 ]; then
     ynh_script_progression "Fetching the embedding server and its models..."
     docs_fetch_llama
