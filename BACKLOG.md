@@ -73,19 +73,43 @@ set first (`doc/PRE_UPGRADE.d/0.13.0~ynh1.md`).
 
 ### F-P-10 · the settings that do not confine the app move to the page
 
-`todo` `large` `filed 2026-11-25`
+`doing` `large` `filed 2026-11-25`
 
 After F-P-9. The panel keeps who and what the app reaches: the user, the
 sources and folders, writable, Whoopy's folders, the Nextcloud login, the
 MCP token and the health ping.
 
 **Do:** `/var/lib/cheruby-docs-mcp/settings.json`, the app's own, backed up:
-the embedding engine (local, or a remote OpenAI-compatible endpoint always
-or on demand, its URL resolving to loopback unless the panel's "Allowed
-remote host" opens another), the models (fetched by a root oneshot from a
-pinned table, on a request), the schedule run inside the server in place of
-the timer, the quiet hours and the only/skip filters. The upgrade moves the
-panel's values there.
+the schedule run inside the server in place of the timer, the quiet hours
+and the only/skip filters, changed on the page's Config tab with no
+restart. The upgrade moves the panel's values there. healthchecks.io gets
+a fail ping only, so B-P-3's `tools-run` marker goes. The models are
+F-P-12, the engine F-P-13.
+
+### F-P-12 · the embedding model chosen on the page
+
+`todo` `medium` `filed 2026-11-25`
+
+After F-P-10. The panel still chooses the embedding model, and the change
+needs root: a download, the embedding unit's model and memory, the model id
+in both env files.
+
+**Do:** the page asks, a root oneshot started by a path unit fetches the
+model from a pinned table (the manifest's sources), checks its sha256,
+stops the index, renders the embedding unit and restarts it. The request
+names a model only; root never follows a link of the app's.
+
+### F-P-13 · embed on a remote OpenAI-compatible endpoint, always or on demand
+
+`todo` `medium` `filed 2026-11-25`
+
+After F-P-10. "Run now on the desktop" is the only remote embedding, Whoopy
+on loopback the only endpoint.
+
+**Do:** on the page, the engine: local, or a remote endpoint always or on
+demand, its key never shown back. Its URL resolves to loopback unless the
+panel's "Allowed remote host" opens another, which configure adds to the
+units' `IPAddressAllow` and the nftables table. The cosine check stays.
 
 ### F-P-11 · move the page with change_url
 
@@ -99,7 +123,7 @@ remove and an install.
 
 ### F-M-20 · transcribe a recording on the Pi
 
-`todo` `large` `filed 2026-11-25`
+`doing` `large` `filed 2026-11-25`
 
 An agent finds a recording, has it transcribed, cleans the text, then saves
 it and moves the recording; all but the transcription exists.
