@@ -24,10 +24,12 @@ clean close: 10 locks held on 2026-11-25, the oldest since 2026-09-11
 (nextcloud/text#9042). Not this app's doing, and no client can write past
 an app lock. The package now names the Text editor in the refusal.
 
-**Fix:** upstream, in Text 8.0.2 (NC 34.0.7), whose repair step releases
-locks with no open session. Until then, ask first, then per file nobody
-has open: `occ files:lock --unlock <file id> <user>`. Close once 34.0.7 is
-installed and `oc_files_lock` holds no `text` lock older than a day.
+**Fix:** upstream, in Text 9.0.3 (NC 35.0.4; 8.0.2 in NC 34.0.7), whose
+repair step releases locks with no open session. Nextcloud 35.0.3, installed
+on 2026-11-25, has Text 9.0.2, still without it. Until then, ask first, then
+per file nobody has open: `occ files:lock --unlock <file id> <user>`. Close
+once 35.0.4 is installed and `oc_files_lock` holds no `text` lock older than
+a day.
 
 2026-11-25: the ten Text locks released (no session for 48 minutes or
 more), then a `write_file` of `INDEX.md`'s own text passed. The 423 message

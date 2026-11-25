@@ -39,9 +39,10 @@ Paths start with a folder's label, such as `Documents/Factures`.
   through a link, and never into the last 2 GB of the disk. The three write
   tools are offered only when a folder is writable.
 - **A file open in Nextcloud's Text editor cannot be changed.** Text locks
-  the file while it is open, and Nextcloud refuses every other write. With
-  Text 8.0.0 the lock can outlive the editor, for days: an upstream bug
-  (nextcloud/text#9042), fixed for Nextcloud 34.0.7. Until then the admin
+  the file while it is open, and Nextcloud refuses every other write. Up
+  to Text 8.0.1 (Nextcloud 34) and 9.0.2 (Nextcloud 35) the lock can outlive
+  the editor, for days: an upstream bug (nextcloud/text#9042), fixed in
+  Nextcloud 34.0.7 and 35.0.4. Until then the admin
   unlocks it with `occ files:lock --unlock <file id> <user>`, once nobody
   has it open.
 - **Only the token's folders.** Search keeps to them too.
