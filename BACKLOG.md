@@ -36,28 +36,6 @@ more), then a `write_file` of `INDEX.md`'s own text passed. The 423 message
 was seen on it before. A manual lock of 2026-09-22 on a file since deleted
 (id 1718) is kept: not Text's.
 
-### B-P-3 · runs the tools ask for ping healthchecks.io like scheduled runs
-
-`open` `low` `filed 2026-11-21`
-
-A run started by `run_index` sends the same start and success pings as a
-timer run. An agent calling it regularly keeps the check green while the
-timer has stopped or every full run fails (R9's silent failure).
-
-**Fix:** leave the pings out of a files-only run, with a marker the ping
-unit can read, or ping a second check for those runs.
-
-### B-P-4 · the panel says "the schedule is never" while a timer run goes on
-
-`open` `low` `filed 2026-11-21`
-
-While the index unit runs, its timer has no next elapse, so `status` in
-`main.rs` reads the empty `NextElapseUSecRealtime` as "none: the schedule
-is never." on an hourly schedule. The Python had the same since 0.6.0.
-
-**Fix:** say "after this run" when the unit is active and the schedule is
-not `never`.
-
 ## Features
 
 ### F-M-6 · read scans and images into the search index
@@ -81,6 +59,36 @@ which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
 ## Tests
+
+### T-M-5 · an agent's run_index reaches the index and nothing else
+
+`todo` `playtest` `filed 2026-11-21`
+
+**Last:** 2026-11-21 at `940adcd`, on 0.11.0: `run_index` of one PDF answered "indexed" in 1 s and ran that file only; `..` refused; inside the server's namespace only `requests/` writable; the path unit never restarted the indexer.
+
+Reopened by B-P-3: the index unit's first step decides a tools' run, and a request waiting at a timer run is now answered by the full run.
+
+**Check:** the skill's T-M-5, plus: after a `run_index`, `journalctl -u 'cheruby-docs-mcp-ping@*'` shows the ping units skipped on their condition, and healthchecks.io logged nothing; "Run now" still pings start and success.
+
+### T-P-6 · the index runs on the chosen schedule, from the panel
+
+`todo` `playtest` `filed 2026-11-21`
+
+**Last:** 2026-11-21 at `ed08fb3`: every schedule and quiet hours followed, Run now, Rebuild (B-P-4 found).
+
+Reopened by B-P-4: the status's next run.
+
+**Check:** the skill's T-P-6, plus: during an hourly run, `sudo cheruby-docs-mcp status` and the panel say "Next run: after this run."; with the schedule never, "none: the schedule is never."
+
+### T-P-1 · the installed server reads only its folders
+
+`todo` `playtest` `filed 2026-11-16`
+
+**Last:** 2026-11-25 at `b649caf`, on 0.12.0~ynh1: the loopback table loaded, the units' ports only.
+
+Reopened by B-P-3: `conf/index.service` and `conf/ping@.service` changed.
+
+**Check:** the skill's T-P-1, and the index unit's first step runs in its sandbox as the app.
 
 ### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
 
@@ -121,7 +129,8 @@ there after restore, gone after remove.
 
 ## Closed
 
-- `T-P-1` done `playtest` 2026-11-25 at `b649caf` · on 0.12.0~ynh1: the loopback table loaded (uid 984, ports 443, 4000, 8771, 8774); as the app, 3306, 5432, 389, 6379, 6787 and `::1` refused, the four ports open; units allow 127.0.0.0/8 only; list and search answer, search reranked through the table
+- `B-P-4` closed 2026-11-25 · during a run the panel said "the schedule is never." on an hourly schedule; it now says "after this run" while the timer is on
+- `B-P-3` closed 2026-11-25 · a run `run_index` started pinged healthchecks.io like a timer run, so an agent could keep the check green; such a run now pings nothing
 - `T-M-3` done `playtest` 2026-11-25 at `b649caf` · on disk (Syncthing Documents) and in Nextcloud (Notes): a file moved, a folder renamed, a move onto a name, into itself, into a missing folder and across folders refused; moved files kept 660, folders 770, the folder's group; a Text-locked file refused with the Text message and left unchanged; test files deleted
 - `F-M-19` done 2026-11-25 · `move_file` moves or renames a file or a folder within one writable folder, on disk and in Nextcloud, never replacing, never across a share, never changing what the filters keep
 - `T-M-1` done `spec` 2026-11-25 at `1d71e1a` · `tests/check_server.py` 206 of 206 against the binary, `move_file` and the Text lock included; `cargo test` 23 of 23
@@ -133,8 +142,6 @@ there after restore, gone after remove.
 - `T-P-4` done `playtest` 2026-11-21 at `ed08fb3` · Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed
 - `T-P-5` done `playtest` 2026-11-21 at `ed08fb3` · no `nextcloud` group; a wrong app password refused at save, with no failed login counted; a PDF in Notes read, found and searched; an unchanged run sent one PROPFIND; a revoked password refused once each by the server, the indexer and the panel, then nothing sent, the panel naming it; a new one brought Notes back; no password in the logs. No share from another account to try
 - `T-M-4` done `playtest` 2026-11-21 at `ed08fb3` · 340 files indexed on the desktop in 2 min, the same search as the Pi's index; Whoopy stopped 30 s into a run: the run went on on the Pi and ended done in 36 min, no file failed for it; the key in no log. The Whoopy key first allowed only `ollama/...` and got 403, the run then on the Pi as it should
-- `T-P-6` done `playtest` 2026-11-21 at `ed08fb3` · every 6 hours 0,6,12,18:20, 0,12,18:20 with quiet hours 01-07; `*/30 8-20` taken, `0 3` and a day with a weekday refused; never stopped the timer; Run now ran in the quiet hours, a start by hand did not; pressed again during a run it started nothing; Rebuild stopped a run, dropped the working copy, search answered from the published one, and the next run read every file; hourly and 01-06 at the end (B-P-4 found)
-- `T-M-5` done `playtest` 2026-11-21 at `940adcd` · on 0.11.0: `run_index` of one PDF answered "indexed" in 1 s and ran that file only; everything asked for answered at once; `..` refused; inside the server's namespace the index, its status file and the code are read-only, `requests/` writable; the path unit never restarted the indexer; done with an existing file, no note written
 - `F-M-17` done `medium` 2026-11-21 · `run_index` asks the index unit through a request in `requests/` and a path unit, for some files or everything; each request answered in the status file; refused in the quiet hours, past 50 files or 20 waiting requests, for one waiting 5 minutes, and for everything within 15 minutes of the last full run (0.11.0)
 - `F-P-6` done `large` 2026-11-21 · the tool server, the indexer and their commands one Rust binary, release `cheruby-docs-0.11.0`, with PDFium chromium/8076, the build pypdfium2 shipped; the same passages as the Python on 401 files; the upgrade kept the index (model, 4,833 passages, 428 files unchanged) and search answered by meaning in 3 s (0.11.0)
 - `F-P-5` done `medium` 2026-11-19 · the redrawn icon set from ynh-app-icons 0ca6205: `conf/logo.png` and `doc/logo.svg` replaced, `logo_update/` deleted (0.10.1)
