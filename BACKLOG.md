@@ -60,7 +60,7 @@ CC-BY-NC-4.0.
 
 ### F-P-9 · a page for the docs user: Status and Search
 
-`wip` `medium` `filed 2026-11-25`
+`done` `medium` `filed 2026-11-25`
 
 The config panel has grown too many screens, and nothing shows the index or
 lets the user search without an agent.
@@ -139,6 +139,16 @@ transcript's segments.
 ### T-P-7 · the page opens for the docs user only
 
 `todo` `playtest` `filed 2026-11-25`
+
+**Last:** 2026-11-25 at `27c56cb`, 0.13.0~ynh1 installed at
+`gigaturbo.fr/docs`: on the loopback port with nginx's headers, Status as
+the docs user matched `status`, Search found the electricity bills, another
+portal user 403, no panel token 401, a POST without same-origin 403;
+Whoopy's `/mcp` still listed its eight tools; the panel token in no log.
+Not done: a login through the portal in a browser, and `check_page.py` on
+the live page (passed on a local server). The upgrade left the tile hidden
+(YunoHost sets `show_tile` before the url on that first upgrade): turned on
+by hand.
 
 **Check:** through the portal, the docs user opens the page, Status matches
 `sudo cheruby-docs-mcp status`, Search finds a known document; another user
