@@ -276,7 +276,7 @@ name = "Cheruby Docs"
         optional = true
         example = "http://127.0.0.1:4000"
         help = "On this server: the index is not allowed to reach any other machine."
-        pattern.regexp = '^$|^http://(127\.0\.0\.1|localhost|\[::1\]):[0-9]+/?$'
+        pattern.regexp = '^$|^http://127\.0\.0\.1:[0-9]+/?$'
         pattern.error = "An address on this server, such as http://127.0.0.1:4000"
         bind = "settings"
 

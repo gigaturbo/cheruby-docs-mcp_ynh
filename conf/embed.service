@@ -16,7 +16,8 @@ Nice=10
 CPUWeight=20
 MemoryMax=__MODEL_MEMORY__
 
-IPAddressAllow=localhost
+# IPv4 loopback only; the ports, the app's nftables table (B-P-5).
+IPAddressAllow=127.0.0.0/8
 IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6
 

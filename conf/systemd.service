@@ -18,9 +18,10 @@ ExecStart=__INSTALL_DIR__/bin/cheruby-docs serve
 
 MemoryMax=512M
 
-# Loopback only: the AI gateway and Nextcloud are on this machine, and the
-# tools need nothing else. Nextcloud is reached at 127.0.0.1:443 by its name.
-IPAddressAllow=localhost
+# IPv4 loopback only: the AI gateway and Nextcloud are on this machine, and
+# the tools need nothing else. Nextcloud is reached at 127.0.0.1:443 by its
+# name. Which loopback ports, the app's nftables table says (B-P-5).
+IPAddressAllow=127.0.0.0/8
 IPAddressDeny=any
 RestrictAddressFamilies=AF_INET AF_INET6
 

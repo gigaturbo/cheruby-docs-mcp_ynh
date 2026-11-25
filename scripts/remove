@@ -24,6 +24,10 @@ ynh_config_remove_systemd "$app-embed"
 ynh_config_remove_systemd "$app-rerank"
 ynh_config_remove_systemd
 
+# The loopback table: the file for the next boot, the table for now.
+ynh_safe_rm "/etc/nftables.d/$app.conf"
+nft delete table inet "$app" 2>/dev/null || true
+
 # A link: removed without following it.
 rm -f "/usr/local/bin/$app"
 

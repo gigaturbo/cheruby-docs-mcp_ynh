@@ -481,6 +481,7 @@ docs_configure() {
     chown -R "$app:$app" "$data_dir"
     chmod 700 "$data_dir/requests"
     docs_write_ping
+    docs_firewall
 
     ynh_config_add_systemd
     ynh_config_add_systemd --service="$app-embed" --template="embed.service"
@@ -494,6 +495,25 @@ docs_configure() {
     yunohost service add "$app" --description="Cheruby Docs, MCP tools on users' folders"
     yunohost service add "$app-embed" --description="Cheruby Docs, embedding model for the search index"
     yunohost service add "$app-rerank" --description="Cheruby Docs, reranking model for search results"
+}
+
+# The app's user reaches on loopback only the ports it needs (B-P-5): a
+# table in /etc/nftables.d, which every boot and firewall reload loads after
+# its flush. A file nftables cannot load would leave the host with no
+# firewall at boot, so the whole set is checked before this table is loaded
+# alone, leaving the other tables as they are.
+docs_firewall() {
+    local uid ports remote_port file="/etc/nftables.d/$app.conf"
+    uid=$(id -u "$app")
+    ports="$port_embed, $port_rerank, 443"
+    remote_port=$(sed -n 's|^http://127\.0\.0\.1:\([0-9]*\)/\?$|\1|p' <<< "${remote_url:-}")
+    [ -z "$remote_port" ] || ports+=", $remote_port"
+    ynh_config_add --template="nftables.conf" --destination="$file"
+    if ! nft -c -f /etc/nftables.conf; then
+        ynh_safe_rm "$file"
+        ynh_die "nftables refuses $file; it is removed and nothing was loaded."
+    fi
+    nft -f "$file"
 }
 
 # The embedding server first: the tool server and the indexer call it. It

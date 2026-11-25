@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The app's services reach on this server only what they use: the embedding and reranking models, Nextcloud and Whoopy, no longer its databases or other services. The Whoopy address for desktop embedding must be `http://127.0.0.1:<port>`.
 - How to add the server to Whoopy since its 0.2.0~ynh5: on Whoopy's status page, as the server `docs`; a new token is given to it in Whoopy's admin page.
 
 ## 0.11.0~ynh2
