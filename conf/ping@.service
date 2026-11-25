@@ -1,13 +1,12 @@
 [Unit]
 Description=Cheruby Docs: tell healthchecks.io about the index run (%i) (__APP__)
-# Not for a run the tools asked for: the index unit leaves this file then.
-ConditionPathExists=!__DATA_DIR__/tools-run
+# Started by the index unit's OnFailure= only.
 
 [Service]
 Type=oneshot
 # HC_URL, empty when the feature is off. Root 600, read before privileges drop.
 EnvironmentFile=__INSTALL_DIR__/ping.env
-# %i is start, 0 (success) or fail: healthchecks.io's own endpoints.
+# %i is fail, healthchecks.io's own endpoint.
 ExecStart=/bin/sh -c '[ -z "$$HC_URL" ] || exec /usr/bin/curl --silent --show-error --fail --max-time 10 --retry 3 --output /dev/null "$$HC_URL/$$1"' sh %i
 
 # The only unit of the app that reaches the internet, so it sees none of the

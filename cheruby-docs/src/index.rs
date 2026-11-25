@@ -45,8 +45,7 @@
 //! ended, how it ended, what it did, and the index's files by status.
 //!
 //! The requests run_index leaves in requests/ are all taken at the start. They
-//! are run on their own only when the unit's first step left TOOLS_RUN, which
-//! also keeps the healthchecks.io pings off; otherwise the full run answers them.
+//! are run on their own unless Run now asked for a full run, which answers them.
 
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -699,9 +698,6 @@ struct Requests {
     names: BTreeMap<String, String>,
 }
 
-/// Left in the index folder by the index unit's first step when the run is the
-/// tools' own: the ping unit's condition skips it while the file is there.
-const TOOLS_RUN: &str = "tools-run";
 /// Locked by a run from start to end, so the page can tell one is going:
 /// the server cannot ask systemd.
 const RUN_LOCK: &str = "run.lock";
@@ -939,12 +935,8 @@ pub fn main(s: &Settings) -> Result<(), String> {
     };
     // Taken in any case, quiet hours included: the path unit starts again while any is left.
     let requests = claim_requests(&s.index_dir);
-    // A Run now that came after the unit's first step makes it a full run, pinged.
-    let marker = s.index_dir.join(TOOLS_RUN);
-    let tools = wanted.is_none() && marker.exists();
-    if !tools {
-        let _ = std::fs::remove_file(&marker);
-    }
+    // Run now makes it a full run, which answers the requests too.
+    let tools = wanted.is_none();
     let result = run_all(
         s,
         &quiet,
@@ -1165,10 +1157,7 @@ fn run_all(
     {
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_file = entry.file_type().is_ok_and(|t| t.is_file());
-        if is_file
-            && name != TOOLS_RUN
-            && name != RUN_LOCK
-            && !users.contains_key(name.split('.').next().unwrap_or(""))
+        if is_file && name != RUN_LOCK && !users.contains_key(name.split('.').next().unwrap_or(""))
         {
             let _ = std::fs::remove_file(entry.path());
         }
