@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.12.0~ynh1
 
 - `move_file`: an agent moves or renames a file or a folder within a writable folder, never replacing anything.
 - A write Nextcloud refuses because the file is locked says it is, or was, open in Nextcloud's Text editor.
