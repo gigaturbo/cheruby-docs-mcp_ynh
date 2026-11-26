@@ -2,7 +2,8 @@
 
 A YunoHost package for an MCP tool server that lets one user's AI agents
 list, find, read and search by meaning that user's homelab folders, and
-write text files in those marked writable, behind the Whoopy AI gateway.
+write text files in those marked writable. Any MCP client on the server
+connects with one token, directly or through a gateway (Whoopy, LiteLLM).
 The folders come from sources (Syncthing, local storage, Nextcloud) chosen
 in the config panel.
 
@@ -24,7 +25,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   `index.timer`, `index.path`: the sandboxed units.
 - `config_panel.toml`, `scripts/config`: the sources, the index schedule
   and its runs, health pings and the MCP token (`main.mcp`, setting
-  `mcp_token`, the token Whoopy presents).
+  `mcp_token`, the token an MCP client presents, and `main.access`, the
+  folders it opens).
 - `conf/cheruby-docs-mcp`: the app's command, linked in `/usr/local/bin`:
   `token [--new]` itself, the read and status commands passed to the binary; `serve` and `index` refused.
 - `manifest.toml`, `scripts/`: packaging format 2, helpers 2.1. Shared steps
@@ -40,8 +42,8 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
 
 - **Four units, one user** `cheruby-docs-mcp`, all on loopback:
   - `cheruby-docs-mcp.service`, the tool server (`cheruby-docs serve`).
-    Whoopy reaches it with one token, chosen in the config panel: one user,
-    some of their folders. The same process serves the page on port setting
+    One token opens it, made in the config panel: one user, all or some of
+    their folders. The same process serves the page on port setting
     `port_page`, for the docs user only, with nginx's `X-Panel-Token`.
   - `cheruby-docs-mcp-embed.service`, llama-server (a pinned release, built
     for the Pi 5 by the repository's workflow), with the embedding model chosen in the panel: EmbeddingGemma
@@ -63,14 +65,15 @@ constraints and the check recipes are in the `cheruby-docs-mcp-kb` skill.
   `/home/yunohost.app/cheruby-docs-mcp`, rebuilt from the folders, never
   backed up. Its `requests/` folder is the one place there the tool server
   writes. The settings are the rest: `docs_user`, each source's
-  `<source>_enabled`, `_folders`, `_only` and `_skip`, `token_<user>`,
+  `<source>_enabled`, `_folders`, `_only` and `_skip`,
   `<source>_writable`, `nextcloud_account`, `nextcloud_password`,
-  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*`, `mcp_token`, `panel_token`, `whoopy_folders`, `domain` and `path`; configure renders `folders.json`, the
+  `index_schedule`, `index_calendar`, `index_quiet`, `embed_model`, `remote_*`, `mcp_token`, `panel_token`, `mcp_folders`, `domain` and `path`; configure renders `folders.json`, the
   env files and the units from them.
-- **"Run now on the desktop"** has Whoopy's Ollama embed one run's
+- **"Run now on the desktop"** has an OpenAI-compatible server on loopback
+  (Whoopy's Ollama) embed one run's
   passages, after checking its vectors agree with the Pi's; the timer
   never does. The key is pasted in the panel and goes to `index.env` only.
-- **The token picks the user**, and the unit joins each folder's group to
+- **The token opens the user's folders**, and the unit joins each folder's group to
   read it, and to change it when it is writable and mounted read-write,
   with everything else those groups could read hidden. Nextcloud's folders
   are read and written through Nextcloud over loopback, never on disk.

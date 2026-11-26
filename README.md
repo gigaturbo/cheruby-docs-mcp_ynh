@@ -4,7 +4,8 @@
 
 MCP tools that let AI agents list, find, read and search by meaning one
 user's folders on the server, and write text files in the folders marked
-writable. Meant to sit behind an MCP gateway.
+writable. Any MCP client on the server connects with one token, directly or
+through a gateway such as Whoopy or LiteLLM.
 
 ## Tools
 
@@ -95,12 +96,13 @@ keywords only.
 
 "Run now on the desktop", under "Index runs", is for a first index of many
 files, which takes hours on the server. It reads the files on the server
-but has another machine's GPU, reached through the Whoopy gateway, turn the
-passages into vectors. Under "Desktop embedding", give the model as Whoopy
-names it there and paste a Whoopy key allowed that model only. Search still
+but has another machine's GPU, reached through an OpenAI-compatible server
+on this one (Whoopy, for example), turn the passages into vectors. Under
+"Desktop embedding", give its address, the model as it names it and a key
+allowed that model only. Search still
 turns each question into a vector on the server, so the run first does about
-20 passages both ways and keeps to the server unless they agree. When Whoopy
-stops answering, the run carries on on the server. The schedule never uses it.
+20 passages both ways and keeps to the server unless they agree. When that
+server stops answering, the run carries on on the server. The schedule never uses it.
 
 "Speech to text" picks whisper small (the default), which does an hour of
 speech in about 15 minutes on the Pi 5, or large-v3-turbo, which takes
@@ -108,9 +110,9 @@ about an hour for an hour but gets the punctuation, the capitals and more
 of the words right. Both come
 from whisper.cpp, built for the Pi 5 by this repository, with Silero VAD to
 skip the silences; ffmpeg decodes the recordings. "The desktop" lets
-transcriptions go to the desktop's GPU through Whoopy, never, on request
-or always: give the speech model as Whoopy names it (`speaches/...`) and
-paste a Whoopy key allowed that model only. A desktop that does not wake
+transcriptions go to the desktop's GPU through the same server, never, on
+request or always: give the speech model as it names it (in Whoopy,
+`speaches/...`) and a key allowed that model only. A desktop that does not wake
 within three minutes leaves the rest to the server. The models take about
 0.6 GB of memory for small and 1.2 GB for large-v3-turbo.
 
@@ -118,15 +120,14 @@ The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
 It is one binary, built for the Pi 5 from `cheruby-docs/` in this
 repository and downloaded at install, with PDFium to read PDFs.
 
-The gateway gets its own token, shown in the config panel under "MCP
-token", with its address beside it: add both on Whoopy's status page (MCP
-Servers tab) as the server `docs`. It opens all the folders, or the
-ones listed under "Whoopy access", and searches the user's index. "New token",
-or `sudo cheruby-docs-mcp token --new`, replaces it; give the new one to the
-server `docs` in Whoopy's admin page, MCP Servers. The user also has a token
-of their own, on all the folders. `sudo cheruby-docs-mcp token` shows the
-address and both tokens. Whoopy publishes the tools to the local network and
-WireGuard only.
+One token opens it, shown in the config panel under "MCP token" with the
+address beside it, and by `sudo cheruby-docs-mcp token`. A client sends it
+as `Authorization: Bearer <token>`. It opens all the folders, or the ones
+listed under "MCP access", and search keeps to them. A client elsewhere goes
+through a gateway on this server that publishes the tools: in Whoopy, add
+the address and the token as an MCP server; LiteLLM takes them the same way.
+"New token", or `sudo cheruby-docs-mcp token --new`, replaces it; give the
+new one to every client.
 
 Search orders its results with jina-reranker-v2-base-multilingual, which
 the install downloads from Hugging Face. Its licence, CC-BY-NC-4.0, allows
@@ -143,13 +144,13 @@ can reach nothing but loopback.
 As root, `sudo cheruby-docs-mcp <command>`, with the app's own settings.
 Each command that does what a tool does is named beside it.
 
-- **`token [--new]`**: the address and the tokens; `--new` makes a new
-  Whoopy token, as the panel's "New token" does.
+- **`token [--new]`**: the address and the token; `--new` makes a new
+  one, as the panel's "New token" does.
 - **`ls`, `find`, `read`, `search`**: `list_folder`, `find_files`,
-  `read_file` and `search_documents`, as the user's own token, or
-  as the Whoopy token with `--gateway`. They first drop root for the app's
+  `read_file` and `search_documents`, on the token's folders. They first
+  drop root for the app's
   user and its folders' groups, as the service runs.
 - **`run-index [path...]`**: asks for an index run, as `run_index` does.
 - **`status`**: the index runs, as the panel shows them.
-- **`check-desktop`**: whether the desktop's vectors, through Whoopy, agree
+- **`check-desktop`**: whether the desktop's vectors, through the remote server, agree
   with the server's, without starting a run.

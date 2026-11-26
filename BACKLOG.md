@@ -1,7 +1,7 @@
 # BACKLOG
 
-A YunoHost app on the homelab that lets each user's AI agents, through the
-Whoopy gateway, list, find, read and then search by meaning that user's own
+A YunoHost app on the homelab that lets one user's AI agents, through any
+MCP client on the server, list, find, read and then search by meaning that user's own
 folders, and write only where the user allows, without waking the desktop.
 
 ## Categories
@@ -57,6 +57,20 @@ poorly: it is not in Ollama (Transformers with `trust_remote_code`, or
 vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
 which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
+
+### F-P-14 · one MCP token for any client, no Whoopy in the app
+
+`doing` `medium` `filed 2026-11-26`
+
+The panel split one credential in two ("Whoopy access" and "MCP token"),
+a hidden second token opened all the folders, and the panel, the command
+and the docs named Whoopy as the only client.
+
+**Do:** one token (`DOCS_TOKEN`, `DOCS_USER`, `DOCS_TOKEN_FOLDERS`) in
+0.16.0; `whoopy_folders` moved to `mcp_folders` and `token_<user>` deleted
+at upgrade; the panel's "MCP access" and "MCP token" say how any client
+connects, Whoopy and LiteLLM as examples; the remote embedding and speech
+server named as an OpenAI-compatible one. Still on loopback only.
 
 ### F-P-12 · the embedding model chosen on the page
 
@@ -213,7 +227,7 @@ tool server and the indexer, with the app's settings folder bound back.
 
 **Check:** the skill's T-P-1.
 
-### T-P-3 · the Whoopy token, from the panel and the command, stays out of the logs
+### T-P-3 · the MCP token, from the panel and the command, stays out of the logs
 
 `todo` `playtest` `filed 2026-11-22`
 
@@ -230,11 +244,14 @@ changed. Last done 2026-11-21 at `ed08fb3`: Whoopy access narrowed to two folder
 token: the new token saw Documents only, the old one 401; neither token in
 `yunohost-cli.log` or the operation logs from this app.
 
+Reopened by F-P-14: one token, `mcp_folders`, the command prints one token.
+
 **Check:** after the upgrade, `sudo cheruby-docs-mcp token` shows the same
-Whoopy token as before and Whoopy's `/mcp/docs` still answers;
+token as before, alone, and Whoopy's `/mcp/docs` still answers; the old
+`token_<user>` gets 401;
 `sudo cheruby-docs-mcp token --new` prints no token, the old one gets 401,
 the new one 200 once pasted in Whoopy; no token in `yunohost-cli.log`; the
-panel shows "MCP token"; `sudo cheruby-docs-mcp status` answers as the
+panel shows "MCP access" with the folders it had and "MCP token"; `sudo cheruby-docs-mcp status` answers as the
 binary did.
 
 ### T-P-2 · backup and restore keep the tokens
@@ -248,8 +265,12 @@ log.
 
 Reopened by F-P-10: the backup carries `/var/lib/cheruby-docs-mcp`.
 
+Reopened by F-P-14: one token, `mcp_folders`; the upgrade, not restore,
+moves the old settings (a backup restores with its own scripts).
+
 **Check:** a backup made before the upgrade restores with the same Whoopy
-token under `mcp_token` and no `whoopy_token`; `/usr/local/bin/cheruby-docs-mcp`
+token under `mcp_token` and no `whoopy_token`; one made after it restores
+`mcp_token` and `mcp_folders`, no `token_<user>`; `/usr/local/bin/cheruby-docs-mcp`
 there after restore, gone after remove; a backup made after it restores
 `settings.json` as it was, owned by the app, mode 600.
 

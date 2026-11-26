@@ -6,18 +6,9 @@ The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP), on
 the server itself only. Every request needs `Authorization: Bearer <token>`;
 without it the answer is 401.
 
-Two tokens open it:
-
-- **The Whoopy token**, for the gateway: the user's folders, or the ones
-  listed under "Whoopy access" in the config panel. Add the address and
-  this token on Whoopy's status page (MCP Servers tab), or in its admin
-  page, as the server `docs`, with the token as Bearer. Whoopy publishes
-  the tools at `/mcp/docs`, to the local network and WireGuard only, and to
-  the keys granted `docs`.
-- **The user's own token**, on all their folders, for a client on the
-  server itself.
-
-See the address and both tokens, and make a new Whoopy token:
+One token opens it, on all the user's folders or the ones listed under
+"MCP access" in the config panel. Search keeps to them too. See the
+address and the token, and make a new token:
 
 ```bash
 sudo cheruby-docs-mcp token
@@ -25,8 +16,13 @@ sudo cheruby-docs-mcp token --new
 ```
 
 `--new` presses the panel's "New token" button: the old token stops working
-at once, so give the new one to the server `docs` in Whoopy's admin page,
-MCP Servers. The user's own token has no button.
+at once, so give the new one to every client.
+
+A client on the server connects straight to the address. One elsewhere goes
+through a gateway on the server that publishes the tools, such as Whoopy
+(the address and the token as an MCP server, on its status page, MCP
+Servers tab) or LiteLLM (an MCP server with that URL, HTTP transport and the
+token as Bearer).
 
 Paths start with a folder's label, such as `Documents/Factures`.
 
@@ -153,7 +149,8 @@ Changes no file.
 The text of a recording: mp3, m4a, aac, wav, ogg, opus, flac, webm, mka,
 amr, 3gp or mp4 (its sound only). It is cut in parts of about ten minutes,
 each ending at a pause, and transcribed by whisper on the server or, when
-the config panel allows it, by the desktop's GPU through Whoopy. The
+the config panel allows it, by the desktop's GPU through the
+OpenAI-compatible server set there. The
 language is detected on the first part and kept for the rest.
 
 An hour of audio takes about 15 minutes on the server with whisper small,

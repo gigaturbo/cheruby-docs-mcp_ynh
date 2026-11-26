@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.16.0~ynh1
+
+- One token opens the tools, on all the user's folders or the ones chosen under "MCP access" (formerly "Whoopy access"). The user's second token, on all the folders, is gone: the upgrade deletes it. The token shown in the panel is unchanged.
+- Any MCP client on the server connects with the address and that token as Bearer; Whoopy and LiteLLM are examples of a gateway in front of it. `sudo cheruby-docs-mcp token` prints the one token, and the shell commands lose `--gateway`.
+- Desktop embedding and speech name an OpenAI-compatible server on loopback, Whoopy for example, with the same settings.
+
 ## 0.15.1~ynh1
 
 - A word whisper cut between two parts of a transcript now reads as one word ("factures", no longer "fact ures").
