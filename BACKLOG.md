@@ -105,8 +105,8 @@ Speaches through froaky's proxy.
 retries while the desktop wakes; `engine` on the tool.
 
 2026-11-26: built for 0.15.0~ynh1 and checked against a stand-in Whoopy.
-Blocked for real use: Whoopy has no `speaches/*` route yet, and none is
-filed there. Closes with T-M-7.
+Blocked for real use: Whoopy has no `speaches/*` route yet; filed in
+froaky-ai-server as F-V-2, through froaky's proxy. Closes with T-M-7.
 
 ### F-M-22 · speaker labels in transcripts
 
@@ -140,7 +140,7 @@ from the cache at once.
 
 `todo` `playtest` `filed 2026-11-26`
 
-Waits for Whoopy's `speaches/*` route.
+Waits for Whoopy's `speaches/*` route, froaky-ai-server's F-V-2.
 
 **Check:** in Whoopy's admin page, a key allowed only the speech model;
 paste it and the model under "Speech to text", the desktop "on request".
