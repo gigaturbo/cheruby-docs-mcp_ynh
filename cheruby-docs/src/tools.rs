@@ -39,7 +39,7 @@ const MAX_FOUND: usize = 50;
 const MAX_CHARS: usize = 20_000;
 const MAX_PDF_PAGES: usize = 20;
 const MAX_IMAGE_BYTES: u64 = 4_000_000;
-const MAX_FETCH_BYTES: u64 = 64_000_000;
+pub const MAX_FETCH_BYTES: u64 = 64_000_000;
 const MAX_RESULTS: usize = 10;
 const MAX_WRITE_BYTES: usize = 2_000_000;
 const RRF_K: f64 = 60.0;
@@ -477,11 +477,14 @@ pub async fn read_file(
 
 /// Queues a recording of the folders for transcription, unless it is done
 /// or queued already; its key in the speech cache.
+/// A recording that failed is tried again only with `retry`: otherwise each
+/// call would start it over and never say why.
 pub async fn transcribe(
     ctx: &Ctx,
     path: String,
     engine: String,
     language: String,
+    retry: bool,
 ) -> ToolResult<String> {
     let speech = ctx
         .docs
@@ -533,8 +536,15 @@ pub async fn transcribe(
         &item.mtime_ns.to_string(),
         &language,
     ]);
-    if matches!(speech.look(&key), speech::Look::Done(_)) {
-        return Ok(key);
+    match speech.look(&key) {
+        speech::Look::Done(_) => return Ok(key),
+        speech::Look::Failed { error, at } if !retry => {
+            return Err(format!(
+                "{error} It failed at {} of the recording; call again with retry true to try again.",
+                speech::clock(at)
+            ));
+        }
+        _ => {}
     }
     let c = ctx.clone();
     let shown = item.shown.clone();
@@ -543,28 +553,73 @@ pub async fn transcribe(
         shown,
         engine,
         language,
-        open: Box::new(move || match c.tree().open(&item, MAX_FETCH_BYTES) {
-            Ok(Source::Disk(f)) => Ok(f),
-            Ok(Source::Fetched(data)) => speech::spill(data),
-            Err(Error::NotFound) => Err(format!("{}: not found.", item.shown)),
-            Err(e) => Err(format!("{}: {e}", item.shown)),
-        }),
+        open: Box::new(move || open_recording(&c, &item)),
     })?;
     Ok(key)
 }
 
+/// The recording when its turn comes, maybe hours after the call: checked
+/// again as read_file checks a path, unchanged since, and on disk opened
+/// without following a link or waiting on a pipe.
+fn open_recording(c: &Ctx, asked: &Item) -> ToolResult<std::fs::File> {
+    let item = match c.resolve(&asked.shown)? {
+        Some(item) if !item.is_dir => item,
+        _ => return Err(format!("{}: not found.", asked.shown)),
+    };
+    if item.size != asked.size || item.mtime_ns != asked.mtime_ns {
+        return Err(format!(
+            "{}: changed since it was asked for; ask again.",
+            item.shown
+        ));
+    }
+    let failed = |e: std::io::Error| format!("{}: {}", item.shown, crate::folders::io_message(&e));
+    match &item.location {
+        crate::folders::Location::Disk(real) => {
+            use std::os::unix::fs::OpenOptionsExt;
+            let flags = nix::fcntl::OFlag::O_NOFOLLOW | nix::fcntl::OFlag::O_NONBLOCK;
+            let f = std::fs::File::options()
+                .read(true)
+                .custom_flags(flags.bits())
+                .open(real)
+                .map_err(failed)?;
+            if !f.metadata().map_err(failed)?.is_file() {
+                return Err(format!("{}: not a regular file.", item.shown));
+            }
+            Ok(f)
+        }
+        crate::folders::Location::Cloud(_) => match c.tree().open(&item, MAX_FETCH_BYTES) {
+            Ok(Source::Disk(f)) => Ok(f),
+            Ok(Source::Fetched(data)) => speech::spill(data),
+            Err(Error::NotFound) => Err(format!("{}: not found.", item.shown)),
+            Err(e) => Err(format!("{}: {e}", item.shown)),
+        },
+    }
+}
+
+/// What transcribe_file is asked for.
+pub struct Transcription {
+    pub path: String,
+    pub engine: String,
+    pub language: String,
+    pub timestamps: bool,
+    pub retry: bool,
+    pub offset: i64,
+    pub max_chars: i64,
+}
+
 /// Transcribes a recording, waiting up to RUN_WAIT_S; the text once done,
 /// paged like read_file's, or how far it is.
-pub async fn transcribe_file(
-    ctx: &Ctx,
-    path: String,
-    engine: String,
-    language: String,
-    timestamps: bool,
-    offset: i64,
-    max_chars: i64,
-) -> ToolResult<String> {
-    let key = transcribe(ctx, path.clone(), engine, language).await?;
+pub async fn transcribe_file(ctx: &Ctx, a: Transcription) -> ToolResult<String> {
+    let Transcription {
+        path,
+        engine,
+        language,
+        timestamps,
+        retry,
+        offset,
+        max_chars,
+    } = a;
+    let key = transcribe(ctx, path.clone(), engine, language, retry).await?;
     let speech = ctx.docs.speech.clone().ok_or("no speech server.")?;
     let mut look = speech.look(&key);
     for _ in 0..RUN_WAIT_S {
@@ -618,8 +673,13 @@ pub async fn transcribe_file(
                 "{path}: {state}. Call transcribe_file again later: what is done is kept."
             ))
         }
-        speech::Look::Failed(e) => Err(e),
-        speech::Look::Unknown => Err(format!("{path}: the transcription did not start.")),
+        speech::Look::Failed { error, at } => Err(format!(
+            "{error} It failed at {} of the recording; call again with retry true to try again.",
+            speech::clock(at)
+        )),
+        speech::Look::Stopped { .. } | speech::Look::Unknown => Err(format!(
+            "{path}: the transcription stopped; call again to carry on."
+        )),
     }
 }
 

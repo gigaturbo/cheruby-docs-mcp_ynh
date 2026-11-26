@@ -19,7 +19,7 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 use axum::{
     Json, Router,
     body::Body,
-    extract::{DefaultBodyLimit, Path, Request, State},
+    extract::{Path, Request, State},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -125,10 +125,7 @@ pub async fn bind(docs: Arc<Docs>) -> Result<Option<Serving>, String> {
         .route("/api/search", post(search_json))
         .route("/api/settings", get(settings_json).post(save_settings))
         .route("/api/transcribe", post(transcribe_json))
-        .route(
-            "/api/transcribe/upload",
-            post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
-        )
+        .route("/api/transcribe/upload", post(upload))
         .route("/api/transcribe/{key}", get(transcript_json))
         .layer(middleware::from_fn_with_state(page.clone(), guard))
         .with_state(page);
@@ -294,11 +291,13 @@ struct TranscribeArgs {
     engine: String,
     #[serde(default)]
     language: String,
+    #[serde(default)]
+    retry: bool,
 }
 
 /// The Transcribe tab, from a folder: queued as transcribe_file queues it.
 async fn transcribe_json(State(page): State<Page>, Json(a): Json<TranscribeArgs>) -> Response {
-    match tools::transcribe(&page.ctx(), a.path, a.engine, a.language).await {
+    match tools::transcribe(&page.ctx(), a.path, a.engine, a.language, a.retry).await {
         Ok(key) => Json(json!({"key": key})).into_response(),
         Err(e) => refused(e),
     }
@@ -338,18 +337,33 @@ async fn upload(State(page): State<Page>, headers: HeaderMap, body: Body) -> Res
             speech::AUDIO_SUFFIXES.join(" ")
         ));
     }
-    let file = match speech::scratch() {
+    if speech.full() {
+        return refused(format!(
+            "{} recordings are being transcribed or wait already; send it once one is done.",
+            speech::MAX_JOBS
+        ));
+    }
+    // The scratch file is on the disk the photos share.
+    let file = match speech::scratch()
+        .and_then(|f| speech::room(&f, MAX_UPLOAD_BYTES as u64).map(|()| f))
+    {
         Ok(f) => f,
         Err(e) => return refused(e),
     };
     let mut out = tokio::fs::File::from_std(file);
     let mut hash = sha2::Sha256::new();
     let mut body = body;
+    let mut written = 0;
     while let Some(frame) = body.frame().await {
         let Ok(frame) = frame else {
-            return refused("the upload was cut off, or is larger than 500 MB.");
+            return refused("the upload was cut off.");
         };
         if let Ok(data) = frame.into_data() {
+            // DefaultBodyLimit does not reach a raw body: counted here.
+            written += data.len();
+            if written > MAX_UPLOAD_BYTES {
+                return refused("a recording of 500 MB at most.");
+            }
             hash.update(&data);
             if let Err(e) = out.write_all(&data).await {
                 return refused(crate::folders::io_message(&e));

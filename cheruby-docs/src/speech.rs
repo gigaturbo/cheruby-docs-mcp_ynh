@@ -55,6 +55,12 @@ const KEEP_DAYS: u64 = 30;
 /// The desktop wakes within about two minutes: Whoopy answers 5xx meanwhile.
 const RETRY_EVERY: Duration = Duration::from_secs(10);
 const RETRY_FOR: Duration = Duration::from_secs(180);
+/// Recordings waiting or running at once: an agent sweeping a folder must
+/// not queue days of work, and each queued upload holds its file.
+pub const MAX_JOBS: usize = 5;
+/// The scratch files sit on the disk the photos share: decoding needs at
+/// least this much room above write_file's floor.
+const PCM_ROOM: u64 = (MAX_AUDIO_S * RATE * 2) as u64;
 /// One part on the Pi: large-v3-turbo may take most of it.
 const PART_TIMEOUT: Duration = Duration::from_secs(1800);
 
@@ -225,7 +231,16 @@ pub enum Look {
         total: f64,
         left: Option<Duration>,
     },
-    Failed(String),
+    /// Failed at `at` seconds; tried again only when asked.
+    Failed {
+        error: String,
+        at: f64,
+    },
+    /// Begun, then stopped by a restart: carried on when asked again.
+    Stopped {
+        done: f64,
+        total: f64,
+    },
     Unknown,
 }
 
@@ -289,9 +304,22 @@ pub fn scratch() -> Result<File, String> {
     Ok(f)
 }
 
+/// Refused when a file there would leave the disk less than write_file's
+/// floor plus `more` bytes.
+pub fn room(f: &File, more: u64) -> Result<(), String> {
+    let free = nix::sys::statvfs::fstatvfs(f).map_err(|e| e.to_string())?;
+    if (free.blocks_available() as u64) * (free.fragment_size() as u64)
+        < more + crate::folders::MIN_FREE_BYTES
+    {
+        return Err("the disk is nearly full; nothing is transcribed.".into());
+    }
+    Ok(())
+}
+
 /// A reader copied into a scratch file, at its start, so ffmpeg can seek it.
 pub fn spill(mut from: impl Read) -> Result<File, String> {
     let mut f = scratch()?;
+    room(&f, crate::tools::MAX_FETCH_BYTES)?;
     std::io::copy(&mut from, &mut f)
         .and_then(|_| f.seek(SeekFrom::Start(0)))
         .map_err(|e| crate::folders::io_message(&e))?;
@@ -553,10 +581,28 @@ impl Speech {
         }
         drop(jobs);
         match self.load(key) {
-            Some(t) if t.done => Look::Done(t),
-            Some(t) if !t.error.is_empty() => Look::Failed(t.error),
-            _ => Look::Unknown,
+            Some(t) if t.done => {
+                // Kept KEEP_DAYS from its last read, not its making.
+                if let Ok(f) = File::options().append(true).open(self.file(key)) {
+                    let _ = f.set_modified(SystemTime::now());
+                }
+                Look::Done(t)
+            }
+            Some(t) if !t.error.is_empty() => Look::Failed {
+                error: t.error,
+                at: t.done_until,
+            },
+            Some(t) => Look::Stopped {
+                done: t.done_until,
+                total: t.duration,
+            },
+            None => Look::Unknown,
         }
+    }
+
+    /// Whether a new recording would be refused: MAX_JOBS wait or run.
+    pub fn full(&self) -> bool {
+        self.jobs.lock().unwrap_or_else(|e| e.into_inner()).len() >= MAX_JOBS
     }
 
     /// Queues a recording, unless it is queued already. The speech thread
@@ -565,6 +611,11 @@ impl Speech {
         let mut jobs = self.jobs.lock().unwrap_or_else(|e| e.into_inner());
         if jobs.iter().any(|(k, _)| *k == job.key) {
             return Ok(());
+        }
+        if jobs.len() >= MAX_JOBS {
+            return Err(format!(
+                "{MAX_JOBS} recordings are being transcribed or wait already; ask again once one is done."
+            ));
         }
         let sender = self.queue.get_or_init(|| {
             let (tx, rx) = mpsc::channel::<Job>();
@@ -850,7 +901,11 @@ fn short(e: &reqwest::Error) -> String {
 /// reading its stdin through the whitelists above.
 fn decode(input: File) -> Result<File, String> {
     let out = scratch()?;
+    room(&out, PCM_ROOM)?;
+    // Not the tokens and keys of the server's environment.
     let output = Command::new("ffmpeg")
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap_or_default())
         .args(["-hide_banner", "-loglevel", "error", "-nostdin"])
         .args(["-protocol_whitelist", "file", "-format_whitelist", DEMUXERS])
         .args(["-codec_whitelist", DECODERS])
@@ -922,7 +977,8 @@ pub fn look_json(look: Look) -> Value {
             "total": total,
             "left": left.map(|d| d.as_secs()),
         }),
-        Look::Failed(e) => json!({"state": "failed", "error": e}),
+        Look::Failed { error, at } => json!({"state": "failed", "error": error, "done": at}),
+        Look::Stopped { done, total } => json!({"state": "stopped", "done": done, "total": total}),
         Look::Unknown => json!({"state": "unknown"}),
     }
 }

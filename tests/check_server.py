@@ -58,7 +58,7 @@ WHOOPY_PORT = 18776
 WHOOPY_KEY = "w" * 40
 WHOOPY = {"calls": 0, "left": -1, "skew": False, "gone": 503}
 SPEECH_PORT = 18778
-SPEECH = {"languages": [], "parts": 0}
+SPEECH = {"languages": [], "parts": 0, "fail": False}
 WHOOPY_SPEECH = {"calls": 0, "busy": 0, "refuse": False}
 PAGE_PORT = 18779
 PANEL_TOKEN = "p" * 48
@@ -238,6 +238,11 @@ class FakeWhisper(BaseHTTPRequestHandler):
 
     def do_POST(self):
         SPEECH["parts"] += 1
+        if SPEECH["fail"]:
+            self.rfile.read(int(self.headers["Content-Length"]))
+            self.send_response(500)
+            self.end_headers()
+            return
         body = transcribed(self, "fr", " Partie.")
         SPEECH["languages"].append(form(body, "language"))
 
@@ -800,7 +805,7 @@ def speech_checks(base):
     os.makedirs(rec)
     with open(f"{rec}/réunion.wav", "wb") as f:
         f.write(wav_bytes(21 * 60, quiet=(570, 1155)))
-    for name in ("court.wav", "bureau.wav", "allemand.wav"):
+    for name in ("court.wav", "bureau.wav", "allemand.wav", "panne.wav"):
         with open(f"{rec}/{name}", "wb") as f:
             f.write(wav_bytes(5))
     with open(f"{base}/notes/memo.wav", "wb") as f:
@@ -834,6 +839,17 @@ def speech_checks(base):
         error_with("is not pi or desktop")(tool("transcribe_file", path="Documents/Dictées/court.wav", engine="gpu"))
     yield "speech: bob cannot reach alice's", None, \
         error_with("no folder named")(tool("transcribe_file", token=BOB, path="Documents/Dictées/court.wav"))
+    SPEECH["fail"] = True
+    result = tool("transcribe_file", path="Documents/Dictées/panne.wav")
+    SPEECH["fail"] = False
+    yield "speech: a failure is said, with where", result, \
+        result[0] == "error" and "answered 500" in result[1] and "failed at 0:00" in result[1]
+    parts = SPEECH["parts"]
+    result = tool("transcribe_file", path="Documents/Dictées/panne.wav")
+    yield "speech: and said again, not tried again, without retry", result, \
+        result[0] == "error" and "retry true" in result[1] and SPEECH["parts"] == parts
+    result = tool("transcribe_file", path="Documents/Dictées/panne.wav", retry=True)
+    yield "speech: retry tries again", result, result[0] == "ok" and "[0:00] Partie." in result[1]
     WHOOPY_SPEECH.update(busy=2, calls=0)
     result = tool("transcribe_file", path="Documents/Dictées/bureau.wav", engine="desktop")
     yield "speech: the desktop is retried while it wakes", (result, WHOOPY_SPEECH), \

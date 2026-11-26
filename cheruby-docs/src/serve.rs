@@ -249,6 +249,8 @@ struct TranscribeArgs {
     #[serde(default = "yes")]
     timestamps: bool,
     #[serde(default)]
+    retry: bool,
+    #[serde(default)]
     offset: i64,
     #[serde(default = "eight_thousand")]
     max_chars: i64,
@@ -455,6 +457,8 @@ impl Tools {
         engine: \"pi\" or \"desktop\" (the desktop's GPU, when set up); empty, the default.\n\
         language: such as \"fr\"; empty detects it on the first minutes.\n\
         timestamps: each line starts with its time, [1:02:05]; false gives paragraphs.\n\
+        retry: try again a recording that failed; otherwise the failure is said again.\n\
+        At most 5 recordings wait or run at once.\n\
         The text is raw speech: clean it before saving it with write_file."
     )]
     async fn transcribe_file(
@@ -465,12 +469,15 @@ impl Tools {
         answer(
             tools::transcribe_file(
                 &self.ctx(&parts)?,
-                a.path,
-                a.engine,
-                a.language,
-                a.timestamps,
-                a.offset,
-                a.max_chars,
+                tools::Transcription {
+                    path: a.path,
+                    engine: a.engine,
+                    language: a.language,
+                    timestamps: a.timestamps,
+                    retry: a.retry,
+                    offset: a.offset,
+                    max_chars: a.max_chars,
+                },
             )
             .await,
         )
