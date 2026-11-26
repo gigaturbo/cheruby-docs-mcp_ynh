@@ -83,11 +83,12 @@ MCP token and the health ping.
 the schedule run inside the server in place of the timer, the quiet hours
 and the only/skip filters, changed on the page's Config tab with no
 restart. The upgrade moves the panel's values there. healthchecks.io gets
-a fail ping only, so B-P-3's `tools-run` marker goes. The models are
+every failure and the success of scheduled and Run now runs, never a start. The models are
 F-P-12, the engine F-P-13.
 
-2026-11-25: built as 0.14.0~ynh1 (`a4d2f8e`): `check_server.py` 238 of 238,
-`cargo test` 31 of 31, the Config tab without fault at the six sizes. Not
+2026-11-26: built as 0.14.0~ynh1, reviewed and hardened: `check_server.py`
+241 of 241, `cargo test` 30 of 30, the Config tab without fault at the six
+sizes. A fail-only ping, tried first, was dropped: no alert when runs stop. Not
 yet released nor installed: T-P-4, T-P-6, T-P-7, T-P-1 and T-P-2 then.
 
 ### F-P-12 · the embedding model chosen on the page

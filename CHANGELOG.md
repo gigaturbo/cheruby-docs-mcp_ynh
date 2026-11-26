@@ -4,7 +4,7 @@
 
 - The page's new Config tab sets the index schedule, its quiet hours and each source's "Only these files" and "Leave out". A change applies at once, with no restart. The upgrade moves them there from the config panel, into `/var/lib/cheruby-docs-mcp/settings.json`, which backups now carry.
 - The tool server runs the index schedule itself, and the index timer is gone. A run missed while the server was stopped starts when it is back.
-- healthchecks.io is pinged only when an index run fails, whoever started it. Give the check the longest period it allows.
+- healthchecks.io is pinged when any index run fails, and on the success of a run the schedule or Run now started. It is no longer pinged when a run starts. Keep the check's period at the schedule's.
 
 ## 0.13.1~ynh1
 

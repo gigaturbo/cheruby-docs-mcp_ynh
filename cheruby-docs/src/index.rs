@@ -683,6 +683,9 @@ struct Requests {
 /// Locked by a run from start to end, so the page can tell one is going:
 /// the server cannot ask systemd.
 const RUN_LOCK: &str = "run.lock";
+/// Left by a run the schedule or Run now started: the success ping's
+/// drop-in needs it, so a run an agent asked for keeps no check green.
+const SUCCESS_PING: &str = "success-ping";
 
 /// Whether an index run holds RUN_LOCK now.
 pub fn running(index_dir: &Path) -> bool {
@@ -918,6 +921,15 @@ pub fn main(s: &Settings) -> Result<(), String> {
     };
     // Taken in any case, quiet hours included: the path unit starts again while any is left.
     let requests = claim_requests(&s.index_dir);
+    let marker = s.index_dir.join(SUCCESS_PING);
+    let scheduled = requests
+        .as_ref()
+        .is_some_and(|r| r.names.keys().any(|n| n.starts_with("schedule-")));
+    if wanted.is_some() || scheduled {
+        let _ = std::fs::File::create(&marker);
+    } else {
+        let _ = std::fs::remove_file(&marker);
+    }
     // Run now makes it a full run, which answers the requests too.
     let tools = wanted.is_none();
     let result = run_all(
@@ -1142,7 +1154,10 @@ fn run_all(
     {
         let name = entry.file_name().to_string_lossy().into_owned();
         let is_file = entry.file_type().is_ok_and(|t| t.is_file());
-        if is_file && name != RUN_LOCK && !users.contains_key(name.split('.').next().unwrap_or(""))
+        if is_file
+            && name != RUN_LOCK
+            && name != SUCCESS_PING
+            && !users.contains_key(name.split('.').next().unwrap_or(""))
         {
             let _ = std::fs::remove_file(entry.path());
         }

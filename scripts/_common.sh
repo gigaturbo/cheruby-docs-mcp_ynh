@@ -531,6 +531,8 @@ docs_configure() {
     ynh_config_add --template="index.service" --destination="/etc/systemd/system/$app-index.service"
     ynh_config_add --template="index.path" --destination="/etc/systemd/system/$app-index.path"
     ynh_config_add --template="ping@.service" --destination="/etc/systemd/system/$app-ping@.service"
+    mkdir -p "/etc/systemd/system/$app-ping@0.service.d"
+    ynh_config_add --template="ping-success.conf" --destination="/etc/systemd/system/$app-ping@0.service.d/success.conf"
     systemctl daemon-reload
     # nginx sends the panel token, read untraced; ynh_config_add_nginx
     # substitutes it with the trace off.

@@ -2,8 +2,11 @@
 Description=Cheruby Docs: refresh the search index (__APP__)
 Wants=__APP__-embed.service
 After=__APP__-embed.service
-# healthchecks.io, when turned on in the config panel: a failed run only.
-# The indexer itself reaches loopback only.
+# healthchecks.io, when turned on in the config panel: every failed run,
+# and the success of a run the schedule or Run now started (the ping@0
+# drop-in's condition), so a check whose period is the schedule's alerts
+# when runs stop. The indexer itself reaches loopback only.
+OnSuccess=__APP__-ping@0.service
 OnFailure=__APP__-ping@fail.service
 
 [Service]

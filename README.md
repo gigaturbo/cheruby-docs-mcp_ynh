@@ -61,8 +61,9 @@ login allowed to change it; Nextcloud keeps the old versions.
 
 "Index runs" shows how the last run ended, what the index holds and when
 the next run comes, with "Run now" and "Rebuild", which makes the next run
-read every file again. "Index monitoring" pings a healthchecks.io check's
-`/fail` when a run fails, and nothing otherwise.
+read every file again. "Index monitoring" pings a healthchecks.io check when
+any run fails, and on the success of a run the schedule or Run now started,
+so a check with the schedule's period alerts when runs stop.
 
 ## The page
 

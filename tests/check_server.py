@@ -1181,6 +1181,7 @@ def run_checks(base, env):
     result = tool("search_documents", query="fraises")
     yield "then search finds it", result, ok_with("--- Notes/fraise.md")(result)
     yield "the request is taken", requests_left(base), requests_left(base) == []
+    yield "a run an agent asked for leaves no success-ping", None, not os.path.exists(f"{base}/index/success-ping")
     result, out = asked(base, env)
     yield "run_index of everything answers at once", result, ok_with("all the folders is asked for", "The index holds")(result)
     yield "and its run checks every file of the user", out, "alice:" in out and "unchanged" in out and "ju:" not in out
@@ -1190,6 +1191,12 @@ def run_checks(base, env):
     out = run_indexer(env)
     yield "a request with Run now gets the full run, answered done", out, \
         "ju:" in out and json.load(open(f"{base}/index/alice.status.json"))["answered"].get("late") == "done"
+    yield "Run now leaves success-ping", None, os.path.exists(f"{base}/index/success-ping")
+    with open(f"{base}/index/requests/schedule-alice.json", "w") as f:
+        json.dump({"user": "alice"}, f)
+    out = run_indexer(env)
+    yield "the schedule's request is a full run, with success-ping", out, \
+        "alice:" in out and "unchanged" in out and os.path.exists(f"{base}/index/success-ping")
     result = tool("run_index")
     yield "not again within 15 minutes", result, error_with("ask again after")(result) and requests_left(base) == []
     for name, files, needle in [(".. refused", ["Notes/../secret.md"], "not allowed"),

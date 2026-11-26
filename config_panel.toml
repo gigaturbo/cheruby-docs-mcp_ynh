@@ -233,10 +233,10 @@ name = "Cheruby Docs"
 
     [main.monitoring]
     name = "Index monitoring"
-    help = "Pings a healthchecks.io check's /fail when an index run fails, whoever started it. Nothing is sent when a run succeeds, so give the check the longest period healthchecks.io allows: it then alerts on a failed run only, and stays down until you resolve it there."
+    help = "Pings a healthchecks.io check's /fail when an index run fails, whoever started it, and a success when a run the schedule or Run now started ends well, so a run that fails or never comes raises an alert. Runs an agent asks for with run_index send no success. Suggested check: the period of the schedule set on the app's page, grace 2 hours; none when it is never."
 
         [main.monitoring.healthcheck_enabled]
-        ask = "Ping healthchecks.io when an index run fails"
+        ask = "Ping healthchecks.io on index runs"
         type = "boolean"
         bind = "settings"
 
