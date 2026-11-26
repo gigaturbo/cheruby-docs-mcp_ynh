@@ -121,9 +121,15 @@ whitelists, cut in 10-minute parts at a quiet point, timestamps by default,
 the language detected once then fixed, paged from a cache; the page's
 Transcribe tab, from a folder or an upload.
 
+2026-11-26: built for 0.15.0~ynh1, not installed. whisper.cpp v1.9.6 with
+Silero VAD v6.2.0; on the Pi, 10:05 of speech took 137 s with small
+(0.6 GB) and 656 s with large-v3-turbo (1.2 GB), which alone kept "ask
+not" and the punctuation.
+Closes with T-M-6.
+
 ### F-M-21 · transcribe on a remote OpenAI-compatible endpoint
 
-`todo` `medium` `filed 2026-11-25`
+`doing` `medium` `filed 2026-11-25`
 
 After F-M-20 and F-P-10. Here the endpoint is Whoopy's LiteLLM, whose
 `speaches/*` route (Whoopy's own item) wakes the desktop and reaches
@@ -131,6 +137,10 @@ Speaches through froaky's proxy.
 
 **Do:** the speech engine's remote, always or on demand, as for embedding;
 retries while the desktop wakes; `engine` on the tool.
+
+2026-11-26: built for 0.15.0~ynh1 and checked against a stand-in Whoopy.
+Blocked for real use: Whoopy has no `speaches/*` route yet, and none is
+filed there. Closes with T-M-7.
 
 ### F-M-22 · speaker labels in transcripts
 
@@ -144,6 +154,37 @@ run on the 1080 Ti.
 transcript's segments.
 
 ## Tests
+
+### T-M-6 · a recording is transcribed on the Pi
+
+`todo` `playtest` `filed 2026-11-26`
+
+**Check:** ask first, then upgrade to 0.15.0~ynh1. With the gateway token,
+`transcribe_file` on an hour-long `.m4a` in a Syncthing folder: the first
+call says how far it is, later calls too, then the text with its times,
+the language right; time it. The same on a recording in Nextcloud (64 MB at
+most). An agent cleans the text, saves it with `write_file` and moves the
+recording with `move_file`. `systemctl restart cheruby-docs-mcp` during a
+transcription: the next call carries on after the parts done. On the page,
+Transcribe from a folder and from an upload through the portal, the text
+copied and downloaded. Switch the panel to large-v3-turbo and back. A
+`.pdf` renamed `.mp3` fails with ffmpeg's message and no real path.
+Inside the server's namespace, `<data dir>/transcripts` is writable and
+the rest of the data dir is not.
+
+### T-M-7 · a recording is transcribed on the desktop
+
+`todo` `playtest` `filed 2026-11-26`
+
+Waits for Whoopy's `speaches/*` route.
+
+**Check:** in Whoopy's admin page, a key allowed only the speech model;
+paste it and the model under "Speech to text", the desktop "on request".
+With the desktop asleep, `transcribe_file` with `engine` `desktop`: it wakes
+and the header says "on the desktop"; time it against T-M-6. Take the
+desktop off the network mid-way: the rest is done on the Pi and the header
+says so. The key in no log (`grep -cf <file holding it>` on the new lines
+of `yunohost-cli.log` and the config operation logs gives 0).
 
 ### T-P-7 · the page opens for the docs user only
 
