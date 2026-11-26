@@ -413,12 +413,25 @@ pub fn clock(seconds: f64) -> String {
 }
 
 /// The text: a line per segment with its time, or paragraphs split at pauses.
+/// whisper starts each segment with a space, except one it began inside a
+/// word: that one is joined to the previous segment.
 pub fn render(t: &Transcript, timestamps: bool) -> String {
     let mut out = String::new();
     let mut last_end = None;
     for s in &t.segments {
         let text = s.text.trim();
         if text.is_empty() {
+            continue;
+        }
+        if !out.is_empty() && !s.text.starts_with(char::is_whitespace) {
+            if timestamps {
+                out.pop();
+                out += text;
+                out.push('\n');
+            } else {
+                out += text;
+                last_end = Some(s.end);
+            }
             continue;
         }
         if timestamps {
@@ -1054,6 +1067,31 @@ mod tests {
             "[0:00] Bonjour.\n[0:02] Ça va ?\n[1:02:05] Au revoir."
         );
         assert_eq!(render(&t, false), "Bonjour. Ça va ?\n\nAu revoir.");
+    }
+
+    #[test]
+    fn a_word_cut_between_segments_is_joined() {
+        let seg = |start: f64, text: &str| Segment {
+            start,
+            end: start + 1.0,
+            text: text.into(),
+        };
+        let t = Transcript {
+            segments: vec![
+                seg(0.0, " Payer les fact"),
+                seg(1.0, "ures, activer une carte."),
+                seg(2.0, " Merci."),
+            ],
+            ..Default::default()
+        };
+        assert_eq!(
+            render(&t, true),
+            "[0:00] Payer les factures, activer une carte.\n[0:02] Merci."
+        );
+        assert_eq!(
+            render(&t, false),
+            "Payer les factures, activer une carte. Merci."
+        );
     }
 
     #[test]
