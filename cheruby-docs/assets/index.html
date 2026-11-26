@@ -355,6 +355,8 @@ function showEngines(list) {
 }
 
 let polling = null;
+// What was last sent from a folder, so a stopped or failed one can be sent again.
+let lastFolder = null;
 function mmss(s) {
   s = Math.floor(s);
   const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = String(s % 60).padStart(2, "0");
@@ -386,7 +388,18 @@ async function follow(key) {
     };
     return;
   }
-  if (d.state === "failed") { out.innerHTML = `<p class="bad">${esc(d.error)}</p>`; return; }
+  if (d.state === "failed") {
+    out.innerHTML = `<p class="bad">${esc(d.error)} It failed at ${mmss(d.done)}.</p>`
+      + (lastFolder ? '<div class="actions"><button type="button" id="again">Try again</button></div>' : "");
+    if (lastFolder) $("again").onclick = () => sendFolder({...lastFolder, retry: true});
+    return;
+  }
+  if (d.state === "stopped") {
+    // The server restarted: a folder's recording carries on where it stopped.
+    if (lastFolder) { sendFolder(lastFolder); return; }
+    out.innerHTML = `<p class="warn">Stopped at ${mmss(d.done)} of ${mmss(d.total)}: send the recording again to carry on.</p>`;
+    return;
+  }
   if (d.state === "running") {
     const left = d.left ? `, about ${Math.ceil(d.left / 60)} min left` : "";
     out.innerHTML = `<p>Transcribing: ${mmss(d.done)} of ${mmss(d.total)} done${left}.</p>`;
@@ -399,8 +412,8 @@ async function follow(key) {
 }
 
 async function queued(ev, send) {
-  ev.preventDefault();
-  const button = ev.target.querySelector("button");
+  ev?.preventDefault();
+  const button = ev ? ev.target.querySelector("button") : {};
   const out = $("transcript");
   button.disabled = true;
   out.innerHTML = "<p>Starting…</p>";
@@ -415,13 +428,18 @@ async function queued(ev, send) {
     button.disabled = false;
   }
 }
-$("from-folder").addEventListener("submit", ev => queued(ev, () => fetch("api/transcribe", {
-  method: "POST",
-  headers: {"content-type": "application/json"},
-  body: JSON.stringify({path: $("rec-path").value.trim(), engine: $("rec-engine").value || "",
-                        language: $("rec-language").value.trim()}),
-})));
+function sendFolder(body, ev) {
+  lastFolder = body;
+  return queued(ev, () => fetch("api/transcribe", {
+    method: "POST",
+    headers: {"content-type": "application/json"},
+    body: JSON.stringify(body),
+  }));
+}
+$("from-folder").addEventListener("submit", ev => sendFolder({path: $("rec-path").value.trim(),
+  engine: $("rec-engine").value || "", language: $("rec-language").value.trim(), retry: false}, ev));
 $("from-upload").addEventListener("submit", ev => queued(ev, () => {
+  lastFolder = null;
   const file = $("rec-file").files[0];
   $("transcript").innerHTML = "<p>Sending…</p>";
   return fetch("api/transcribe/upload", {
