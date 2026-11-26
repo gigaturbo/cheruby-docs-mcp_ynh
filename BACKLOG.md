@@ -58,19 +58,6 @@ vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
 which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
-### F-P-9 · a page for the docs user: Status and Search
-
-`done` `medium` `filed 2026-11-25`
-
-The config panel has grown too many screens, and nothing shows the index or
-lets the user search without an agent.
-
-**Do:** a pokestyle page in the tool server's process, on its own loopback
-port behind nginx and the portal, for the docs user alone: Status (index
-runs, servers, folders) and Search (the best passage of each file). Read-only:
-it changes nothing yet. An install from before needs its domain and path
-set first (`doc/PRE_UPGRADE.d/0.13.0~ynh1.md`).
-
 ### F-P-12 · the embedding model chosen on the page
 
 `todo` `medium` `filed 2026-11-25`
@@ -291,6 +278,7 @@ there after restore, gone after remove; a backup made after it restores
 
 ## Closed
 
+- `F-P-9` done `medium` 2026-11-26 · a pokestyle page for the docs user behind the portal, on its own loopback port: Status and Search, then Config (F-P-10) and Transcribe (F-M-20)
 - `F-P-10` done `large` 2026-11-26 · the schedule, the quiet hours and the filters on the page's Config tab, in `/var/lib/cheruby-docs-mcp/settings.json`, applied live; the tool server runs the schedule, no timer; healthchecks.io gets every failure and the success of scheduled and Run now runs; the upgrade moved the panel's values, checked (0.14.0~ynh1, installed 2026-11-26)
 
 - `B-P-6` closed 2026-11-25 · the page answered 404 on 0.13.0~ynh1: configure's folder loop kept a local `path`, which ynh_config_add_nginx took for the app's path
