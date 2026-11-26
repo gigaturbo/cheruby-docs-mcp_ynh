@@ -12,13 +12,14 @@ ynh_config_remove_systemd "$app-index"
 ynh_safe_rm "/etc/systemd/system/$app-ping@.service"
 ynh_safe_rm "/etc/systemd/system/$app-ping@0.service.d"
 
-for service in "$app" "$app-embed" "$app-rerank"; do
+for service in "$app" "$app-embed" "$app-rerank" "$app-speech"; do
     if ynh_hide_warnings yunohost service status "$service" >/dev/null; then
         yunohost service remove "$service"
     fi
 done
 ynh_config_remove_systemd "$app-embed"
 ynh_config_remove_systemd "$app-rerank"
+ynh_config_remove_systemd "$app-speech"
 ynh_config_remove_systemd
 
 ynh_config_remove_nginx

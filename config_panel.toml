@@ -231,6 +231,43 @@ name = "Cheruby Docs"
         type = "button"
         style = "danger"
 
+    [main.speech]
+    name = "Speech to text"
+    help = "transcribe_file and the page's Transcribe tab turn a recording into text, here or, when allowed below, on the desktop's GPU through Whoopy. A recording is cut in parts of about ten minutes; an hour of audio takes about 15 minutes here with whisper small, about an hour with large-v3-turbo."
+
+        [main.speech.speech_model]
+        ask = "Speech model on this server"
+        type = "select"
+        choices.whisper-small-q8 = "whisper small, Q8 (264 MB)"
+        choices.whisper-large-v3-turbo-q8 = "whisper large-v3-turbo, Q8 (874 MB)"
+        help = "small is about four times faster; large-v3-turbo gets the punctuation, the capitals and more of the words right, and takes about as long as the recording. A change downloads the model and restarts the tool server: a transcription going on carries on at the next call."
+        bind = "settings"
+
+        [main.speech.speech_engine]
+        ask = "The desktop"
+        type = "select"
+        choices.pi = "Never: always on this server"
+        choices.demand = "When an agent or the page asks for it"
+        choices.always = "Always, this server when the desktop fails"
+        help = "The desktop transcribes an hour in a few minutes. It is woken through Whoopy, which takes up to two minutes; when it still does not answer, the rest of the recording is done here."
+        bind = "settings"
+
+        [main.speech.speech_remote_model]
+        ask = "Speech model in Whoopy"
+        type = "string"
+        optional = true
+        example = "speaches/Systran/faster-whisper-large-v3"
+        help = "As Whoopy names it: speaches/ then the model's name in Speaches on the desktop. Whoopy's address is the one under Desktop embedding."
+        bind = "settings"
+
+        # Never shown and never traced: stored by set__speech_remote_key with the trace off.
+        [main.speech.speech_remote_key]
+        ask = "Whoopy key for speech"
+        type = "password"
+        optional = true
+        help = "A key allowed the speech model above only. The tool server holds it, unlike the embedding key. Empty keeps the one saved."
+        bind = "null"
+
     [main.monitoring]
     name = "Index monitoring"
     help = "Pings a healthchecks.io check's /fail when an index run fails, whoever started it, and a success when a run the schedule or Run now started ends well, so a run that fails or never comes raises an alert. Runs an agent asks for with run_index send no success. Suggested check: the period of the schedule set on the app's page, grace 2 hours; none when it is never."

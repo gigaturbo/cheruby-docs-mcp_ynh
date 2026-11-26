@@ -1,0 +1,55 @@
+[Unit]
+Description=Cheruby Docs: speech to text for transcribe_file (__APP__)
+After=network.target
+
+[Service]
+Type=simple
+User=__APP__
+Group=__APP__
+# One request at a time, each a part of about ten minutes sent by the tool
+# server as 16 kHz WAV. Silero VAD skips the silences, where whisper would
+# otherwise make up words. Lower priority than every other app. No --convert:
+# the tool server decodes the audio itself, through ffmpeg's whitelists.
+ExecStart=__INSTALL_DIR__/speech/whisper-server --model __INSTALL_DIR__/speech/__SPEECH_FILE__ \
+    --vad --vad-model __INSTALL_DIR__/speech/__VAD_FILE__ \
+    --host 127.0.0.1 --port __PORT_SPEECH__ --threads 4
+Nice=10
+CPUWeight=20
+MemoryMax=__SPEECH_MEMORY__
+
+# IPv4 loopback only; the ports, the app's nftables table (B-P-5).
+IPAddressAllow=127.0.0.0/8
+IPAddressDeny=any
+RestrictAddressFamilies=AF_INET AF_INET6
+
+# It reads its binary and models, nothing else.
+ProtectSystem=strict
+ProtectHome=yes
+TemporaryFileSystem=/var/www:ro
+BindReadOnlyPaths=__INSTALL_DIR__/speech
+InaccessiblePaths=-/var/lib -/var/log -/var/cache -/mnt -/media -/srv -/snapshots
+
+UMask=077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+ProtectClock=true
+ProtectHostname=true
+ProtectProc=invisible
+ProcSubset=pid
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+CapabilityBoundingSet=
+
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

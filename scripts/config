@@ -90,7 +90,42 @@ set__remote_key() {
     fi
     set -o xtrace
 }
+# The same for the speech key, which docs.env holds for the tool server.
+set__speech_remote_key() {
+    set +o xtrace
+    if [[ "${speech_remote_key:-}" != "" && "${speech_remote_key:-}" != "None" ]]; then
+        ynh_app_setting_set --key=speech_remote_key --value="$speech_remote_key"
+        speech_key_set=1
+    fi
+    set -o xtrace
+}
 validate__whoopy_folders() { docs_check_folders; }
+
+# The desktop needs its model in Whoopy and a key, saved or given now.
+docs_check_speech_engine() {
+    local has_key=0
+    [ "${speech_engine:-$(ynh_app_setting_get --key=speech_engine)}" != pi ] || return 0
+    set +o xtrace
+    [[ "${speech_remote_key:-}" == "" || "${speech_remote_key:-}" == "None" ]] \
+        || has_key=1
+    [ -z "$(ynh_app_setting_get --key=speech_remote_key)" ] || has_key=1
+    set -o xtrace
+    # A shell sends one field alone: the others are the saved ones.
+    if [ -z "${speech_remote_model:-$(ynh_app_setting_get --key=speech_remote_model)}" ] || [ "$has_key" = 0 ]; then
+        echo "The desktop needs the speech model in Whoopy and a Whoopy key for speech."
+    elif [ -z "${remote_url:-$(ynh_app_setting_get --key=remote_url)}" ]; then
+        echo "The desktop needs Whoopy's address, under Desktop embedding."
+    fi
+}
+validate__speech_engine() { docs_check_speech_engine; }
+validate__speech_remote_model() { docs_check_speech_engine; }
+
+validate__speech_model() {
+    docs_speech_model
+    curl --silent --fail --head --location --output /dev/null --max-time 15 \
+        "$(ynh_read_manifest "resources.sources.$speech_source.url")" \
+        || echo "The model cannot be downloaded now; try again later."
+}
 
 # Refused before it is saved when the model cannot be downloaded now.
 validate__embed_model() {
@@ -231,6 +266,9 @@ ynh_app_config_apply() {
     if [ "${changed[embed_model]:-}" = "true" ] && [ ! -f "$install_dir/model/$model_file" ]; then
         ynh_setup_source --dest_dir="$install_dir/model" --source_id="$model_source"
     fi
+    if [ "${changed[speech_model]:-}" = "true" ] && [ ! -f "$install_dir/speech/$speech_file" ]; then
+        ynh_setup_source --dest_dir="$install_dir/speech" --source_id="$speech_source"
+    fi
     _ynh_app_config_apply
     healthcheck_enabled=$(ynh_app_setting_get --key=healthcheck_enabled)
     healthcheck_url=$(ynh_app_setting_get --key=healthcheck_url)
@@ -241,6 +279,10 @@ ynh_app_config_apply() {
         ynh_safe_rm "$data_dir/${old[docs_user]}.sqlite"
         ynh_safe_rm "$data_dir/${old[docs_user]}.work.sqlite"
         ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
+    fi
+    # The old speech model goes, before any branch below returns.
+    if [ "${changed[speech_model]:-}" = "true" ]; then
+        docs_fetch_speech
     fi
     # A run going on, or one started before the embedding server restarts,
     # would mix two models' vectors in one index. docs_start starts the path
@@ -258,16 +300,25 @@ ynh_app_config_apply() {
         || [ "${changed[remote_url]:-}" = "true" ]; then
         docs_configure
     fi
+    if [ "${changed[speech_model]:-}" = "true" ]; then
+        docs_configure
+        ynh_systemctl --service="$app-speech" --action="restart"
+        ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
+            --wait_until="cheruby-docs: MCP at" --timeout=60
+        ynh_print_info "The speech model is $speech_name. Transcripts already made keep their text."
+        return
+    fi
     local key
-    # A new app password is in the settings already; the units need it.
-    if [ "${nc_password_set:-0}" = 1 ]; then
+    # A new app password or speech key is in the settings already; the tool server needs it.
+    if [ "${nc_password_set:-0}" = 1 ] || [ "${speech_key_set:-0}" = 1 ]; then
         docs_configure
         ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
             --wait_until="cheruby-docs: MCP at" --timeout=60
         return
     fi
     for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_writable local_enabled \
-        local_folders local_writable nextcloud_enabled nextcloud_account nextcloud_folders nextcloud_writable; do
+        local_folders local_writable nextcloud_enabled nextcloud_account nextcloud_folders nextcloud_writable \
+        speech_engine speech_remote_model remote_url; do
         if [ "${changed[$key]:-}" = "true" ]; then
             docs_configure
             ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
@@ -333,4 +384,5 @@ run__rebuild_index() {
 }
 
 docs_embed_model
+docs_speech_model
 ynh_app_config_run "$1"

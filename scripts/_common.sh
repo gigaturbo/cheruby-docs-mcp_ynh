@@ -3,6 +3,7 @@
 # Shared steps between install, upgrade and restore.
 
 rerank_model_file="jina-reranker-v2-base-multilingual-Q8_0.gguf"
+vad_file="ggml-silero-v6.2.0.bin"
 
 # Settings with no install question. Defaults only: an upgrade keeps whatever
 # the config panel has since set.
@@ -16,6 +17,9 @@ docs_default_settings() {
     ynh_app_setting_set_default --key=embed_model --value=embeddinggemma-300m-q8
     ynh_app_setting_set_default --key=remote_url --value="http://127.0.0.1:4000"
     ynh_app_setting_set_default --key=remote_model --value=""
+    ynh_app_setting_set_default --key=speech_model --value=whisper-small-q8
+    ynh_app_setting_set_default --key=speech_engine --value=pi
+    ynh_app_setting_set_default --key=speech_remote_model --value=""
     local key
 
     # The app password the 0.5 test build made with occ, now pasted in the panel.
@@ -84,6 +88,7 @@ docs_default_settings() {
         ynh_app_setting_delete --key=whoopy_user
     fi
     docs_embed_model
+    docs_speech_model
 }
 
 # Installs from before 0.14: the schedule, the quiet hours and the filters
@@ -346,6 +351,47 @@ docs_fetch_llama() {
     docs_fetch_model
 }
 
+# The speech model chosen in the panel: its source in the manifest, its file,
+# the name transcripts give it and the memory whisper-server may take.
+docs_speech_model() {
+    case "${speech_model:-}" in
+        whisper-small-q8) speech_source=speech_model speech_name="whisper small" speech_memory=1G ;;
+        whisper-large-v3-turbo-q8) speech_source=speech_model_large speech_name="whisper large-v3-turbo" speech_memory=2G ;;
+        *)
+            ynh_print_warn "Speech model: no '${speech_model:-}'; whisper small is used."
+            speech_source=speech_model speech_name="whisper small" speech_memory=1G
+            ;;
+    esac
+    speech_file=$(ynh_read_manifest "resources.sources.$speech_source.rename")
+}
+
+# whisper-server, the release build/whisper-server.sh made for the Pi 5, with
+# the chosen speech model and Silero VAD, in speech/: llama's bin/ is emptied
+# whenever llama-server is fetched again. The chosen model is fetched before
+# the one it replaces goes, so a failed download leaves the old one in place.
+docs_fetch_speech() {
+    local file
+    mkdir -p "$install_dir/speech"
+    ynh_safe_rm "$install_dir/speech/whisper-server"
+    ynh_setup_source --dest_dir="$install_dir/speech" --source_id="whisper_server"
+    chmod 750 "$install_dir/speech/whisper-server"
+    [ -f "$install_dir/speech/$vad_file" ] \
+        || ynh_setup_source --dest_dir="$install_dir/speech" --source_id="vad_model"
+    [ -f "$install_dir/speech/$speech_file" ] \
+        || ynh_setup_source --dest_dir="$install_dir/speech" --source_id="$speech_source"
+    for file in "$install_dir"/speech/*.bin; do
+        [ "${file##*/}" = "$speech_file" ] || [ "${file##*/}" = "$vad_file" ] || ynh_safe_rm "$file"
+    done
+    ynh_app_setting_set --key=speech_fingerprint --value="$(docs_speech_fingerprint)"
+}
+
+# What speech/ holds, and how it is put there.
+docs_speech_fingerprint() {
+    { ynh_read_manifest "resources.sources.whisper_server.sha256"; ynh_read_manifest "resources.sources.$speech_source.sha256"
+      ynh_read_manifest "resources.sources.vad_model.sha256"
+      declare -f docs_fetch_speech; } | sha256sum | cut -d' ' -f1
+}
+
 # What bin/ and model/ hold, and how they are put there.
 docs_llama_fingerprint() {
     { ynh_read_manifest "resources.sources.llama_server.sha256"; ynh_read_manifest "resources.sources.$model_source.sha256"
@@ -361,7 +407,10 @@ docs_check_downloads() {
         "$(ynh_read_manifest "resources.sources.pdfium.url")" \
         "$(ynh_read_manifest "resources.sources.llama_server.url")" \
         "$(ynh_read_manifest "resources.sources.$model_source.url")" \
-        "$(ynh_read_manifest "resources.sources.rerank_model.url")"; do
+        "$(ynh_read_manifest "resources.sources.rerank_model.url")" \
+        "$(ynh_read_manifest "resources.sources.whisper_server.url")" \
+        "$(ynh_read_manifest "resources.sources.$speech_source.url")" \
+        "$(ynh_read_manifest "resources.sources.vad_model.url")"; do
         curl --silent --show-error --head --location --output /dev/null --max-time 15 "$url" \
             || ynh_die "$url cannot be reached; nothing was changed. Retry the upgrade later."
     done
@@ -507,6 +556,14 @@ docs_configure() {
         token=${token:-$(ynh_string_random --length=64)}
         ynh_app_setting_set --key=panel_token --value="$token"
         echo "DOCS_PANEL_TOKEN=$token"
+        # transcribe_file: whisper-server here, and the desktop through Whoopy
+        # when the panel allows it.
+        echo "DOCS_SPEECH_URL=http://127.0.0.1:$port_speech"
+        echo "DOCS_SPEECH_MODEL=$speech_name"
+        echo "DOCS_SPEECH_ENGINE=${speech_engine:-pi}"
+        echo "DOCS_SPEECH_REMOTE_URL=${remote_url:-}"
+        echo "DOCS_SPEECH_REMOTE_MODEL=${speech_remote_model:-}"
+        echo "DOCS_SPEECH_REMOTE_KEY=$(ynh_app_setting_get --key=speech_remote_key)"
         [ -z "$nextcloud_env" ] || echo "$nextcloud_env"
         token=""
     } > "$install_dir/docs.env"
@@ -518,15 +575,16 @@ docs_configure() {
     chown root:root "$install_dir/docs.env" "$install_dir/index.env"
     chmod 600 "$install_dir/docs.env" "$install_dir/index.env"
     # run_index's requests, which the server may write and the path unit watches.
-    mkdir -p "$data_dir/requests"
+    mkdir -p "$data_dir/requests" "$data_dir/transcripts"
     chown -R "$app:$app" "$data_dir"
-    chmod 700 "$data_dir/requests"
+    chmod 700 "$data_dir/requests" "$data_dir/transcripts"
     docs_write_ping
     docs_firewall
 
     ynh_config_add_systemd
     ynh_config_add_systemd --service="$app-embed" --template="embed.service"
     ynh_config_add_systemd --service="$app-rerank" --template="rerank.service"
+    ynh_config_add_systemd --service="$app-speech" --template="speech.service"
     # Started by its path unit only, so written, not enabled.
     ynh_config_add --template="index.service" --destination="/etc/systemd/system/$app-index.service"
     ynh_config_add --template="index.path" --destination="/etc/systemd/system/$app-index.path"
@@ -545,6 +603,7 @@ docs_configure() {
     yunohost service add "$app" --description="Cheruby Docs, MCP tools on users' folders"
     yunohost service add "$app-embed" --description="Cheruby Docs, embedding model for the search index"
     yunohost service add "$app-rerank" --description="Cheruby Docs, reranking model for search results"
+    yunohost service add "$app-speech" --description="Cheruby Docs, speech to text for transcribe_file"
 }
 
 # The page shows the docs user's folders and index: that user alone may open
@@ -567,7 +626,7 @@ docs_page_access() {
 docs_firewall() {
     local uid ports remote_port baseline=1 file="/etc/nftables.d/$app.conf"
     uid=$(id -u "$app")
-    ports="$port_embed, $port_rerank, 443"
+    ports="$port_embed, $port_rerank, $port_speech, 443"
     remote_port=$(sed -n 's|^http://127\.0\.0\.1:\([0-9]*\)/\?$|\1|p' <<< "${remote_url:-}")
     [ -z "$remote_port" ] || ports+=", $remote_port"
     [ -e "$file" ] && mv "$file" "$file.previous"
@@ -591,6 +650,7 @@ docs_firewall() {
 # reranking server, so nothing waits for it.
 docs_start() {
     ynh_systemctl --service="$app-rerank" --action="restart"
+    ynh_systemctl --service="$app-speech" --action="restart"
     ynh_systemctl --service="$app-embed" --action="restart"
     local i
     for i in $(seq 1 60); do
@@ -602,6 +662,12 @@ docs_start() {
     for i in $(seq 1 10); do
         curl --silent --fail --output /dev/null "http://127.0.0.1:$port_rerank/health" && break
         [ "$i" = 10 ] && ynh_print_warn "The reranking server does not answer yet; search runs in a rougher order until it does: journalctl -u $app-rerank"
+        sleep 2
+    done
+    # transcribe_file only: nothing else waits for it.
+    for i in $(seq 1 10); do
+        curl --silent --fail --output /dev/null "http://127.0.0.1:$port_speech/health" && break
+        [ "$i" = 10 ] && ynh_print_warn "The speech server does not answer yet; transcribe_file fails until it does: journalctl -u $app-speech"
         sleep 2
     done
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
@@ -626,7 +692,7 @@ docs_clear_index() {
 docs_stop() {
     systemctl stop "$app-index.path" "$app-index.service" --quiet 2>/dev/null || true
     ynh_systemctl --service="$app" --action="stop"
-    systemctl stop "$app-embed" "$app-rerank" --quiet 2>/dev/null || true
+    systemctl stop "$app-embed" "$app-rerank" "$app-speech" --quiet 2>/dev/null || true
 }
 
 # The app's logo, shown by the webadmin and the portal, set only while it has

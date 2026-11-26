@@ -1,6 +1,6 @@
 [Unit]
 Description=Cheruby Docs: MCP tools on users' folders (__APP__)
-Wants=__APP__-embed.service __APP__-rerank.service
+Wants=__APP__-embed.service __APP__-rerank.service __APP__-speech.service
 # The schedule judges minutes by the clock: a synced one.
 After=network.target time-sync.target __APP__-embed.service
 
@@ -12,7 +12,8 @@ Group=__APP__
 # in a writable folder. Everything else those groups could read is hidden below.
 SupplementaryGroups=__GROUPS__
 
-# Tokens, the Nextcloud app password, folders and index settings. Root 600,
+# Tokens, the Nextcloud app password, the Whoopy key for speech, folders and
+# index settings. Root 600,
 # read before privileges drop.
 EnvironmentFile=__INSTALL_DIR__/docs.env
 ExecStart=__INSTALL_DIR__/bin/cheruby-docs serve
@@ -20,7 +21,8 @@ ExecStart=__INSTALL_DIR__/bin/cheruby-docs serve
 MemoryMax=512M
 
 # IPv4 loopback only: the AI gateway and Nextcloud are on this machine, and
-# the tools need nothing else. Nextcloud is reached at 127.0.0.1:443 by its
+# the tools need nothing else. ffmpeg, which decodes recordings, runs as its
+# child, inside all of this. Nextcloud is reached at 127.0.0.1:443 by its
 # name. Which loopback ports, the app's nftables table says (B-P-5).
 IPAddressAllow=127.0.0.0/8
 IPAddressDeny=any
@@ -38,6 +40,8 @@ TemporaryFileSystem=/var/www:ro /var/lib:ro
 BindPaths=__WRITE_PATHS__
 # Where run_index leaves its requests: the one place of the index folder it writes.
 BindPaths=__DATA_DIR__/requests
+# transcribe_file's transcripts, kept 30 days.
+BindPaths=__DATA_DIR__/transcripts
 # The page's settings (settings.json), saved from the page.
 BindPaths=/var/lib/__APP__
 BindReadOnlyPaths=__INSTALL_DIR__ __DATA_DIR__ __READ_PATHS__

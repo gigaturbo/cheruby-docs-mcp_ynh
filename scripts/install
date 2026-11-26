@@ -7,6 +7,8 @@ docs_default_settings
 
 ynh_script_progression "Fetching the embedding server and its models..."
 docs_fetch_llama
+ynh_script_progression "Fetching the speech server and its models..."
+docs_fetch_speech
 
 ynh_script_progression "Installing the tool server..."
 docs_install_binary

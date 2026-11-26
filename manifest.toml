@@ -7,7 +7,7 @@ name = "Cheruby Docs"
 description.en = "MCP tools that let a user's AI agents list, find, read and search that user's folders, and write where allowed"
 description.fr = "Outils MCP : les agents IA d'un utilisateur listent, cherchent, lisent et fouillent ses dossiers, et écrivent là où c'est permis"
 
-version = "0.14.0~ynh1"
+version = "0.15.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -23,12 +23,14 @@ multi_instance = false
 ldap = false
 sso = true
 # The embedding model (up to 640 MB) and the reranker (310 MB), llama-server,
-# the tool server and PDFium; the index grows with the folders.
-disk = "1700M"
+# the speech model (up to 875 MB), the tool server and PDFium; the index grows
+# with the folders.
+disk = "2700M"
 ram.build = "50M"
 # Qwen3-Embedding Q8_0 takes about 1 GB more than EmbeddingGemma: as a causal
-# model it keeps a KV cache (1.7 GB at most, measured on b12223).
-ram.runtime = "2500M"
+# model it keeps a KV cache (1.7 GB at most, measured on b12223). whisper
+# small takes about 0.6 GB, large-v3-turbo about 1.2 GB (measured on v1.9.6).
+ram.runtime = "4000M"
 
 [install]
     [install.domain]
@@ -125,6 +127,39 @@ ram.runtime = "2500M"
     rename = "Qwen3-Embedding-0.6B-Q4_K_M.gguf"
     prefetch = false
 
+    # whisper-server from whisper.cpp v1.9.6, built for the Pi 5 by
+    # build/whisper-server.sh in this repository's release workflow, as
+    # llama-server is. MIT, like whisper.cpp (LICENSE in the release).
+    [resources.sources.whisper_server]
+    url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/whisper-server-v1.9.6/whisper-server-v1.9.6-debian12-arm64"
+    sha256 = "016e7a46e20877b730f047785a200ab83122e8500bca4fc47708c4c7a0709c68"
+    extract = false
+    rename = "whisper-server"
+
+    # The speech models of transcribe_file, one chosen in the config panel
+    # (speech_model in _common.sh), at a fixed revision. MIT, as OpenAI's
+    # Whisper weights. Only the chosen one is fetched.
+    [resources.sources.speech_model]
+    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-small-q8_0.bin"
+    sha256 = "49c8fb02b65e6049d5fa6c04f81f53b867b5ec9540406812c643f177317f779f"
+    extract = false
+    rename = "ggml-small-q8_0.bin"
+    prefetch = false
+
+    [resources.sources.speech_model_large]
+    url = "https://huggingface.co/ggerganov/whisper.cpp/resolve/5359861c739e955e79d9a303bcbc70fb988958b1/ggml-large-v3-turbo-q8_0.bin"
+    sha256 = "317eb69c11673c9de1e1f0d459b253999804ec71ac4c23c17ecf5fbe24e259a1"
+    extract = false
+    rename = "ggml-large-v3-turbo-q8_0.bin"
+    prefetch = false
+
+    # Silero VAD v6.2.0 in ggml, which keeps whisper off the silences. MIT.
+    [resources.sources.vad_model]
+    url = "https://huggingface.co/ggml-org/whisper-vad/resolve/9ffd54a1e1ee413ddf265af9913beaf518d1639b/ggml-silero-v6.2.0.bin"
+    sha256 = "2aa269b785eeb53a82983a20501ddf7c1d9c48e33ab63a41391ac6c9f7fb6987"
+    extract = false
+    rename = "ggml-silero-v6.2.0.bin"
+
     # jina-reranker-v2-base-multilingual, which orders search results by how well
     # they answer the query, at a fixed revision. Its licence is CC-BY-NC-4.0:
     # non-commercial use only.
@@ -152,10 +187,12 @@ ram.runtime = "2500M"
     embed.default = 8771
     rerank.default = 8774
     page.default = 8775
+    speech.default = 8776
 
-    # llama-server's OpenMP runtime.
+    # llama-server's and whisper-server's OpenMP runtime; ffmpeg decodes the
+    # recordings for transcribe_file.
     [resources.apt]
-    packages = ["libgomp1"]
+    packages = ["libgomp1", "ffmpeg"]
 
     # The page, for the docs user only (docs_page_access); the AI gateway
     # reaches the tools on loopback, never through nginx.

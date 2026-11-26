@@ -13,6 +13,11 @@ if [ -x "$install_dir/bin/llama-server" ] && [ -f "$install_dir/model/$model_fil
     && [ "$(docs_llama_fingerprint)" = "${llama_fingerprint:-}" ]; then
     fetch_llama=0
 fi
+fetch_speech=1
+if [ -x "$install_dir/speech/whisper-server" ] && [ -f "$install_dir/speech/$speech_file" ] \
+    && [ "$(docs_speech_fingerprint)" = "${speech_fingerprint:-}" ]; then
+    fetch_speech=0
+fi
 docs_check_downloads
 
 ynh_script_progression "Stopping the tool server..."
@@ -43,6 +48,12 @@ if [ "$fetch_llama" = 1 ]; then
     docs_fetch_llama
 fi
 
+if [ "$fetch_speech" = 1 ]; then
+    ynh_script_progression "Fetching the speech server and its models..."
+    # A model pinned again keeps its file name: fetched afresh, never kept.
+    ynh_safe_rm "$install_dir/speech"
+    docs_fetch_speech
+fi
 ynh_script_progression "Installing the tool server..."
 docs_install_binary
 
