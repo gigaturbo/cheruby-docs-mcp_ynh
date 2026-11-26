@@ -14,17 +14,17 @@ validate__healthcheck_url() {
     validate__healthcheck_enabled
 }
 
-# The folders of every turned-on source, then the labels Whoopy opens. The
+# The folders of every turned-on source, then the labels the MCP token opens. The
 # message goes into a double-quoted YAML string: no quote or backslash.
 docs_check_folders() {
     local message="" wanted
     docs_collect_folders
     message=$(head -n 1 <<< "$folder_error$write_error")
     local -a picked=()
-    IFS=, read -ra picked <<< "${whoopy_folders:-}"
+    IFS=, read -ra picked <<< "${mcp_folders:-}"
     for wanted in "${picked[@]}"; do
         if [ -z "$message" ] && [ -z "${folder_path[$wanted]+x}" ]; then
-            message="Whoopy access: no folder '$wanted'. Folders: $(printf '%s\n' "${!folder_path[@]}" | sort | paste -sd,)."
+            message="MCP access: no folder '$wanted'. Folders: $(printf '%s\n' "${!folder_path[@]}" | sort | paste -sd,)."
         fi
     done
     echo "${message//[\"\\]/?}"
@@ -81,7 +81,7 @@ set__nextcloud_password() {
     set -o xtrace
 }
 
-# The same for the Whoopy key, which only index.env holds.
+# The same for the remote server's key, which only index.env holds.
 set__remote_key() {
     set +o xtrace
     if [[ "${remote_key:-}" != "" && "${remote_key:-}" != "None" ]]; then
@@ -99,9 +99,9 @@ set__speech_remote_key() {
     fi
     set -o xtrace
 }
-validate__whoopy_folders() { docs_check_folders; }
+validate__mcp_folders() { docs_check_folders; }
 
-# The desktop needs its model in Whoopy and a key, saved or given now.
+# The desktop needs its model on the remote server and a key, saved or given now.
 docs_check_speech_engine() {
     local has_key=0
     [ "${speech_engine:-$(ynh_app_setting_get --key=speech_engine)}" != pi ] || return 0
@@ -112,9 +112,9 @@ docs_check_speech_engine() {
     set -o xtrace
     # A shell sends one field alone: the others are the saved ones.
     if [ -z "${speech_remote_model:-$(ynh_app_setting_get --key=speech_remote_model)}" ] || [ "$has_key" = 0 ]; then
-        echo "The desktop needs the speech model in Whoopy and a Whoopy key for speech."
+        echo "The desktop needs the speech model on the remote server and a key for speech."
     elif [ -z "${remote_url:-$(ynh_app_setting_get --key=remote_url)}" ]; then
-        echo "The desktop needs Whoopy's address, under Desktop embedding."
+        echo "The desktop needs the remote server's address, under Desktop embedding."
     fi
 }
 validate__speech_engine() { docs_check_speech_engine; }
@@ -142,9 +142,9 @@ if [ "${1:-}" = "show" ]; then
             '{value: $v, choices: ($c | split("\n") | map(select(length > 0)))}'
     }
     # The open folders' labels, and any saved one no longer open, so it shows and can be taken out.
-    get__whoopy_folders() {
+    get__mcp_folders() {
         docs_collect_folders
-        jq -cn --arg v "$(ynh_app_setting_get --key=whoopy_folders)" --arg c "$(printf '%s\n' "${!folder_path[@]}" | sort)" \
+        jq -cn --arg v "$(ynh_app_setting_get --key=mcp_folders)" --arg c "$(printf '%s\n' "${!folder_path[@]}" | sort)" \
             '{value: $v, choices: ($c | split("\n") + ($v | split(",")) | map(select(length > 0)) | unique)}'
     }
 fi
@@ -249,7 +249,7 @@ ynh_app_config_show() {
     set +o xtrace
     ynh_return "mcp_token:"
     ynh_return "  value: '$(ynh_app_setting_get --key=mcp_token)'"
-    ynh_return "  help: 'Address for Whoopy: http://127.0.0.1:$port/mcp'"
+    ynh_return "  help: 'Address: http://127.0.0.1:$port/mcp'"
     set -o xtrace
 }
 
@@ -273,9 +273,8 @@ ynh_app_config_apply() {
     healthcheck_enabled=$(ynh_app_setting_get --key=healthcheck_enabled)
     healthcheck_url=$(ynh_app_setting_get --key=healthcheck_url)
     docs_write_ping
-    # The previous user's token and index serve nobody any more. The folders stay.
+    # The previous user's index serves nobody any more. The folders and the token stay.
     if [ "${changed[docs_user]:-}" = "true" ]; then
-        ynh_app_setting_delete --key="token_${old[docs_user]}"
         ynh_safe_rm "$data_dir/${old[docs_user]}.sqlite"
         ynh_safe_rm "$data_dir/${old[docs_user]}.work.sqlite"
         ynh_print_warn "The folders are the same as for ${old[docs_user]}: check them in the sources."
@@ -316,7 +315,7 @@ ynh_app_config_apply() {
             --wait_until="cheruby-docs: MCP at" --timeout=60
         return
     fi
-    for key in docs_user whoopy_folders syncthing_enabled syncthing_folders syncthing_writable local_enabled \
+    for key in docs_user mcp_folders syncthing_enabled syncthing_folders syncthing_writable local_enabled \
         local_folders local_writable nextcloud_enabled nextcloud_account nextcloud_folders nextcloud_writable \
         speech_engine speech_remote_model remote_url; do
         if [ "${changed[$key]:-}" = "true" ]; then
@@ -335,7 +334,7 @@ run__new_token() {
     docs_configure
     ynh_systemctl --service="$app" --action="restart" --log_path="systemd" \
         --wait_until="cheruby-docs: MCP at" --timeout=60
-    ynh_print_info "A new token is in the panel: the old one no longer works. Give it to the server docs in Whoopy's admin page, MCP Servers."
+    ynh_print_info "A new token is in the panel: the old one no longer works. Give it to every MCP client that uses this server."
 }
 
 run__run_index() {
@@ -351,7 +350,7 @@ run__run_index() {
     ynh_print_info "A run has started. Reopen the panel to see its progress under Index runs."
 }
 
-# The same, with "remote" in run-now: the indexer embeds through Whoopy once
+# The same, with "remote" in run-now: the indexer embeds through the remote server once
 # the check passages agree.
 run__run_index_remote() {
     if [ "$(systemctl is-active "$app-index.service")" = activating ]; then
@@ -363,7 +362,7 @@ run__run_index_remote() {
     [ -z "$(ynh_app_setting_get --key=remote_key)" ] || has_key=1
     set -o xtrace
     if [ -z "$(ynh_app_setting_get --key=remote_model)" ] || [ "$has_key" = 0 ]; then
-        ynh_print_info "Save the model in Whoopy and a Whoopy key under Desktop embedding first."
+        ynh_print_info "Save the remote server's model and key under Desktop embedding first."
         return
     fi
     rm -f "$data_dir/run-now"

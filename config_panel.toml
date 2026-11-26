@@ -128,11 +128,11 @@ name = "Cheruby Docs"
         type = "markdown"
         bind = "null"
 
-    [main.whoopy]
-    name = "Whoopy access"
-    help = "Whoopy holds one token for this app. It opens the folders chosen here, and searches the user's index."
+    [main.access]
+    name = "MCP access"
+    help = "The app has one token, shown below. It opens the folders chosen here, and search keeps to them."
 
-        [main.whoopy.whoopy_folders]
+        [main.access.mcp_folders]
         ask = "Folders"
         type = "tags"
         optional = true
@@ -145,7 +145,7 @@ name = "Cheruby Docs"
     # Its own section: a section holding a button runs actions and saves nothing.
     [main.mcp]
     name = "MCP token"
-    help = "The token Whoopy presents, with the address shown under it. Both go into Whoopy's status page, MCP Servers tab, as the server docs."
+    help = "Any MCP client on this server connects to the address shown under the token, with the header Authorization: Bearer, then the token. A gateway such as Whoopy or LiteLLM adds it there as an MCP server, by hand."
 
         # Read by ynh_app_config_show with the trace off, never by the traced getter.
         [main.mcp.mcp_token]
@@ -159,7 +159,7 @@ name = "Cheruby Docs"
         ask = "New token"
         type = "button"
         style = "warning"
-        help = "Makes another token and restarts the service, as `sudo cheruby-docs-mcp token --new` does. The old one stops working: give the new one to the server docs in Whoopy's admin page, MCP Servers."
+        help = "Makes another token and restarts the service, as `sudo cheruby-docs-mcp token --new` does. The old one stops working: give the new one to every MCP client that uses this server."
 
     [main.index]
     name = "Search index"
@@ -179,30 +179,30 @@ name = "Cheruby Docs"
 
     [main.remote]
     name = "Desktop embedding"
-    help = "Run now on the desktop reads the files on this server as usual but has the desktop's GPU, through Whoopy, turn the passages into vectors: a first index of many files takes minutes instead of hours. Search still does it here for each question, so the run first compares about 20 passages done both ways and keeps to this server unless they agree. In Whoopy's admin page, make a key allowed only the model below."
+    help = "Run now on the desktop reads the files on this server as usual but has the desktop's GPU, through an OpenAI-compatible server on this server such as Whoopy, turn the passages into vectors: a first index of many files takes minutes instead of hours. Search still does it here for each question, so the run first compares about 20 passages done both ways and keeps to this server unless they agree. On that server, make a key allowed only the model below."
 
         [main.remote.remote_model]
-        ask = "Model in Whoopy"
+        ask = "Model there"
         type = "string"
         optional = true
         example = "ollama-embed/embeddinggemma-300m-q8-2k:latest"
-        help = "The embedding model chosen above, as Whoopy names it on the desktop: ollama-embed/ then its name in Ollama. Not ollama/, which cannot embed, nor Whoopy's embeddinggemma, which is this server's. jina-embeddings-v5-text-nano is not in Ollama."
+        help = "The embedding model chosen above, as that server names it on the desktop. In Whoopy: ollama-embed/ then its name in Ollama; not ollama/, which cannot embed, nor Whoopy's embeddinggemma, which is this server's. jina-embeddings-v5-text-nano is not in Ollama."
         bind = "settings"
 
         # Never shown and never traced: stored by set__remote_key with the trace off.
         [main.remote.remote_key]
-        ask = "Whoopy key"
+        ask = "API key"
         type = "password"
         optional = true
         help = "A key allowed the model above only. Empty keeps the one saved."
         bind = "null"
 
         [main.remote.remote_url]
-        ask = "Whoopy address"
+        ask = "Address"
         type = "string"
         optional = true
         example = "http://127.0.0.1:4000"
-        help = "On this server: the index is not allowed to reach any other machine."
+        help = "Of the OpenAI-compatible server, on this server: the index is not allowed to reach any other machine."
         pattern.regexp = '^$|^http://127\.0\.0\.1:[0-9]+/?$'
         pattern.error = "An address on this server, such as http://127.0.0.1:4000"
         bind = "settings"
@@ -210,7 +210,7 @@ name = "Cheruby Docs"
     # Its own section: a section holding a button runs actions and saves nothing.
     [main.index_runs]
     name = "Index runs"
-    help = "Run now starts a run without waiting for the schedule set on the app's page, even in the quiet hours, and does nothing while one runs. Run now on the desktop does the same with the desktop's GPU (Desktop embedding above); when Whoopy cannot be reached or the vectors do not agree, the run goes on here. The schedule never uses the desktop. Rebuild stops a run and drops the index: the next run reads every file again, which takes hours on many, and search answers from the old index only for its first ten minutes."
+    help = "Run now starts a run without waiting for the schedule set on the app's page, even in the quiet hours, and does nothing while one runs. Run now on the desktop does the same with the desktop's GPU (Desktop embedding above); when the remote server cannot be reached or the vectors do not agree, the run goes on here. The schedule never uses the desktop. Rebuild stops a run and drops the index: the next run reads every file again, which takes hours on many, and search answers from the old index only for its first ten minutes."
 
         # Filled when the panel opens, from the status file the indexer writes.
         [main.index_runs.index_status]
@@ -233,7 +233,7 @@ name = "Cheruby Docs"
 
     [main.speech]
     name = "Speech to text"
-    help = "transcribe_file and the page's Transcribe tab turn a recording into text, here or, when allowed below, on the desktop's GPU through Whoopy. A recording is cut in parts of about ten minutes; an hour of audio takes about 15 minutes here with whisper small, about an hour with large-v3-turbo."
+    help = "transcribe_file and the page's Transcribe tab turn a recording into text, here or, when allowed below, on the desktop's GPU through the OpenAI-compatible server under Desktop embedding. A recording is cut in parts of about ten minutes; an hour of audio takes about 15 minutes here with whisper small, about an hour with large-v3-turbo."
 
         [main.speech.speech_model]
         ask = "Speech model on this server"
@@ -249,20 +249,20 @@ name = "Cheruby Docs"
         choices.pi = "Never: always on this server"
         choices.demand = "When an agent or the page asks for it"
         choices.always = "Always, this server when the desktop fails"
-        help = "The desktop transcribes an hour in a few minutes. It is woken through Whoopy, which takes up to two minutes; when it still does not answer, the rest of the recording is done here."
+        help = "The desktop transcribes an hour in a few minutes. It is woken through the remote server, which takes up to two minutes; when it still does not answer, the rest of the recording is done here."
         bind = "settings"
 
         [main.speech.speech_remote_model]
-        ask = "Speech model in Whoopy"
+        ask = "Speech model there"
         type = "string"
         optional = true
         example = "speaches/Systran/faster-whisper-large-v3"
-        help = "As Whoopy names it: speaches/ then the model's name in Speaches on the desktop. Whoopy's address is the one under Desktop embedding."
+        help = "As the server under Desktop embedding names it. In Whoopy: speaches/ then the model's name in Speaches on the desktop."
         bind = "settings"
 
         # Never shown and never traced: stored by set__speech_remote_key with the trace off.
         [main.speech.speech_remote_key]
-        ask = "Whoopy key for speech"
+        ask = "API key for speech"
         type = "password"
         optional = true
         help = "A key allowed the speech model above only. The tool server holds it, unlike the embedding key. Empty keeps the one saved."

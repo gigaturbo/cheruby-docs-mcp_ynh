@@ -194,8 +194,8 @@ ram.runtime = "4000M"
     [resources.apt]
     packages = ["libgomp1", "ffmpeg"]
 
-    # The page, for the docs user only (docs_page_access); the AI gateway
-    # reaches the tools on loopback, never through nginx.
+    # The page, for the docs user only (docs_page_access); MCP clients
+    # reach the tools on loopback, never through nginx.
     [resources.permissions]
     main.url = "/"
     main.auth_header = true

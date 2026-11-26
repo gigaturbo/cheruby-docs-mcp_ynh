@@ -12,7 +12,7 @@ Group=__APP__
 # in a writable folder. Everything else those groups could read is hidden below.
 SupplementaryGroups=__GROUPS__
 
-# Tokens, the Nextcloud app password, the Whoopy key for speech, folders and
+# The token, the Nextcloud app password, the remote server's key for speech, folders and
 # index settings. Root 600,
 # read before privileges drop.
 EnvironmentFile=__INSTALL_DIR__/docs.env
@@ -20,7 +20,7 @@ ExecStart=__INSTALL_DIR__/bin/cheruby-docs serve
 
 MemoryMax=512M
 
-# IPv4 loopback only: the AI gateway and Nextcloud are on this machine, and
+# IPv4 loopback only: the MCP clients and Nextcloud are on this machine, and
 # the tools need nothing else. ffmpeg, which decodes recordings, runs as its
 # child, inside all of this. Nextcloud is reached at 127.0.0.1:443 by its
 # name. Which loopback ports, the app's nftables table says (B-P-5).

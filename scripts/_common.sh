@@ -10,10 +10,14 @@ vad_file="ggml-silero-v6.2.0.bin"
 docs_default_settings() {
     ynh_app_setting_set_default --key=healthcheck_enabled --value=0
     ynh_app_setting_set_default --key=healthcheck_url --value=""
-    # Installs from before the one user: the Whoopy user, or the first user of the folders.
+    # Installs from before the one user: the gateway's user, or the first user of the folders.
     ynh_app_setting_set_default --key=docs_user \
         --value="${whoopy_user:-$(awk 'NF {print $1; exit}' <<< "${folders:-}")}"
-    ynh_app_setting_set_default --key=whoopy_folders --value=""
+    # The token's folders, named whoopy_folders before 0.16.0.
+    ynh_app_setting_set_default --key=mcp_folders --value="${whoopy_folders:-}"
+    ynh_app_setting_delete --key=whoopy_folders
+    # The user's own token on all the folders, gone with 0.16.0: one token, mcp_token.
+    ynh_app_setting_delete --key="token_$docs_user"
     ynh_app_setting_set_default --key=embed_model --value=embeddinggemma-300m-q8
     ynh_app_setting_set_default --key=remote_url --value="http://127.0.0.1:4000"
     ynh_app_setting_set_default --key=remote_model --value=""
@@ -491,22 +495,22 @@ docs_configure() {
     read_paths=${read_paths# }
     write_paths=${write_paths# }
 
-    # The Whoopy token opens whoopy_folders (labels joined by ","), or all the
+    # The MCP token opens mcp_folders (labels joined by ","), or all the
     # folders when empty. A label no longer among them is dropped.
-    local whoopy_labels="" wanted
+    local mcp_labels="" wanted
     local -a picked=()
-    IFS=, read -ra picked <<< "${whoopy_folders:-}"
+    IFS=, read -ra picked <<< "${mcp_folders:-}"
     for wanted in "${picked[@]}"; do
         if [ -n "${folder_path[$wanted]+x}" ]; then
-            whoopy_labels+="${whoopy_labels:+:}$wanted"
+            mcp_labels+="${mcp_labels:+:}$wanted"
         else
-            ynh_print_warn "Whoopy access: no folder '$wanted' any more; left out."
+            ynh_print_warn "MCP access: no folder '$wanted' any more; left out."
         fi
     done
     if [ ${#picked[@]} -eq 0 ]; then
-        whoopy_labels=$(printf '%s\n' "${!folder_path[@]}" | sed '/^$/d' | sort | paste -sd:)
+        mcp_labels=$(printf '%s\n' "${!folder_path[@]}" | sed '/^$/d' | sort | paste -sd:)
     fi
-    [ -n "$whoopy_labels" ] || ynh_print_warn "Whoopy access: the token opens no folder."
+    [ -n "$mcp_labels" ] || ynh_print_warn "MCP access: the token opens no folder."
 
     # Changes with the model file or llama-server, either of which may change
     # the vectors.
@@ -540,23 +544,18 @@ docs_configure() {
         echo "DOCS_RERANK_URL=http://127.0.0.1:$port_rerank"
         # The schedule, the quiet hours and the filters, which the page changes.
         echo "DOCS_SETTINGS_FILE=/var/lib/$app/settings.json"
-        token=$(ynh_app_setting_get --key="token_$docs_user")
-        token=${token:-$(ynh_string_random --length=48)}
-        ynh_app_setting_set --key="token_$docs_user" --value="$token"
-        echo "DOCS_TOKEN_$docs_user=$token"
         token=$(ynh_app_setting_get --key=mcp_token)
         token=${token:-$(ynh_string_random --length=48)}
         ynh_app_setting_set --key=mcp_token --value="$token"
-        echo "DOCS_GATEWAY_TOKEN=$token"
-        echo "DOCS_GATEWAY_USER=$docs_user"
-        echo "DOCS_GATEWAY_FOLDERS=$whoopy_labels"
+        echo "DOCS_TOKEN=$token"
+        echo "DOCS_USER=$docs_user"
+        echo "DOCS_TOKEN_FOLDERS=$mcp_labels"
         echo "DOCS_PAGE_PORT=$port_page"
-        echo "DOCS_PAGE_USER=$docs_user"
         token=$(ynh_app_setting_get --key=panel_token)
         token=${token:-$(ynh_string_random --length=64)}
         ynh_app_setting_set --key=panel_token --value="$token"
         echo "DOCS_PANEL_TOKEN=$token"
-        # transcribe_file: whisper-server here, and the desktop through Whoopy
+        # transcribe_file: whisper-server here, and the desktop through the remote server
         # when the panel allows it.
         echo "DOCS_SPEECH_URL=http://127.0.0.1:$port_speech"
         echo "DOCS_SPEECH_MODEL=$speech_name"
