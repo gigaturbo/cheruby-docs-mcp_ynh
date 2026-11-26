@@ -277,7 +277,8 @@ pub struct Speech {
     queue: OnceLock<Mutex<mpsc::Sender<Job>>>,
 }
 
-/// A key from the parts that name a recording: its user, path, size and date.
+/// A key from the parts that name a recording and how it is transcribed:
+/// its user, path, size and date, and the engine's name with its model.
 pub fn key(parts: &[&str]) -> String {
     let mut h = Sha256::new();
     for p in parts {
@@ -761,7 +762,7 @@ impl Speech {
             let audio = wav(&read(from, to).map_err(|e| crate::folders::io_message(&e))?);
             let answer = match engine {
                 Engine::Desktop => match self.desktop(http, &audio, &t.language) {
-                    Ok(a) => Ok((a, self.desktop_name())),
+                    Ok(a) => Ok((a, self.name(Engine::Desktop))),
                     Err(e) => {
                         eprintln!("transcription on the desktop failed: {e}");
                         t.note = format!(
@@ -773,12 +774,12 @@ impl Speech {
                         .to_string();
                         engine = Engine::Pi;
                         self.pi(http, &audio, &t.language)
-                            .map(|a| (a, self.pi_name()))
+                            .map(|a| (a, self.name(Engine::Pi)))
                     }
                 },
                 Engine::Pi => self
                     .pi(http, &audio, &t.language)
-                    .map(|a| (a, self.pi_name())),
+                    .map(|a| (a, self.name(Engine::Pi))),
             };
             let ((segments, language), name) = answer?;
             if t.language.is_empty() {
@@ -800,17 +801,17 @@ impl Speech {
         self.save(&job.key, &t)
     }
 
-    fn pi_name(&self) -> String {
-        if self.pi_model.is_empty() {
-            "the Pi".into()
-        } else {
-            format!("the Pi ({})", self.pi_model)
+    /// Where an engine transcribes, with its model: said to the reader, and
+    /// part of the cache key, so another model gives another transcript.
+    pub fn name(&self, engine: Engine) -> String {
+        match engine {
+            Engine::Pi if self.pi_model.is_empty() => "the Pi".into(),
+            Engine::Pi => format!("the Pi ({})", self.pi_model),
+            Engine::Desktop => {
+                let model = self.remote.as_ref().map(|r| r.model.as_str()).unwrap_or("");
+                format!("the desktop ({model})")
+            }
         }
-    }
-
-    fn desktop_name(&self) -> String {
-        let model = self.remote.as_ref().map(|r| r.model.as_str()).unwrap_or("");
-        format!("the desktop ({model})")
     }
 
     /// One part on whisper-server, which detects the language when told "auto".

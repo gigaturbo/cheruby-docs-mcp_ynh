@@ -378,6 +378,7 @@ async fn upload(State(page): State<Page>, headers: HeaderMap, body: Body) -> Res
         "upload",
         &page.grant.user,
         &crate::nextcloud::hex(&hash.finalize()),
+        &speech.name(engine),
     ]);
     if !matches!(speech.look(&key), speech::Look::Done(_)) {
         let job = speech::Job {

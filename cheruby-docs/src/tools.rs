@@ -535,6 +535,7 @@ pub async fn transcribe(
         &item.size.to_string(),
         &item.mtime_ns.to_string(),
         &language,
+        &speech.name(engine),
     ]);
     match speech.look(&key) {
         speech::Look::Done(_) => return Ok(key),

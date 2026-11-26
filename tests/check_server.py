@@ -862,6 +862,11 @@ def speech_checks(base):
     yield "speech: a desktop that refuses leaves the rest to the Pi", result, \
         result[0] == "ok" and WHOOPY_SPEECH["calls"] == 1 and SPEECH["parts"] == parts + 1 \
         and "The desktop failed (Whoopy answered 401)" in result[1] and "[0:00] Partie." in result[1]
+    WHOOPY_SPEECH.update(calls=0)
+    result = tool("transcribe_file", path="Documents/Dictées/réunion.wav", engine="desktop")
+    yield "speech: another model transcribes again, not from the Pi's cache", (result, WHOOPY_SPEECH), \
+        result[0] == "ok" and WHOOPY_SPEECH["calls"] == 3 \
+        and "transcribed on the desktop (speaches/fake)." in result[1] and "Partie." not in result[1]
     s = page("api/status").json()
     yield "page: Status shows the speech server and both engines", s, \
         s["speech"] is True and s["engines"] == ["pi", "desktop"]
