@@ -254,6 +254,7 @@ dependencies = [
  "clap",
  "html-escape",
  "http",
+ "http-body-util",
  "mail-parser",
  "nix",
  "pdfium-render",

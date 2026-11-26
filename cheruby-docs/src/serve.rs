@@ -16,6 +16,7 @@
 //!     DOCS_EMBED_NAME         the model's family (embed::query_prefix)
 //!     DOCS_RERANK_URL         optional: the reranking server, e.g. http://127.0.0.1:8774
 //!     DOCS_NEXTCLOUD_*        when a folder is in Nextcloud (nextcloud::Nextcloud)
+//!     DOCS_SPEECH_*           optional: the speech servers (speech::Speech)
 //!
 //! A token is one user's, with all or some of that user's folders; the
 //! gateway token searches that user's index. The unit adds the outer wall:
@@ -164,12 +165,13 @@ pub fn load_docs() -> Result<Docs, String> {
         live: RwLock::new(Arc::new(Live { settings, users })),
         settings_file: var("DOCS_SETTINGS_FILE").into(),
         nextcloud,
-        index_dir,
+        index_dir: index_dir.clone(),
         embed_url: var("DOCS_EMBED_URL"),
         embed_model: var("DOCS_EMBED_MODEL"),
         query_prefix,
         rerank_url: var("DOCS_RERANK_URL"),
         http,
+        speech: crate::speech::Speech::from_env(&index_dir)?.map(Arc::new),
     })
 }
 
@@ -237,8 +239,26 @@ struct MoveArgs {
     destination: String,
 }
 
+#[derive(Deserialize, schemars::JsonSchema)]
+struct TranscribeArgs {
+    path: String,
+    #[serde(default)]
+    engine: String,
+    #[serde(default)]
+    language: String,
+    #[serde(default = "yes")]
+    timestamps: bool,
+    #[serde(default)]
+    offset: i64,
+    #[serde(default = "eight_thousand")]
+    max_chars: i64,
+}
+
 fn one() -> i64 {
     1
+}
+fn yes() -> bool {
+    true
 }
 fn five() -> i64 {
     5
@@ -425,6 +445,36 @@ impl Tools {
     ) -> Result<CallToolResult, ErrorData> {
         answer(tools::run_index(&self.ctx(&parts)?, a.files).await)
     }
+
+    #[tool(
+        description = "Transcribe a recording into text: mp3, m4a, aac, wav, ogg, opus, flac, webm,\n\
+        mka, amr, 3gp or mp4. Takes minutes; an hour of audio may take most of an hour.\n\n\
+        Waits up to a minute, then says how far it is: call again later with the same\n\
+        path, what is done is kept. Once done, the text comes back at once, read by\n\
+        character like read_file (offset, max_chars up to 20000).\n\
+        engine: \"pi\" or \"desktop\" (the desktop's GPU, when set up); empty, the default.\n\
+        language: such as \"fr\"; empty detects it on the first minutes.\n\
+        timestamps: each line starts with its time, [1:02:05]; false gives paragraphs.\n\
+        The text is raw speech: clean it before saving it with write_file."
+    )]
+    async fn transcribe_file(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(a): Parameters<TranscribeArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        answer(
+            tools::transcribe_file(
+                &self.ctx(&parts)?,
+                a.path,
+                a.engine,
+                a.language,
+                a.timestamps,
+                a.offset,
+                a.max_chars,
+            )
+            .await,
+        )
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -489,6 +539,11 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
         tool_router.remove_route("write_file");
         tool_router.remove_route("create_folder");
         tool_router.remove_route("move_file");
+    }
+    if docs.speech.is_none() {
+        tool_router.remove_route("transcribe_file");
+    } else {
+        instructions += " To get the text of a recording, transcribe_file.";
     }
     let page_docs = Arc::clone(&docs);
     tokio::spawn(crate::schedule::run(Arc::clone(&docs)));

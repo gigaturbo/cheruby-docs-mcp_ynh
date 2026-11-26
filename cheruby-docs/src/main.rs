@@ -15,6 +15,7 @@ mod passages;
 mod schedule;
 mod serve;
 mod settings;
+mod speech;
 mod status;
 #[cfg(test)]
 mod testing;

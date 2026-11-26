@@ -13,7 +13,8 @@ then calls each tool and re-runs the indexer with the filters, then after a
 move, an edit and a deletion, then with Nextcloud changed, down and refusing,
 then embeds through a stand-in Whoopy, then writes in the writable folders,
 on disk and in Nextcloud, then asks for index runs as an agent would, the
-check starting each run as the path unit would.
+check starting each run as the path unit would, then transcribes recordings
+with a stand-in whisper-server and Whoopy's speech route.
 The stand-in embedder hashes words into vectors: it checks the wiring, not
 the quality of the search. Needs httpx only; what the binary does inside a run
 (the pause at the quiet hours, the halving of a text too long, one refusal
@@ -56,6 +57,9 @@ EMBEDDED = []
 WHOOPY_PORT = 18776
 WHOOPY_KEY = "w" * 40
 WHOOPY = {"calls": 0, "left": -1, "skew": False, "gone": 503}
+SPEECH_PORT = 18778
+SPEECH = {"languages": [], "parts": 0}
+WHOOPY_SPEECH = {"calls": 0, "busy": 0, "refuse": False}
 PAGE_PORT = 18779
 PANEL_TOKEN = "p" * 48
 PAGE_ENV = {"DOCS_PAGE_PORT": str(PAGE_PORT), "DOCS_PANEL_TOKEN": PANEL_TOKEN, "DOCS_PAGE_USER": "alice"}
@@ -204,12 +208,64 @@ class FakeEmbedder(BaseHTTPRequestHandler):
         pass
 
 
+def form(body, name):
+    """A field of a multipart body, as text."""
+    m = re.search(rb'name="' + re.escape(name.encode()) + rb'"\r\n\r\n(.*?)\r\n', body, re.S)
+    return m.group(1).decode() if m else None
+
+
+def transcribed(handler, language, text):
+    """A verbose_json answer for the WAV part in the request: one segment over all of it."""
+    body = handler.rfile.read(int(handler.headers["Content-Length"]))
+    riff = body.index(b"RIFF")
+    seconds = int.from_bytes(body[riff + 40:riff + 44], "little") / 32000
+    answer = json.dumps({"language": language,
+                         "segments": [{"start": 0.0, "end": seconds, "text": text}]}).encode()
+    handler.send_response(200)
+    handler.send_header("Content-Type", "application/json")
+    handler.end_headers()
+    handler.wfile.write(answer)
+    return body
+
+
+class FakeWhisper(BaseHTTPRequestHandler):
+    """whisper-server: /health, and /inference answering "fr" and one segment
+    per part, the language it was sent kept in SPEECH."""
+
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+
+    def do_POST(self):
+        SPEECH["parts"] += 1
+        body = transcribed(self, "fr", " Partie.")
+        SPEECH["languages"].append(form(body, "language"))
+
+    def log_message(self, *args):
+        pass
+
+
 class FakeWhoopy(FakeEmbedder):
     """Whoopy: 401 without its key and model, then the stand-in embedder's vectors,
     or those of each text reversed when skewed, and "gone" (503, or 500 as LiteLLM
-    answers for a desktop out of reach) once "left" batches are spent."""
+    answers for a desktop out of reach) once "left" batches are spent.
+    Its speech route answers 503 while "busy" lasts, as while the desktop
+    wakes, 401 when refusing, and names the language in full."""
 
     def do_POST(self):
+        if self.path == "/v1/audio/transcriptions":
+            WHOOPY_SPEECH["calls"] += 1
+            if WHOOPY_SPEECH["refuse"] or self.headers.get("Authorization") != f"Bearer {WHOOPY_KEY}":
+                self.send_response(401)
+                self.end_headers()
+                return
+            if WHOOPY_SPEECH["busy"] > 0:
+                WHOOPY_SPEECH["busy"] -= 1
+                self.send_response(503)
+                self.end_headers()
+                return
+            transcribed(self, "french", " Bureau.")
+            return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         WHOOPY["calls"] += 1
         refused = 401 if self.headers.get("Authorization") != f"Bearer {WHOOPY_KEY}" \
@@ -504,6 +560,12 @@ def build(base):
         "DOCS_NEXTCLOUD_URL": f"http://127.0.0.1:{DAV_PORT}/dav/files/alice",
         "DOCS_NEXTCLOUD_USER": "alice",
         "DOCS_NEXTCLOUD_PASSWORD": DAV_PASSWORD,
+        "DOCS_SPEECH_URL": f"http://127.0.0.1:{SPEECH_PORT}",
+        "DOCS_SPEECH_MODEL": "fake-small",
+        "DOCS_SPEECH_ENGINE": "demand",
+        "DOCS_SPEECH_REMOTE_URL": f"http://127.0.0.1:{WHOOPY_PORT}",
+        "DOCS_SPEECH_REMOTE_MODEL": "speaches/fake",
+        "DOCS_SPEECH_REMOTE_KEY": WHOOPY_KEY,
     }
 
 
@@ -538,9 +600,9 @@ def error_with(needle):
 CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
-    ("eight tools listed", lambda: call("tools/list"),
+    ("nine tools listed", lambda: call("tools/list"),
      lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file create_folder "
-                                              "move_file run_index".split())),
+                                              "move_file run_index transcribe_file".split())),
     ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
      lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
     ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
@@ -713,6 +775,107 @@ def page_checks(base):
     yield "page: bob's folder is not alice's", r.text[:200], r.status_code == 400 and "no folder named" in r.text
     r = page("api/search", body={"query": "loyer", "extra": 1})
     yield "page: unknown fields refused", r.status_code, r.status_code >= 400
+
+
+def wav_bytes(seconds, quiet=()):
+    """A 16 kHz mono WAV of loud noise, silent for half a second at each of quiet."""
+    import io
+    import wave
+    noise = os.urandom(32000)
+    data = bytearray(noise * seconds)
+    for q in quiet:
+        data[int(q * 32000):int((q + 0.5) * 32000)] = bytes(16000)
+    out = io.BytesIO()
+    with wave.open(out, "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(16000)
+        w.writeframes(bytes(data))
+    return out.getvalue()
+
+
+def speech_checks(base):
+    """transcribe_file and the Transcribe tab, against the stand-in whisper-server and Whoopy."""
+    rec = f"{base}/docs/Dictées"
+    os.makedirs(rec)
+    with open(f"{rec}/réunion.wav", "wb") as f:
+        f.write(wav_bytes(21 * 60, quiet=(570, 1155)))
+    for name in ("court.wav", "bureau.wav", "allemand.wav"):
+        with open(f"{rec}/{name}", "wb") as f:
+            f.write(wav_bytes(5))
+    with open(f"{base}/notes/memo.wav", "wb") as f:
+        f.write(wav_bytes(2))
+    result = tool("transcribe_file", path="Documents/Dictées/réunion.wav")
+    lines = result[1].splitlines()
+    yield "speech: a recording is transcribed on the Pi", result, result[0] == "ok" and lines[0] == \
+        "Documents/Dictées/réunion.wav: 21:00 of audio, language fr, transcribed on the Pi (fake-small)."
+    yield "speech: cut at the pauses, each part's time shifted", lines[2:], \
+        lines[2:] == ["[0:00] Partie.", "[9:30] Partie.", "[19:15] Partie."]
+    yield "speech: the language found on the first part is sent after", SPEECH["languages"], \
+        SPEECH["languages"] == ["auto", "fr", "fr"]
+    start = time.time()
+    again = tool("transcribe_file", path="Documents/Dictées/réunion.wav", timestamps=False)
+    yield "speech: a second call comes from the cache, as paragraphs", (again, SPEECH["parts"]), \
+        again[0] == "ok" and again[1].endswith("\n\nPartie. Partie. Partie.") and SPEECH["parts"] == 3 \
+        and time.time() - start < 3
+    yield "speech: the cache is in the index folder", None, len(os.listdir(f"{base}/index/transcripts")) == 1
+    result = tool("transcribe_file", path="Documents/Dictées/allemand.wav", language="German")
+    yield "speech: a language asked for is sent from the first part", (result, SPEECH["languages"]), \
+        result[0] == "ok" and SPEECH["languages"][-1] == "de" and "language de" in result[1]
+    yield "speech: an unknown language is refused", None, \
+        tool("transcribe_file", path="Documents/Dictées/court.wav", language="klingon")[0] == "error"
+    yield "speech: a filtered recording is not found", None, \
+        error_with("not found")(tool("transcribe_file", path="Notes/memo.wav"))
+    yield "speech: a document is not a recording", None, \
+        error_with("not a recording")(tool("transcribe_file", path="Documents/bail.pdf"))
+    yield "speech: .. is refused", None, \
+        error_with("not allowed")(tool("transcribe_file", path="Documents/../notes/memo.wav"))
+    yield "speech: an unknown engine is refused", None, \
+        error_with("is not pi or desktop")(tool("transcribe_file", path="Documents/Dictées/court.wav", engine="gpu"))
+    yield "speech: bob cannot reach alice's", None, \
+        error_with("no folder named")(tool("transcribe_file", token=BOB, path="Documents/Dictées/court.wav"))
+    WHOOPY_SPEECH.update(busy=2, calls=0)
+    result = tool("transcribe_file", path="Documents/Dictées/bureau.wav", engine="desktop")
+    yield "speech: the desktop is retried while it wakes", (result, WHOOPY_SPEECH), \
+        result[0] == "ok" and WHOOPY_SPEECH["calls"] == 3 \
+        and "language fr, transcribed on the desktop (speaches/fake)." in result[1] and "[0:00] Bureau." in result[1]
+    WHOOPY_SPEECH.update(refuse=True, calls=0)
+    parts = SPEECH["parts"]
+    result = tool("transcribe_file", path="Documents/Dictées/court.wav", engine="desktop")
+    WHOOPY_SPEECH.update(refuse=False)
+    yield "speech: a desktop that refuses leaves the rest to the Pi", result, \
+        result[0] == "ok" and WHOOPY_SPEECH["calls"] == 1 and SPEECH["parts"] == parts + 1 \
+        and "The desktop failed (Whoopy answered 401)" in result[1] and "[0:00] Partie." in result[1]
+    s = page("api/status").json()
+    yield "page: Status shows the speech server and both engines", s, \
+        s["speech"] is True and s["engines"] == ["pi", "desktop"]
+    r = page("api/transcribe", body={"path": "Documents/Dictées/réunion.wav"})
+    key = r.json().get("key", "")
+    d = page(f"api/transcribe/{key}").json() if key else {}
+    yield "page: a folder's recording, from the cache", d, \
+        d.get("state") == "done" and d["text"].startswith("[0:00] Partie.") and d["shown"].endswith("réunion.wav")
+    r = page("api/transcribe", body={"path": "Papiers/bob.md"})
+    yield "page: bob's folder is not alice's", r.text[:200], r.status_code == 400
+
+    def upload(name, data, site="same-origin"):
+        headers = {"X-Panel-Token": PANEL_TOKEN, "Sec-Fetch-Site": site, "X-File-Name": urllib.parse.quote(name),
+                   "Authorization": "Basic " + base64.b64encode(b"alice:-").decode()}
+        return httpx.post(f"http://127.0.0.1:{PAGE_PORT}/api/transcribe/upload", headers=headers,
+                          content=data, timeout=60)
+    r = upload("note vocale.wav", wav_bytes(3))
+    key = r.json().get("key", "") if r.status_code == 200 else ""
+    d = {}
+    for _ in range(50):
+        d = page(f"api/transcribe/{key}").json() if key else {}
+        if d.get("state") in ("done", "failed"):
+            break
+        time.sleep(0.2)
+    yield "page: an upload is transcribed", (r.text[:200], d), \
+        d.get("state") == "done" and d["shown"] == "upload: note vocale.wav" and d["text"] == "[0:00] Partie."
+    yield "page: an upload that is not a recording is refused", None, upload("x.txt", b"hello").status_code == 400
+    yield "page: an upload without the page's mark gets 403", None, \
+        upload("y.wav", wav_bytes(1), site="cross-site").status_code == 403
+    yield "page: a bad key is refused", None, page("api/transcribe/zz").status_code == 400
 
 
 def settings_body(filters=FILTERS, **fields):
@@ -1231,6 +1394,8 @@ def main():
     threading.Thread(target=reranker.serve_forever, daemon=True).start()
     whoopy = ThreadingHTTPServer(("127.0.0.1", WHOOPY_PORT), FakeWhoopy)
     threading.Thread(target=whoopy.serve_forever, daemon=True).start()
+    whisper = ThreadingHTTPServer(("127.0.0.1", SPEECH_PORT), FakeWhisper)
+    threading.Thread(target=whisper.serve_forever, daemon=True).start()
     nextcloud = ThreadingHTTPServer(("127.0.0.1", DAV_PORT), FakeNextcloud)
     threading.Thread(target=nextcloud.serve_forever, daemon=True).start()
     with tempfile.TemporaryDirectory() as base:
@@ -1253,6 +1418,7 @@ def main():
             results += list(remote_checks(base, env))
             results += list(write_checks(base))
             results += list(run_checks(base, env))
+            results += list(speech_checks(base))
             results += list(panel_checks())
             results += list(page_checks(base))
             results += list(settings_checks(base, env))

@@ -24,11 +24,13 @@ use unicode_normalization::{UnicodeNormalization, char::canonical_combining_clas
 use crate::{
     calendar, embed,
     folders::{
-        Error, Item, TEXT_SUFFIXES, Tree, UserFolders, hidden, image_format, kept, py_repr, suffix,
+        Error, Item, Source, TEXT_SUFFIXES, Tree, UserFolders, hidden, image_format, kept, py_repr,
+        suffix,
     },
     index,
     nextcloud::Nextcloud,
     settings::Settings,
+    speech,
     text::{DOCUMENT_SUFFIXES, PyTrim, document_text, pdf_pages, py_split},
 };
 
@@ -69,6 +71,8 @@ pub struct Docs {
     pub query_prefix: &'static str,
     pub rerank_url: String,
     pub http: reqwest::Client,
+    /// None when no speech server is set: transcribe_file is not offered.
+    pub speech: Option<Arc<crate::speech::Speech>>,
 }
 
 /// What the page can change while the server runs: its settings, and each
@@ -469,6 +473,154 @@ pub async fn read_file(
         )))
     })
     .await?
+}
+
+/// Queues a recording of the folders for transcription, unless it is done
+/// or queued already; its key in the speech cache.
+pub async fn transcribe(
+    ctx: &Ctx,
+    path: String,
+    engine: String,
+    language: String,
+) -> ToolResult<String> {
+    let speech = ctx
+        .docs
+        .speech
+        .clone()
+        .ok_or("transcription is not set up on this server.")?;
+    let engine = speech.engine(&engine)?;
+    let language = match language.trim() {
+        "" | "auto" => String::new(),
+        given => speech::language_code(given)
+            .ok_or_else(|| format!("language: {} is not one whisper knows.", py_repr(given)))?
+            .to_string(),
+    };
+    let c = ctx.clone();
+    let item = blocking(move || match c.resolve(&path)? {
+        Some(item) if !item.is_dir => Ok(item),
+        _ => {
+            let shown = if path.is_empty() { "(empty)" } else { &path };
+            Err(format!("{shown}: is a folder; list it with list_folder."))
+        }
+    })
+    .await??;
+    let ext = suffix(&item.shown);
+    if !speech::AUDIO_SUFFIXES.contains(&ext.as_str()) {
+        return Err(format!(
+            "{}: not a recording; these are: {}.",
+            item.shown,
+            speech::AUDIO_SUFFIXES.join(" ")
+        ));
+    }
+    let cloud = matches!(item.location, crate::folders::Location::Cloud(_));
+    let limit = if cloud {
+        MAX_FETCH_BYTES as i64
+    } else {
+        speech::MAX_AUDIO_BYTES
+    };
+    if item.size > limit {
+        return Err(format!(
+            "{}: larger than {}, the most transcribed from {}.",
+            item.shown,
+            human(limit as f64),
+            if cloud { "Nextcloud" } else { "a folder" }
+        ));
+    }
+    let key = speech::key(&[
+        &ctx.grant.user,
+        &item.shown,
+        &item.size.to_string(),
+        &item.mtime_ns.to_string(),
+        &language,
+    ]);
+    if matches!(speech.look(&key), speech::Look::Done(_)) {
+        return Ok(key);
+    }
+    let c = ctx.clone();
+    let shown = item.shown.clone();
+    speech.start(speech::Job {
+        key: key.clone(),
+        shown,
+        engine,
+        language,
+        open: Box::new(move || match c.tree().open(&item, MAX_FETCH_BYTES) {
+            Ok(Source::Disk(f)) => Ok(f),
+            Ok(Source::Fetched(data)) => speech::spill(data),
+            Err(Error::NotFound) => Err(format!("{}: not found.", item.shown)),
+            Err(e) => Err(format!("{}: {e}", item.shown)),
+        }),
+    })?;
+    Ok(key)
+}
+
+/// Transcribes a recording, waiting up to RUN_WAIT_S; the text once done,
+/// paged like read_file's, or how far it is.
+pub async fn transcribe_file(
+    ctx: &Ctx,
+    path: String,
+    engine: String,
+    language: String,
+    timestamps: bool,
+    offset: i64,
+    max_chars: i64,
+) -> ToolResult<String> {
+    let key = transcribe(ctx, path.clone(), engine, language).await?;
+    let speech = ctx.docs.speech.clone().ok_or("no speech server.")?;
+    let mut look = speech.look(&key);
+    for _ in 0..RUN_WAIT_S {
+        if !matches!(look, speech::Look::Busy { .. }) {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        look = speech.look(&key);
+    }
+    match look {
+        speech::Look::Done(t) => {
+            let mut head = format!(
+                "{}: {} of audio, language {}, transcribed on {}.",
+                t.shown,
+                speech::clock(t.duration),
+                if t.language.is_empty() {
+                    "unknown"
+                } else {
+                    &t.language
+                },
+                t.engines.join(" and ")
+            );
+            if !t.note.is_empty() {
+                head += &format!(" {}", t.note);
+            }
+            let text = speech::render(&t, timestamps);
+            let offset = offset.max(0) as usize;
+            let max_chars = max_chars.clamp(1, MAX_CHARS as i64) as usize;
+            Ok(format!("{head}\n\n{}", cut(&text, offset, max_chars)))
+        }
+        speech::Look::Busy {
+            running,
+            ahead,
+            done,
+            total,
+            left,
+        } => {
+            let state = if running {
+                let left = left
+                    .map(|d| format!(", about {} minutes left", d.as_secs() / 60 + 1))
+                    .unwrap_or_default();
+                format!(
+                    "transcribing, {} of {} done{left}",
+                    speech::clock(done),
+                    speech::clock(total)
+                )
+            } else {
+                format!("waiting behind {ahead} other recording(s)")
+            };
+            Ok(format!(
+                "{path}: {state}. Call transcribe_file again later: what is done is kept."
+            ))
+        }
+        speech::Look::Failed(e) => Err(e),
+        speech::Look::Unknown => Err(format!("{path}: the transcription did not start.")),
+    }
 }
 
 /// Local midnight of a day such as 2025-03-31, in nanoseconds.
