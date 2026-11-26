@@ -58,20 +58,6 @@ vLLM, which needs a newer GPU than the 1080 Ti), its weights are bf16,
 which Pascal cannot run natively (about 6.7 GB in fp16), and its licence is
 CC-BY-NC-4.0.
 
-### F-P-14 · one MCP token for any client, no Whoopy in the app
-
-`doing` `medium` `filed 2026-11-26`
-
-The panel split one credential in two ("Whoopy access" and "MCP token"),
-a hidden second token opened all the folders, and the panel, the command
-and the docs named Whoopy as the only client.
-
-**Do:** one token (`DOCS_TOKEN`, `DOCS_USER`, `DOCS_TOKEN_FOLDERS`) in
-0.16.0; `whoopy_folders` moved to `mcp_folders` and `token_<user>` deleted
-at upgrade; the panel's "MCP access" and "MCP token" say how any client
-connects, Whoopy and LiteLLM as examples; the remote embedding and speech
-server named as an OpenAI-compatible one. Still on loopback only.
-
 ### F-P-12 · the embedding model chosen on the page
 
 `todo` `medium` `filed 2026-11-25`
@@ -244,7 +230,13 @@ changed. Last done 2026-11-21 at `ed08fb3`: Whoopy access narrowed to two folder
 token: the new token saw Documents only, the old one 401; neither token in
 `yunohost-cli.log` or the operation logs from this app.
 
-Reopened by F-P-14: one token, `mcp_folders`, the command prints one token.
+**Last:** 2026-11-26 at `a414cc6`, 0.16.0~ynh1 upgraded, in part: `mcp_token`
+kept its fingerprint, `whoopy_folders` and `token_<user>` gone, `token`
+prints the one token, no token 401; "MCP access" narrowed to Notes:
+`list_folder` Notes only, Documents refused, search from Notes only; back to
+all; the token in neither `yunohost-cli.log`'s new lines nor the operation
+logs. Not done: "New token", which breaks Whoopy's `docs` until pasted there.
+
 
 **Check:** after the upgrade, `sudo cheruby-docs-mcp token` shows the same
 token as before, alone, and Whoopy's `/mcp/docs` still answers; the old
@@ -254,28 +246,10 @@ the new one 200 once pasted in Whoopy; no token in `yunohost-cli.log`; the
 panel shows "MCP access" with the folders it had and "MCP token"; `sudo cheruby-docs-mcp status` answers as the
 binary did.
 
-### T-P-2 · backup and restore keep the tokens
-
-`todo` `playtest` `filed 2026-11-22`
-
-Reopened by F-P-7: restore now moves an old `whoopy_token` to `mcp_token`.
-Last done 2026-11-21 at `ed08fb3`: backup 2 s, remove, restore 37 s; the 38 settings and both
-tokens the same and answering; no secret in the operation files or the CLI
-log.
-
-Reopened by F-P-10: the backup carries `/var/lib/cheruby-docs-mcp`.
-
-Reopened by F-P-14: one token, `mcp_folders`; the upgrade, not restore,
-moves the old settings (a backup restores with its own scripts).
-
-**Check:** a backup made before the upgrade restores with the same Whoopy
-token under `mcp_token` and no `whoopy_token`; one made after it restores
-`mcp_token` and `mcp_folders`, no `token_<user>`; `/usr/local/bin/cheruby-docs-mcp`
-there after restore, gone after remove; a backup made after it restores
-`settings.json` as it was, owned by the app, mode 600.
-
 ## Closed
 
+- `F-P-14` done `medium` 2026-11-26 · one MCP token (`DOCS_TOKEN`, `DOCS_USER`, `DOCS_TOKEN_FOLDERS`, empty opens none) for any client on the server; `whoopy_folders` moved to `mcp_folders`, `token_<user>` deleted; the panel's "MCP access" and the docs name Whoopy and LiteLLM as examples; the remote embedding and speech server named generically (0.16.0~ynh1, installed 2026-11-26)
+- `T-P-2` done `playtest` 2026-11-26 at `a414cc6` · on 0.16.0~ynh1, nothing to autoremove: backup, remove (command gone), restore; `mcp_token` fingerprint and `settings.json` the same, the app's, 600; no `whoopy_*` or `token_<user>`; the token lists nine tools; the token in neither the CLI log's new lines nor the operation logs
 - `B-M-5` closed 2026-11-26 · a transcript cached with one model was given after a switch to another; the key now holds the engine and its model
 - `B-M-4` closed 2026-11-26 · a word whisper cut between two segments read as two ("fact ures"); a segment starting without a space is now joined to the one before
 - `T-M-1` done `spec` 2026-11-26 at `1dcd6ee` · `tests/check_server.py` 266 of 266 against the binary, a transcript on another model included; `cargo test` 36 of 36
