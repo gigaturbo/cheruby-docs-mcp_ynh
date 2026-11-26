@@ -93,21 +93,6 @@ remove and an install.
 
 **Do:** `scripts/change_url` from the family's, re-rendering nginx.
 
-### F-M-21 · transcribe on a remote OpenAI-compatible endpoint
-
-`doing` `medium` `filed 2026-11-25`
-
-After F-M-20 and F-P-10. Here the endpoint is Whoopy's LiteLLM, whose
-`speaches/*` route (Whoopy's own item) wakes the desktop and reaches
-Speaches through froaky's proxy.
-
-**Do:** the speech engine's remote, always or on demand, as for embedding;
-retries while the desktop wakes; `engine` on the tool.
-
-2026-11-26: built for 0.15.0~ynh1 and checked against a stand-in Whoopy.
-Blocked for real use: Whoopy has no `speaches/*` route yet; filed in
-froaky-ai-server as F-V-2, through froaky's proxy. Closes with T-M-7.
-
 ### F-M-22 · speaker labels in transcripts
 
 `todo` `medium` `filed 2026-11-25`
@@ -135,20 +120,6 @@ and the cache key holds the model.
 and without times. Switch the panel to large-v3-turbo: the same recording
 is transcribed again and the header names turbo; back to small, it comes
 from the cache at once.
-
-### T-M-7 · a recording is transcribed on the desktop
-
-`todo` `playtest` `filed 2026-11-26`
-
-Waits for Whoopy's `speaches/*` route, froaky-ai-server's F-V-2.
-
-**Check:** in Whoopy's admin page, a key allowed only the speech model;
-paste it and the model under "Speech to text", the desktop "on request".
-With the desktop asleep, `transcribe_file` with `engine` `desktop`: it wakes
-and the header says "on the desktop"; time it against T-M-6. Take the
-desktop off the network mid-way: the rest is done on the Pi and the header
-says so. The key in no log (`grep -cf <file holding it>` on the new lines
-of `yunohost-cli.log` and the config operation logs gives 0).
 
 ### T-P-7 · the page opens for the docs user only
 
@@ -248,6 +219,8 @@ binary did.
 
 ## Closed
 
+- `T-M-7` done `playtest` 2026-11-26 at `2075972` · on 0.16.0~ynh1, desktop on request: the 17:26 Bouygues call from asleep in 56 s on `speaches/deepdml/faster-whisper-large-v3-turbo-ct2` (4.5 min on the Pi), the header naming it; a 403 from Whoopy and, with the desktop unplugged, a 503 after 35 s each left the whole recording to the Pi, the header saying why; the key in neither `yunohost-cli.log`, the 31 operation logs since nor the journals. Whoopy refuses a personal key whose owner has no default models, `speaches/*` or not: the key must belong to a team allowed the model
+- `F-M-21` done `medium` 2026-11-26 · the speech engine's remote, never, on request or always, through Whoopy's `speaches/*` route (Whoopy F-W-1), which wakes the desktop; a desktop that fails leaves the rest to the Pi; `engine` on `transcribe_file` (0.15.0~ynh1, checked on 0.16.0~ynh1)
 - `B-P-7` closed 2026-11-26 · the panel's example speech model was not installed on the desktop; it is now `speaches/deepdml/faster-whisper-large-v3-turbo-ct2`, and the help says to take an installed one
 - `F-P-14` done `medium` 2026-11-26 · one MCP token (`DOCS_TOKEN`, `DOCS_USER`, `DOCS_TOKEN_FOLDERS`, empty opens none) for any client on the server; `whoopy_folders` moved to `mcp_folders`, `token_<user>` deleted; the panel's "MCP access" and the docs name Whoopy and LiteLLM as examples; the remote embedding and speech server named generically (0.16.0~ynh1, installed 2026-11-26)
 - `T-P-2` done `playtest` 2026-11-26 at `a414cc6` · on 0.16.0~ynh1, nothing to autoremove: backup, remove (command gone), restore; `mcp_token` fingerprint and `settings.json` the same, the app's, 600; no `whoopy_*` or `token_<user>`; the token lists nine tools; the token in neither the CLI log's new lines nor the operation logs
