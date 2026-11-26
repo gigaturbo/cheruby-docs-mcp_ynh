@@ -50,36 +50,39 @@ fn missed(docs: &Docs, now: NaiveDateTime) -> bool {
     live.settings.next(started).is_some_and(|due| due <= now)
 }
 
-/// Runs until the server stops. Each minute is judged on the settings of
-/// that minute, so a change on the page applies from the next one.
+/// The minute t falls in.
+fn minute_of(t: NaiveDateTime) -> NaiveDateTime {
+    t.with_second(0)
+        .and_then(|t| t.with_nanosecond(0))
+        .unwrap_or(t)
+}
+
+/// Runs until the server stops. Each wake judges every minute since the
+/// last, so a busy thread or a clock stepped forward skips no due minute.
+/// The settings are those of the wake: a change on the page applies from it.
 pub async fn run(docs: Arc<Docs>) {
-    if missed(&docs, chrono::Local::now().naive_local()) {
+    let mut last = minute_of(chrono::Local::now().naive_local());
+    if missed(&docs, last) {
         ask(&docs, "missed while the server was stopped");
     }
-    let mut last: Option<NaiveDateTime> = None;
     loop {
         let now = chrono::Local::now().naive_local();
-        // A second into the next minute, so a slow clock does not judge this one twice.
+        // A second into the next minute.
         let wait = 61 - u64::from(now.second().min(59));
         tokio::time::sleep(Duration::from_secs(wait)).await;
-        let Some(minute) = chrono::Local::now()
-            .naive_local()
-            .with_second(0)
-            .and_then(|t| t.with_nanosecond(0))
-        else {
-            continue;
-        };
-        if last == Some(minute) {
+        let minute = minute_of(chrono::Local::now().naive_local());
+        // A clock stepped back judges nothing until it passes the last minute again.
+        if minute <= last {
             continue;
         }
-        last = Some(minute);
-        let live = docs.live();
-        if live
+        if docs
+            .live()
             .settings
-            .cron()
-            .is_some_and(|c| c.due(&live.settings.quiet, minute))
+            .next(last)
+            .is_some_and(|due| due <= minute)
         {
             ask(&docs, "on schedule");
         }
+        last = minute;
     }
 }

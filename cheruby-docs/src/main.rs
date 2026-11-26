@@ -118,6 +118,8 @@ enum Command {
         #[command(flatten)]
         r#as: As,
     },
+    /// Check a settings file as the page would; print why it is refused.
+    CheckSettings { file: PathBuf },
     /// Print Syncthing's folders from its config.xml, a tab-separated line each.
     SyncthingFolders { config: PathBuf },
     /// Check that the desktop's vectors, through Whoopy, agree with this server's.
@@ -342,6 +344,7 @@ fn run(cli: Cli) -> Result<(), String> {
             let ctx = shell_ctx(r#as.gateway)?;
             print(runtime()?.block_on(tools::run_index(&ctx, paths)))
         }
+        Command::CheckSettings { file } => settings::Settings::load(&file).map(|_| ()),
         Command::SyncthingFolders { config } => {
             // Nothing when it cannot be read, as when Syncthing has no config yet.
             let lines = std::fs::read(&config)

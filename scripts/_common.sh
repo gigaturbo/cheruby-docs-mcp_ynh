@@ -42,7 +42,6 @@ docs_default_settings() {
         nextcloud_folders nextcloud_writable; do
         ynh_app_setting_set_default --key="$key" --value=""
     done
-    docs_move_page_settings
 
     # Installs from before the sources: each of the user's folders becomes the
     # Syncthing folder on that path and with that label, or a local folder.
@@ -88,31 +87,42 @@ docs_default_settings() {
 }
 
 # Installs from before 0.14: the schedule, the quiet hours and the filters
-# leave the panel for the page's settings.json, unless it is there already.
-# Written as the app, so root never writes through a link in its folder.
+# leave the panel for the page's settings.json. While index_schedule is set
+# the move never completed, so the panel's values win over a file a failed
+# upgrade left. What the old panel took but the page refuses is replaced,
+# with a warning, never a failed upgrade. Written as the app, so root never
+# writes through a link in its folder. Needs the binary, for the check.
 docs_move_page_settings() {
-    local file="/var/lib/$app/settings.json" key
+    local file="/var/lib/$app/settings.json" key tmp why
     mkdir -p "/var/lib/$app"
     chown "$app:$app" "/var/lib/$app"
     chmod 700 "/var/lib/$app"
-    if [ -n "${index_schedule:-}" ] && [ ! -e "$file" ]; then
-        # Tags settings hold their values joined by ",".
-        jq -n --arg schedule "$index_schedule" --arg cron "${index_calendar:-}" --arg quiet "${index_quiet:-}" \
-            --arg so "${syncthing_only:-}" --arg sk "${syncthing_skip:-}" --arg lo "${local_only:-}" \
-            --arg lk "${local_skip:-}" --arg no "${nextcloud_only:-}" --arg nk "${nextcloud_skip:-}" '
-            def tags: split(",") | map(select(length > 0));
-            {schedule: $schedule, cron: $cron, quiet: $quiet,
-             filters: ({syncthing: {only: ($so | tags), skip: ($sk | tags)},
-                        local: {only: ($lo | tags), skip: ($lk | tags)},
-                        nextcloud: {only: ($no | tags), skip: ($nk | tags)}}
-                       | with_entries(select((.value.only + .value.skip) | length > 0)))}' \
-            | runuser -u "$app" -- sh -c 'umask 077 && cat > "$1"' sh "$file"
-        ynh_print_info "The index schedule, the quiet hours and the filters are now on the app's page, Config tab."
+    [ -n "${index_schedule:-}" ] || return 0
+    tmp=$(mktemp)
+    # Tags settings hold their values joined by ",".
+    jq -n --arg schedule "$index_schedule" --arg cron "${index_calendar:-}" --arg quiet "${index_quiet:-}" \
+        --arg so "${syncthing_only:-}" --arg sk "${syncthing_skip:-}" --arg lo "${local_only:-}" \
+        --arg lk "${local_skip:-}" --arg no "${nextcloud_only:-}" --arg nk "${nextcloud_skip:-}" '
+        def tags: split(",") | map(select((gsub("^/+|/+$"; "") | length > 0)
+            and length <= 200 and (test("[[:cntrl:]]") | not)))[:100];
+        {schedule: $schedule, cron: $cron, quiet: $quiet,
+         filters: ({syncthing: {only: ($so | tags), skip: ($sk | tags)},
+                    local: {only: ($lo | tags), skip: ($lk | tags)},
+                    nextcloud: {only: ($no | tags), skip: ($nk | tags)}}
+                   | with_entries(select((.value.only + .value.skip) | length > 0)))}' > "$tmp"
+    if ! why=$("$install_dir/bin/cheruby-docs" check-settings "$tmp" 2>&1); then
+        ynh_print_warn "Index schedule: ${why##*: } The quiet hours are now 01-06, and a custom schedule hourly: change them on the app's page, Config tab."
+        jq '.quiet = "01-06" | if .schedule == "custom" then .schedule = "hourly" else . end' "$tmp" > "$tmp.new"
+        mv "$tmp.new" "$tmp"
+        "$install_dir/bin/cheruby-docs" check-settings "$tmp" > /dev/null 2>&1 || echo '{}' > "$tmp"
     fi
+    runuser -u "$app" -- sh -c 'umask 077 && cat > "$1"' sh "$file" < "$tmp"
+    ynh_safe_rm "$tmp"
     for key in index_schedule index_calendar index_quiet syncthing_only syncthing_skip local_only local_skip \
         nextcloud_only nextcloud_skip; do
         ynh_app_setting_delete --key="$key"
     done
+    ynh_print_info "The index schedule, the quiet hours and the filters are now on the app's page, Config tab."
 }
 
 # Syncthing's folders, one "<label>\t<path>\t<ignorePerms>\t<type>" per line,
@@ -371,6 +381,7 @@ docs_configure() {
     read_paths=""
     write_paths=""
     groups=""
+    docs_move_page_settings
     docs_collect_folders
     while IFS= read -r line; do
         [ -n "$line" ] && ynh_print_warn "$line Left out."

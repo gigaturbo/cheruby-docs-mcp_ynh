@@ -1,7 +1,8 @@
 [Unit]
 Description=Cheruby Docs: MCP tools on users' folders (__APP__)
 Wants=__APP__-embed.service __APP__-rerank.service
-After=network.target __APP__-embed.service
+# The schedule judges minutes by the clock: a synced one.
+After=network.target time-sync.target __APP__-embed.service
 
 [Service]
 Type=simple

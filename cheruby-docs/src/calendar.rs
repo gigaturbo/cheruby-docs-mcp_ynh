@@ -1,5 +1,5 @@
 //! A cron schedule (minute hour day month weekday) and the quiet hours
-//! around it: which minutes are due, and when the next one comes. The tool
+//! around it: when the next due minute comes. The tool
 //! server runs the index on it; the page and the status say the next run.
 
 use std::collections::BTreeSet;
@@ -109,14 +109,6 @@ impl Cron {
                 .weekdays
                 .as_ref()
                 .is_none_or(|d| d.contains(&t.weekday().num_days_from_sunday()))
-    }
-
-    /// Whether the minute of t is one cron runs on, outside the quiet hours.
-    pub fn due(&self, quiet: &str, t: NaiveDateTime) -> bool {
-        self.on_day(t)
-            && self.hours.contains(&t.hour())
-            && self.minutes.contains(&t.minute())
-            && !quiet_at(quiet, t.hour())
     }
 
     /// The first due minute after t; None when none comes, as when the
@@ -230,15 +222,6 @@ mod tests {
             next("0 3 * * 7", "", "2026-11-25 00:00").as_deref(),
             Some("2026-11-29 03:00")
         );
-    }
-
-    #[test]
-    fn due_minutes() {
-        let cron = Cron::parse("*/30 8-20 * * *").unwrap();
-        assert!(cron.due("", at("2026-11-25 08:30")));
-        assert!(!cron.due("", at("2026-11-25 08:31")));
-        assert!(!cron.due("", at("2026-11-25 21:00")));
-        assert!(!cron.due("08-09", at("2026-11-25 08:30")));
     }
 
     #[test]

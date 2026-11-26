@@ -32,6 +32,8 @@ const PRESETS: [(&str, &str); 3] = [
 const MAX_CRON_CHARS: usize = 100;
 const MAX_PATTERN_CHARS: usize = 200;
 const MAX_PATTERNS: usize = 100;
+/// Far above what the page can save; a bigger file is not read.
+const MAX_FILE_BYTES: u64 = 1 << 20;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -148,22 +150,29 @@ impl Settings {
         own.rules = rules;
     }
 
-    /// The settings file, or the defaults when there is none yet. Opened
-    /// without following a link: the status command reads it as root.
+    /// The settings file, or the defaults when there is none yet. The status
+    /// command reads it as root, and the tool server owns its folder: never
+    /// through a link, never a pipe that would hang the reader, never past
+    /// MAX_FILE_BYTES.
     pub fn load(path: &Path) -> Result<Settings, String> {
+        use nix::fcntl::OFlag;
         let shown = path.display();
         let mut text = String::new();
-        match std::fs::OpenOptions::new()
+        let f = match std::fs::OpenOptions::new()
             .read(true)
-            .custom_flags(nix::fcntl::OFlag::O_NOFOLLOW.bits())
+            .custom_flags((OFlag::O_NOFOLLOW | OFlag::O_NONBLOCK).bits())
             .open(path)
         {
-            Ok(mut f) => f
-                .read_to_string(&mut text)
-                .map_err(|e| format!("{shown}: {e}"))?,
+            Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Settings::default()),
             Err(e) => return Err(format!("{shown}: {e}")),
         };
+        if !f.metadata().is_ok_and(|m| m.is_file()) {
+            return Err(format!("{shown}: not a regular file."));
+        }
+        f.take(MAX_FILE_BYTES)
+            .read_to_string(&mut text)
+            .map_err(|e| format!("{shown}: {e}"))?;
         let settings: Settings =
             serde_json::from_str(&text).map_err(|e| format!("{shown}: {e}"))?;
         settings.check().map_err(|e| format!("{shown}: {e}"))?;
@@ -294,6 +303,8 @@ mod tests {
         assert_eq!(Settings::load(&path).unwrap(), s);
         std::os::unix::fs::symlink(&path, dir.join("link.json")).unwrap();
         assert!(Settings::load(&dir.join("link.json")).is_err());
+        nix::unistd::mkfifo(&dir.join("pipe.json"), nix::sys::stat::Mode::S_IRWXU).unwrap();
+        assert!(Settings::load(&dir.join("pipe.json")).is_err());
         std::fs::write(&path, r#"{"schedule": "hourly", "extra": 1}"#).unwrap();
         assert!(Settings::load(&path).is_err());
         std::fs::remove_dir_all(dir).unwrap();
