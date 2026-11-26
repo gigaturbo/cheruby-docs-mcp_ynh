@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.1~ynh1
+
+- A word whisper cut between two parts of a transcript now reads as one word ("factures", no longer "fact ures").
+- A recording transcribed again after the model is changed is transcribed with the new model, no longer given the old model's text.
+
 ## 0.15.0~ynh1
 
 - `transcribe_file`: an agent gets the text of a recording in the user's folders, with its times, then cleans it, saves it with `write_file` and moves the recording with `move_file`. whisper small or large-v3-turbo runs on the server; a long recording is done in parts, and a call again later gets the rest.

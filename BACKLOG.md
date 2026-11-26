@@ -13,30 +13,6 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
-### B-M-4 · a word cut between two transcript segments reads as two
-
-`open` `small` `filed 2026-11-26`
-
-whisper sometimes ends a segment inside a word, and the next segment then
-starts without a space ("fact" then "ures, activer"). `render` trims each
-segment and puts a space or a new line between them, so the text reads
-"fact ures", "po che", "V- box": 8 times in a 17-minute call.
-
-**Fix:** in `render`, join a segment whose text starts without a space onto
-the previous one, on the same line when timestamps are on.
-
-### B-M-5 · a transcript cached with one model is given after a switch to another
-
-`open` `small` `filed 2026-11-26`
-
-The cache key is the user, path, size, date and language (an upload: user
-and content), not the engine or model. After switching the panel to
-large-v3-turbo, a recording already done with small returns small's text;
-the header does say "whisper small".
-
-**Fix:** put the model in the key, the Pi's or the desktop's; a fallback
-mid-recording keeps the key it started with.
-
 ### B-M-3 · a file once opened in Nextcloud's Text refuses writes for days
 
 `open` `medium` `filed 2026-11-25`
@@ -144,6 +120,21 @@ run on the 1080 Ti.
 transcript's segments.
 
 ## Tests
+
+### T-M-6 · a recording is transcribed on the Pi
+
+`todo` `playtest` `filed 2026-11-26`
+
+**Last:** 2026-11-26 at `8810fbb`, on 0.15.0~ynh1: a 17-minute `.m4a` in Nextcloud in 4.5 min and one in Syncthing in 4.6 (whisper small, about 16 s a minute of audio), French found; progress on each call; a restart carried on after the part done; only `transcripts` writable in the server's namespace; the page's Transcribe from a Nextcloud folder and from an upload through the portal, copied and downloaded; an agent saved the cleaned text with `write_file` and moved the `.m4a` with `move_file`; a non-audio `.mp3` failed with ffmpeg's message, no real path; the panel to large-v3-turbo (a 16:50 `.oga` upload transcribed, French found) and back to small. Found B-M-4 and B-M-5.
+
+Reopened by B-M-4 and B-M-5: the text joins a word cut between segments,
+and the cache key holds the model.
+
+**Check:** upgrade to 0.15.1~ynh1. Transcribe again a recording done on
+0.15.0 (the Bouygues call): "factures" and "poche" read as one word, with
+and without times. Switch the panel to large-v3-turbo: the same recording
+is transcribed again and the header names turbo; back to small, it comes
+from the cache at once.
 
 ### T-M-7 · a recording is transcribed on the desktop
 
@@ -264,7 +255,9 @@ there after restore, gone after remove; a backup made after it restores
 
 ## Closed
 
-- `T-M-6` done `playtest` 2026-11-26 at `8810fbb` · on 0.15.0~ynh1: a 17-minute `.m4a` in Nextcloud in 4.5 min and one in Syncthing in 4.6 (whisper small, about 16 s a minute of audio), French found; progress on each call; a restart carried on after the part done; only `transcripts` writable in the server's namespace; the page's Transcribe from a Nextcloud folder and from an upload through the portal, copied and downloaded; an agent saved the cleaned text with `write_file` and moved the `.m4a` with `move_file`; a non-audio `.mp3` failed with ffmpeg's message, no real path; the panel to large-v3-turbo (a 16:50 `.oga` upload transcribed, French found) and back to small. Found B-M-4 and B-M-5
+- `B-M-5` closed 2026-11-26 · a transcript cached with one model was given after a switch to another; the key now holds the engine and its model
+- `B-M-4` closed 2026-11-26 · a word whisper cut between two segments read as two ("fact ures"); a segment starting without a space is now joined to the one before
+- `T-M-1` done `spec` 2026-11-26 at `1dcd6ee` · `tests/check_server.py` 266 of 266 against the binary, a transcript on another model included; `cargo test` 36 of 36
 - `F-M-20` done `large` 2026-11-26 · `transcribe_file` and the page's Transcribe tab on whisper.cpp's `whisper-server` on the Pi (small by default, large-v3-turbo as the choice, Silero VAD), in 10-minute parts from a cache (0.15.0~ynh1, installed 2026-11-26)
 - `F-P-9` done `medium` 2026-11-26 · a pokestyle page for the docs user behind the portal, on its own loopback port: Status and Search, then Config (F-P-10) and Transcribe (F-M-20)
 - `F-P-10` done `large` 2026-11-26 · the schedule, the quiet hours and the filters on the page's Config tab, in `/var/lib/cheruby-docs-mcp/settings.json`, applied live; the tool server runs the schedule, no timer; healthchecks.io gets every failure and the success of scheduled and Run now runs; the upgrade moved the panel's values, checked (0.14.0~ynh1, installed 2026-11-26)
@@ -274,7 +267,6 @@ there after restore, gone after remove; a backup made after it restores
 - `B-P-3` closed 2026-11-25 · a run `run_index` started pinged healthchecks.io like a timer run, so an agent could keep the check green; such a run now pings nothing
 - `T-M-3` done `playtest` 2026-11-25 at `b649caf` · on disk (Syncthing Documents) and in Nextcloud (Notes): a file moved, a folder renamed, a move onto a name, into itself, into a missing folder and across folders refused; moved files kept 660, folders 770, the folder's group; a Text-locked file refused with the Text message and left unchanged; test files deleted
 - `F-M-19` done 2026-11-25 · `move_file` moves or renames a file or a folder within one writable folder, on disk and in Nextcloud, never replacing, never across a share, never changing what the filters keep
-- `T-M-1` done `spec` 2026-11-25 at `1d71e1a` · `tests/check_server.py` 206 of 206 against the binary, `move_file` and the Text lock included; `cargo test` 23 of 23
 - `B-P-5` closed 2026-11-25 · the four units could reach every loopback service, PostgreSQL, LDAP, the YunoHost API and Redis among them, over IPv4 and `::1`
 - `F-P-8` done 2026-11-25 · the README, `doc/mcp.md`, the config panel, the New token message and `token --new` say to add the server `docs` on Whoopy's status page and to change its token in Whoopy's admin page
 - `F-P-7` done 2026-11-22 · `sudo cheruby-docs-mcp token [--new]` and the gateway token named `mcp_token`, as in the other MCP apps; the read and status commands pass to the binary (0.11.0~ynh2, installed 2026-11-22)
