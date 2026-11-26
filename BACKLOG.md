@@ -71,26 +71,6 @@ runs, servers, folders) and Search (the best passage of each file). Read-only:
 it changes nothing yet. An install from before needs its domain and path
 set first (`doc/PRE_UPGRADE.d/0.13.0~ynh1.md`).
 
-### F-P-10 · the settings that do not confine the app move to the page
-
-`doing` `large` `filed 2026-11-25`
-
-After F-P-9. The panel keeps who and what the app reaches: the user, the
-sources and folders, writable, Whoopy's folders, the Nextcloud login, the
-MCP token and the health ping.
-
-**Do:** `/var/lib/cheruby-docs-mcp/settings.json`, the app's own, backed up:
-the schedule run inside the server in place of the timer, the quiet hours
-and the only/skip filters, changed on the page's Config tab with no
-restart. The upgrade moves the panel's values there. healthchecks.io gets
-every failure and the success of scheduled and Run now runs, never a start. The models are
-F-P-12, the engine F-P-13.
-
-2026-11-26: built as 0.14.0~ynh1, reviewed and hardened: `check_server.py`
-241 of 241, `cargo test` 30 of 30, the Config tab without fault at the six
-sizes. A fail-only ping, tried first, was dropped: no alert when runs stop. Not
-yet released nor installed: T-P-4, T-P-6, T-P-7, T-P-1 and T-P-2 then.
-
 ### F-P-12 · the embedding model chosen on the page
 
 `todo` `medium` `filed 2026-11-25`
@@ -175,7 +155,10 @@ the docs user matched `status`, Search found the electricity bills, another
 portal user 403, no panel token 401, a POST without same-origin 403;
 Whoopy's `/mcp` still listed its eight tools; the panel token in no log.
 Not done: a login through the portal in a browser, and `check_page.py` on
-the live page (passed on a local server). The upgrade left the tile hidden
+the live page (passed on a local server). 2026-11-26 on 0.14.0~ynh1:
+`check_page.py` on the live page, no fault at the six sizes, Config
+included; `/api/settings` without the panel token 401, a POST without
+same-origin 403. Still not done: the portal login in a browser. The upgrade left the tile hidden
 (YunoHost sets `show_tile` before the url on that first upgrade): turned on
 by hand.
 
@@ -202,9 +185,7 @@ Reopened by B-P-3: the index unit's first step decides a tools' run, and a reque
 
 `todo` `playtest` `filed 2026-11-21`
 
-**Last:** 2026-11-21 at `ed08fb3`, from the panel and its timer: every schedule and quiet hours followed, Run now, Rebuild (B-P-4 found).
-
-Reopened by F-P-10: the tool server runs the schedule, set on the page; no timer.
+**Last:** 2026-11-26 at `8f57f11`, 0.14.0~ynh1, in part: no timer left; at 14:20 the server asked for the run, the path unit started it (440 unchanged, 1 s) and the success ping went out; the page's next run then 15:20. Not done: the other schedules, quiet hours, Run now, Rebuild, the catch-up after a stop, a failed run's `/fail`.
 
 **Check:** the skill's T-P-6.
 
@@ -212,9 +193,7 @@ Reopened by F-P-10: the tool server runs the schedule, set on the page; no timer
 
 `todo` `playtest` `filed 2026-11-10`
 
-**Last:** 2026-11-21 at `ed08fb3`: Syncthing's choices its three folders; a mode 600 file counted 1; `*.pdf` left out hid the PDFs from listing, reading, finding and search at once; Local storage on then off brought its folder and took it away; an unchanged save restarted nothing, saying "Config updated" since the password field always looks changed.
-
-Reopened by F-P-10: the filters move from the panel to the page's settings.json.
+**Last:** 2026-11-26 at `8f57f11`, 0.14.0~ynh1, in part: the upgrade wrote `settings.json` (hourly, the custom line kept, 01-06, no filters), the app's, mode 600, and deleted the panel's `index_*`, `_only` and `_skip`; `folders.json` gives Documents as Syncthing and Notes as Nextcloud; `*.pdf` left out on the page hid every PDF from `find` with no restart, then taken out. Not done: the panel's statuses and sources, `read_file` and search on a filtered file. Before: 2026-11-21 at `ed08fb3`, all steps on the panel.
 
 **Check:** the skill's T-P-4.
 
@@ -270,6 +249,8 @@ there after restore, gone after remove; a backup made after it restores
 `settings.json` as it was, owned by the app, mode 600.
 
 ## Closed
+
+- `F-P-10` done `large` 2026-11-26 · the schedule, the quiet hours and the filters on the page's Config tab, in `/var/lib/cheruby-docs-mcp/settings.json`, applied live; the tool server runs the schedule, no timer; healthchecks.io gets every failure and the success of scheduled and Run now runs; the upgrade moved the panel's values, checked (0.14.0~ynh1, installed 2026-11-26)
 
 - `B-P-6` closed 2026-11-25 · the page answered 404 on 0.13.0~ynh1: configure's folder loop kept a local `path`, which ynh_config_add_nginx took for the app's path
 - `B-P-4` closed 2026-11-25 · during a run the panel said "the schedule is never." on an hourly schedule; it now says "after this run" while the timer is on
