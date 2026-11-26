@@ -17,6 +17,8 @@ writable. Meant to sit behind an MCP gateway.
   replaced, moved or renamed in a folder marked writable, never a delete.
 - `run_index`: an index run of some files or of everything, so search finds
   what changed.
+- `transcribe_file`: the text of a recording, with its times, transcribed
+  on the server or on the desktop's GPU.
 
 Each tool, its arguments and its limits: [MCP tools](doc/mcp.md).
 
@@ -30,6 +32,8 @@ portal:
   or written.
 - **Search**: the same search as `search_documents`, the best passage of
   each file.
+- **Transcribe**: a recording from a folder, or sent from the browser, made
+  into text to copy or download.
 
 Paths start with a folder's label, such as `Documents/Factures`.
 
@@ -97,6 +101,18 @@ names it there and paste a Whoopy key allowed that model only. Search still
 turns each question into a vector on the server, so the run first does about
 20 passages both ways and keeps to the server unless they agree. When Whoopy
 stops answering, the run carries on on the server. The schedule never uses it.
+
+"Speech to text" picks whisper small (the default), which does an hour of
+speech in about 15 minutes on the Pi 5, or large-v3-turbo, which takes
+about an hour for an hour but gets the punctuation, the capitals and more
+of the words right. Both come
+from whisper.cpp, built for the Pi 5 by this repository, with Silero VAD to
+skip the silences; ffmpeg decodes the recordings. "The desktop" lets
+transcriptions go to the desktop's GPU through Whoopy, never, on request
+or always: give the speech model as Whoopy names it (`speaches/...`) and
+paste a Whoopy key allowed that model only. A desktop that does not wake
+within three minutes leaves the rest to the server. The models take about
+0.6 GB of memory for small and 1.2 GB for large-v3-turbo.
 
 The server listens on `http://127.0.0.1:<port>/mcp` (Streamable HTTP).
 It is one binary, built for the Pi 5 from `cheruby-docs/` in this

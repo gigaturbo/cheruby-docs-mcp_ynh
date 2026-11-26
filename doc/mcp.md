@@ -49,6 +49,9 @@ Paths start with a folder's label, such as `Documents/Factures`.
 - **No scans or images in search yet.** Find them by name with `find_files`;
   `read_file` returns an image as the picture.
 - **Bounded reads.** 20 pages of a PDF or 20,000 characters at a time.
+- **Bounded transcriptions.** One recording at a time, 5 at most running
+  or waiting, the first 4 hours of each, up to 1 GB on disk and 64 MB in
+  Nextcloud. A transcript is kept 30 days after it was last read.
 - **Bounded index runs.** `run_index` takes 50 files at most, and is refused
   in the index's quiet hours, with 20 requests waiting, and for all the
   folders within 15 minutes of the last full run.
@@ -144,3 +147,32 @@ Changes no file.
 | Argument | Default | Effect |
 |---|---|---|
 | `files` | empty | Up to 50 paths, such as `Notes/Recettes/pain.md`. Empty asks for all the folders. |
+
+## transcribe_file
+
+The text of a recording: mp3, m4a, aac, wav, ogg, opus, flac, webm, mka,
+amr, 3gp or mp4 (its sound only). It is cut in parts of about ten minutes,
+each ending at a pause, and transcribed by whisper on the server or, when
+the config panel allows it, by the desktop's GPU through Whoopy. The
+language is detected on the first part and kept for the rest.
+
+An hour of audio takes about 15 minutes on the server with whisper small,
+about an hour with large-v3-turbo.
+The tool waits up to a minute, then says how far it is: call it again with
+the same path later. What is done is kept, through a restart too. Once
+done, the text comes back at once, read by character like `read_file`. A
+recording changed since, or asked for in another language, is transcribed
+again; one changed before its turn comes is refused, to be asked again. It changes no file: save the cleaned text with `write_file`, then
+move the recording with `move_file`.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `path` | | Such as `Notes/Dictaphone/réunion.m4a`. |
+| `engine` | the panel's | `pi` for this server, `desktop` for the desktop's GPU when set up. A desktop that does not answer within three minutes leaves the rest to the server. |
+| `language` | detected | Such as `fr` or `french`. |
+| `timestamps` | true | Each line starts with its time, `[1:02:05]`; false gives paragraphs split at pauses. |
+| `retry` | false | Try again a recording that failed. Without it, the failure is said again, with where it happened. |
+| `offset`, `max_chars` | 0, 8000 | Where to start reading the text and how much, up to 20,000 characters. |
+
+The first line says how long the recording is, its language and where it
+was transcribed.

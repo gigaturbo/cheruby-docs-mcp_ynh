@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.15.0~ynh1
+
+- `transcribe_file`: an agent gets the text of a recording in the user's folders, with its times, then cleans it, saves it with `write_file` and moves the recording with `move_file`. whisper small or large-v3-turbo runs on the server; a long recording is done in parts, and a call again later gets the rest.
+- The desktop's GPU can transcribe instead, through Whoopy, never, on request or always, chosen in the config panel under "Speech to text". It needs Whoopy's `speaches/...` route and a key allowed it.
+- The page's new Transcribe tab does the same for a recording in a folder or one sent from the browser, up to 500 MB.
+- The package now installs ffmpeg, and its memory needs grow by about 0.6 GB with whisper small, 1.2 GB with large-v3-turbo.
+
 ## 0.14.0~ynh1
 
 - The page's new Config tab sets the index schedule, its quiet hours and each source's "Only these files" and "Leave out". A change applies at once, with no restart. The upgrade moves them there from the config panel, into `/var/lib/cheruby-docs-mcp/settings.json`, which backups now carry.
