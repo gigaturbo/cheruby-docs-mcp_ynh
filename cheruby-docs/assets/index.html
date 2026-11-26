@@ -69,6 +69,9 @@ ul.lines{margin:0;padding-left:var(--s-5)}
 .hit .when{color:var(--muted);font-size:.9rem}
 .hit p{margin:var(--s-2) 0 0;white-space:pre-wrap;overflow-wrap:anywhere;max-width:75ch}
 .note{color:var(--warn)}
+.transcript{margin:var(--s-3) 0 0;padding:var(--s-3);background:var(--panel-2);border:2px solid var(--line);
+  white-space:pre-wrap;overflow-wrap:anywhere;max-height:60vh;overflow-y:auto}
+.actions{display:flex;gap:var(--s-2);flex-wrap:wrap;margin-top:var(--s-3)}
 .settings{display:grid;gap:var(--s-3)}
 .settings .help{margin:0;color:var(--muted);font-size:.9rem;max-width:75ch}
 .settings p{margin:0}
@@ -100,6 +103,7 @@ ul.lines{margin:0;padding-left:var(--s-5)}
 <nav class="tabs" aria-label="Sections">
   <a href="#status">Status</a>
   <a href="#search">Search</a>
+  <a href="#transcribe">Transcribe</a>
   <a href="#config">Config</a>
 </nav>
 
@@ -135,6 +139,51 @@ ul.lines{margin:0;padding-left:var(--s-5)}
       <button class="main" type="submit">Search</button>
     </form>
     <div id="results" aria-live="polite"></div>
+  </section>
+</main>
+
+<main class="panels" id="transcribe" data-tab hidden>
+  <section class="panel">
+    <h2>From a folder</h2>
+    <p>A recording in one of your folders, by its path, as the agents name
+    it. An hour of audio takes up to an hour on this server; the page can be
+    closed meanwhile, and what is done is kept.</p>
+    <form class="settings" id="from-folder">
+      <div class="row">
+        <label for="rec-path">Recording</label>
+        <input id="rec-path" type="text" class="mono" placeholder="Notes/Dictaphone/réunion.m4a" required>
+      </div>
+      <div class="row">
+        <label for="rec-language">Language</label>
+        <input id="rec-language" type="text" maxlength="20" placeholder="Detected, or such as fr">
+      </div>
+      <div class="row engine-row">
+        <label for="rec-engine">Transcribe on</label>
+        <select id="rec-engine" class="engine"></select>
+      </div>
+      <button class="main" type="submit">Transcribe</button>
+    </form>
+  </section>
+  <section class="panel">
+    <h2>From this device</h2>
+    <p>A recording sent from here, up to 500 MB: mp3, m4a, aac, wav, ogg,
+    opus, flac, webm, mka, amr, 3gp or mp4. It is not kept in your folders;
+    its text is, here, for 30 days.</p>
+    <form class="settings" id="from-upload">
+      <div class="row">
+        <label for="rec-file">Recording</label>
+        <input id="rec-file" type="file" accept=".mp3,.m4a,.aac,.wav,.ogg,.oga,.opus,.flac,.webm,.mka,.amr,.3gp,.mp4,audio/*" required>
+      </div>
+      <div class="row engine-row">
+        <label for="up-engine">Transcribe on</label>
+        <select id="up-engine" class="engine"></select>
+      </div>
+      <button class="main" type="submit">Send and transcribe</button>
+    </form>
+  </section>
+  <section class="panel wide">
+    <h2>Transcript</h2>
+    <div id="transcript" aria-live="polite"><p class="muted">Nothing transcribed yet.</p></div>
   </section>
 </main>
 
@@ -195,7 +244,7 @@ ul.lines{margin:0;padding-left:var(--s-5)}
     <h2>In the config panel</h2>
     <p>Who and what the app reaches stay in the YunoHost webadmin, in this
     app's config panel: the user, the sources and their folders, which are
-    writable, Whoopy's folders, the Nextcloud login, the MCP token, the
+    writable, Whoopy's folders, the Nextcloud login, the MCP token, the speech model and engine, the
     embedding model, Run now and Rebuild, and the healthchecks.io ping.</p>
     <p><a href="/yunohost/admin/#/apps/cheruby-docs-mcp/config" target="_blank" rel="noopener">Open the config panel<svg class="ext-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
@@ -245,7 +294,9 @@ async function refresh() {
     return;
   }
   $("index").innerHTML = s.index.map(line).join("");
-  $("servers").innerHTML = server("Embedding, for search", s.embed) + server("Ranking of results", s.rerank);
+  $("servers").innerHTML = server("Embedding, for search", s.embed) + server("Ranking of results", s.rerank)
+    + server("Speech to text", s.speech);
+  showEngines(s.engines);
   $("folders").innerHTML = s.folders.map(f => {
     const read = f.state === "unreadable" ? "bad" : "ok";
     return `<tr><td data-label="Folder" class="mono">${esc(f.label)}</td>`
@@ -287,6 +338,99 @@ $("search-form").addEventListener("submit", async ev => {
     button.disabled = false;
   }
 });
+
+// The Transcribe tab: a job is queued, then polled until its text comes.
+const ENGINE_NAMES = {pi: "This server", desktop: "The desktop's GPU, through Whoopy"};
+let engines = null;
+function showEngines(list) {
+  const key = list.join();
+  if (key === engines) return;
+  engines = key;
+  for (const sel of document.querySelectorAll("select.engine")) {
+    sel.innerHTML = list.map(e => `<option value="${e}">${esc(ENGINE_NAMES[e] || e)}</option>`).join("");
+    sel.closest(".engine-row").hidden = list.length < 2;
+  }
+  for (const b of document.querySelectorAll("#transcribe button")) b.disabled = !list.length;
+  if (!list.length) $("transcript").innerHTML = '<p class="bad">Transcription is not set up on this server.</p>';
+}
+
+let polling = null;
+function mmss(s) {
+  s = Math.floor(s);
+  const h = Math.floor(s / 3600), m = Math.floor(s / 60) % 60, r = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
+}
+async function follow(key) {
+  clearTimeout(polling);
+  const out = $("transcript");
+  let d;
+  try {
+    const r = await fetch("api/transcribe/" + key, {cache: "no-store"});
+    d = await r.json();
+  } catch (e) {
+    polling = setTimeout(() => follow(key), 5000);
+    return;
+  }
+  if (d.state === "done") {
+    const head = `${d.shown}: ${mmss(d.duration)} of audio, language ${d.language || "unknown"}, transcribed on ${d.engines.join(" and ")}.`;
+    out.innerHTML = `<p class="mono">${esc(head)}</p>` + (d.note ? `<p class="note">${esc(d.note)}</p>` : "")
+      + `<pre class="transcript" id="transcript-text">${esc(d.text)}</pre>`
+      + `<div class="actions"><button type="button" id="copy">Copy</button><button type="button" id="download">Download .txt</button></div>`;
+    $("copy").onclick = () => navigator.clipboard.writeText(d.text).then(() => { $("copy").textContent = "Copied"; });
+    $("download").onclick = () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([d.text], {type: "text/plain"}));
+      a.download = d.shown.replace(/^upload: /, "").replace(/.*\//, "").replace(/\.[^.]*$/, "") + ".txt";
+      a.click();
+      URL.revokeObjectURL(a.href);
+    };
+    return;
+  }
+  if (d.state === "failed") { out.innerHTML = `<p class="bad">${esc(d.error)}</p>`; return; }
+  if (d.state === "running") {
+    const left = d.left ? `, about ${Math.ceil(d.left / 60)} min left` : "";
+    out.innerHTML = `<p>Transcribing: ${mmss(d.done)} of ${mmss(d.total)} done${left}.</p>`;
+  } else if (d.state === "queued") {
+    out.innerHTML = `<p>Waiting behind ${d.ahead} other recording(s).</p>`;
+  } else {
+    out.innerHTML = "<p>Starting…</p>";
+  }
+  polling = setTimeout(() => follow(key), 5000);
+}
+
+async function queued(ev, send) {
+  ev.preventDefault();
+  const button = ev.target.querySelector("button");
+  const out = $("transcript");
+  button.disabled = true;
+  out.innerHTML = "<p>Starting…</p>";
+  try {
+    const r = await send();
+    const d = await r.json().catch(() => ({error: `the server answered ${r.status}`}));
+    if (!r.ok) { out.innerHTML = `<p class="bad">${esc(d.error || r.status)}</p>`; return; }
+    follow(d.key);
+  } catch (e) {
+    out.innerHTML = '<p class="bad">The server did not answer.</p>';
+  } finally {
+    button.disabled = false;
+  }
+}
+$("from-folder").addEventListener("submit", ev => queued(ev, () => fetch("api/transcribe", {
+  method: "POST",
+  headers: {"content-type": "application/json"},
+  body: JSON.stringify({path: $("rec-path").value.trim(), engine: $("rec-engine").value || "",
+                        language: $("rec-language").value.trim()}),
+})));
+$("from-upload").addEventListener("submit", ev => queued(ev, () => {
+  const file = $("rec-file").files[0];
+  $("transcript").innerHTML = "<p>Sending…</p>";
+  return fetch("api/transcribe/upload", {
+    method: "POST",
+    headers: {"content-type": "application/octet-stream", "x-file-name": encodeURIComponent(file.name),
+              "x-engine": $("up-engine").value || ""},
+    body: file,
+  });
+}));
 
 // The Config tab: the settings as saved, sent back whole on each save.
 const SOURCE_NAMES = {syncthing: "Syncthing", local: "Local storage", nextcloud: "Nextcloud"};

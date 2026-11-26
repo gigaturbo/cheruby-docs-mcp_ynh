@@ -18,7 +18,8 @@ use std::{future::Future, pin::Pin, sync::Arc, time::Duration};
 
 use axum::{
     Json, Router,
-    extract::{Request, State},
+    body::Body,
+    extract::{DefaultBodyLimit, Path, Request, State},
     http::{HeaderMap, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -32,7 +33,7 @@ use crate::{
     folders::NEXTCLOUD,
     index,
     settings::{SOURCES, Settings},
-    status,
+    speech, status,
     tools::{self, Ctx, Docs, Grant},
 };
 
@@ -45,6 +46,8 @@ const TOUCH_ICON: &[u8] = include_bytes!("../assets/apple-touch-icon.png");
 /// Refused below this, as the MCP tokens are.
 const MIN_TOKEN_LEN: usize = 32;
 const MAX_QUERY_CHARS: usize = 500;
+/// A recording sent from the page; nginx allows the same.
+const MAX_UPLOAD_BYTES: usize = 500 << 20;
 
 #[derive(Clone)]
 struct Page {
@@ -121,6 +124,12 @@ pub async fn bind(docs: Arc<Docs>) -> Result<Option<Serving>, String> {
         .route("/api/status", get(status_json))
         .route("/api/search", post(search_json))
         .route("/api/settings", get(settings_json).post(save_settings))
+        .route("/api/transcribe", post(transcribe_json))
+        .route(
+            "/api/transcribe/upload",
+            post(upload).layer(DefaultBodyLimit::max(MAX_UPLOAD_BYTES)),
+        )
+        .route("/api/transcribe/{key}", get(transcript_json))
         .layer(middleware::from_fn_with_state(page.clone(), guard))
         .with_state(page);
     let listener = tokio::net::TcpListener::bind(format!("127.0.0.1:{port}"))
@@ -234,6 +243,11 @@ async fn status_json(State(page): State<Page>) -> Json<Value> {
         "index": lines.lines().collect::<Vec<_>>(),
         "embed": up(&docs.http, &docs.embed_url).await,
         "rerank": up(&docs.http, &docs.rerank_url).await,
+        "speech": match &docs.speech {
+            Some(s) => up(&docs.http, s.pi_url()).await,
+            None => None,
+        },
+        "engines": docs.speech.as_ref().map(|s| s.engines()).unwrap_or_default(),
         "folders": folders,
     }))
 }
@@ -266,6 +280,115 @@ async fn save_settings(State(page): State<Page>, Json(settings): Json<Settings>)
         return (StatusCode::BAD_REQUEST, Json(json!({"error": e}))).into_response();
     }
     settings_json(State(page)).await.into_response()
+}
+
+fn refused(e: impl Into<String>) -> Response {
+    (StatusCode::BAD_REQUEST, Json(json!({"error": e.into()}))).into_response()
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TranscribeArgs {
+    path: String,
+    #[serde(default)]
+    engine: String,
+    #[serde(default)]
+    language: String,
+}
+
+/// The Transcribe tab, from a folder: queued as transcribe_file queues it.
+async fn transcribe_json(State(page): State<Page>, Json(a): Json<TranscribeArgs>) -> Response {
+    match tools::transcribe(&page.ctx(), a.path, a.engine, a.language).await {
+        Ok(key) => Json(json!({"key": key})).into_response(),
+        Err(e) => refused(e),
+    }
+}
+
+/// The Transcribe tab, from an upload: the body is the recording, its name
+/// and the engine in headers. Streamed to a scratch file, hashed on the way:
+/// the same recording sent twice is transcribed once.
+async fn upload(State(page): State<Page>, headers: HeaderMap, body: Body) -> Response {
+    use http_body_util::BodyExt;
+    use sha2::Digest;
+    use tokio::io::AsyncWriteExt;
+    let Some(speech) = page.docs.speech.clone() else {
+        return refused("transcription is not set up on this server.");
+    };
+    let header = |k: &str| {
+        headers
+            .get(k)
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_string()
+    };
+    let engine = match speech.engine(&header("x-engine")) {
+        Ok(e) => e,
+        Err(e) => return refused(e),
+    };
+    let name: String = percent_encoding::percent_decode_str(&header("x-file-name"))
+        .decode_utf8_lossy()
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(100)
+        .collect();
+    let ext = crate::folders::suffix(&name);
+    if !speech::AUDIO_SUFFIXES.contains(&ext.as_str()) {
+        return refused(format!(
+            "not a recording; these are: {}.",
+            speech::AUDIO_SUFFIXES.join(" ")
+        ));
+    }
+    let file = match speech::scratch() {
+        Ok(f) => f,
+        Err(e) => return refused(e),
+    };
+    let mut out = tokio::fs::File::from_std(file);
+    let mut hash = sha2::Sha256::new();
+    let mut body = body;
+    while let Some(frame) = body.frame().await {
+        let Ok(frame) = frame else {
+            return refused("the upload was cut off, or is larger than 500 MB.");
+        };
+        if let Ok(data) = frame.into_data() {
+            hash.update(&data);
+            if let Err(e) = out.write_all(&data).await {
+                return refused(crate::folders::io_message(&e));
+            }
+        }
+    }
+    let mut file = out.into_std().await;
+    if let Err(e) = std::io::Seek::rewind(&mut file) {
+        return refused(crate::folders::io_message(&e));
+    }
+    let key = speech::key(&[
+        "upload",
+        &page.grant.user,
+        &crate::nextcloud::hex(&hash.finalize()),
+    ]);
+    if !matches!(speech.look(&key), speech::Look::Done(_)) {
+        let job = speech::Job {
+            key: key.clone(),
+            shown: format!("upload: {name}"),
+            engine,
+            language: String::new(),
+            open: Box::new(move || Ok(file)),
+        };
+        if let Err(e) = speech.start(job) {
+            return refused(e);
+        }
+    }
+    Json(json!({"key": key})).into_response()
+}
+
+/// Where a transcription stands, and its text once done.
+async fn transcript_json(State(page): State<Page>, Path(key): Path<String>) -> Response {
+    let Some(speech) = page.docs.speech.clone() else {
+        return refused("transcription is not set up on this server.");
+    };
+    if key.len() != 64 || !key.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return refused("no such transcription.");
+    }
+    Json(speech::look_json(speech.look(&key))).into_response()
 }
 
 #[derive(Deserialize)]
