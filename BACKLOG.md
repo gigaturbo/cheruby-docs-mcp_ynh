@@ -146,6 +146,14 @@ transcript's segments.
 
 `todo` `playtest` `filed 2026-11-26`
 
+**Last:** 2026-11-26 at `8810fbb`, on 0.15.0~ynh1, partly: a 17-minute `.m4a` in
+Nextcloud in 4.5 minutes and one in Syncthing in 4.6 (whisper small, about
+16 s a minute of audio), French found, the text usable; progress on each
+call; a restart after the first part carried on from it; inside the
+server's namespace only `transcripts` is writable. Not yet: the agent's
+write and move, the page through the portal, large-v3-turbo, the fake
+`.mp3`.
+
 **Check:** ask first, then upgrade to 0.15.0~ynh1. With the gateway token,
 `transcribe_file` on an hour-long `.m4a` in a Syncthing folder: the first
 call says how far it is, later calls too, then the text with its times,
