@@ -248,6 +248,7 @@ binary did.
 
 ## Closed
 
+- `B-P-7` closed 2026-11-26 · the panel's example speech model was not installed on the desktop; it is now `speaches/deepdml/faster-whisper-large-v3-turbo-ct2`, and the help says to take an installed one
 - `F-P-14` done `medium` 2026-11-26 · one MCP token (`DOCS_TOKEN`, `DOCS_USER`, `DOCS_TOKEN_FOLDERS`, empty opens none) for any client on the server; `whoopy_folders` moved to `mcp_folders`, `token_<user>` deleted; the panel's "MCP access" and the docs name Whoopy and LiteLLM as examples; the remote embedding and speech server named generically (0.16.0~ynh1, installed 2026-11-26)
 - `T-P-2` done `playtest` 2026-11-26 at `a414cc6` · on 0.16.0~ynh1, nothing to autoremove: backup, remove (command gone), restore; `mcp_token` fingerprint and `settings.json` the same, the app's, 600; no `whoopy_*` or `token_<user>`; the token lists nine tools; the token in neither the CLI log's new lines nor the operation logs
 - `B-M-5` closed 2026-11-26 · a transcript cached with one model was given after a switch to another; the key now holds the engine and its model
