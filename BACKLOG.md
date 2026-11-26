@@ -13,6 +13,30 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
+### B-M-4 · a word cut between two transcript segments reads as two
+
+`open` `small` `filed 2026-11-26`
+
+whisper sometimes ends a segment inside a word, and the next segment then
+starts without a space ("fact" then "ures, activer"). `render` trims each
+segment and puts a space or a new line between them, so the text reads
+"fact ures", "po che", "V- box": 8 times in a 17-minute call.
+
+**Fix:** in `render`, join a segment whose text starts without a space onto
+the previous one, on the same line when timestamps are on.
+
+### B-M-5 · a transcript cached with one model is given after a switch to another
+
+`open` `small` `filed 2026-11-26`
+
+The cache key is the user, path, size, date and language (an upload: user
+and content), not the engine or model. After switching the panel to
+large-v3-turbo, a recording already done with small returns small's text;
+the header does say "whisper small".
+
+**Fix:** put the model in the key, the Pi's or the desktop's; a fallback
+mid-recording keeps the key it started with.
+
 ### B-M-3 · a file once opened in Nextcloud's Text refuses writes for days
 
 `open` `medium` `filed 2026-11-25`
@@ -93,27 +117,6 @@ remove and an install.
 
 **Do:** `scripts/change_url` from the family's, re-rendering nginx.
 
-### F-M-20 · transcribe a recording on the Pi
-
-`doing` `large` `filed 2026-11-25`
-
-An agent finds a recording, has it transcribed, cleans the text, then saves
-it and moves the recording; all but the transcription exists.
-
-**Do:** whisper.cpp's `whisper-server`, built for the Pi 5 like
-llama-server, as a unit on loopback (small-q8_0 by default, large-v3-turbo-q8_0
-as the choice, Silero VAD); `transcribe_file` on an audio file of the
-folders: decoded by ffmpeg from an argument list with protocol and format
-whitelists, cut in 10-minute parts at a quiet point, timestamps by default,
-the language detected once then fixed, paged from a cache; the page's
-Transcribe tab, from a folder or an upload.
-
-2026-11-26: built for 0.15.0~ynh1, not installed. whisper.cpp v1.9.6 with
-Silero VAD v6.2.0; on the Pi, 10:05 of speech took 137 s with small
-(0.6 GB) and 656 s with large-v3-turbo (1.2 GB), which alone kept "ask
-not" and the punctuation.
-Closes with T-M-6.
-
 ### F-M-21 · transcribe on a remote OpenAI-compatible endpoint
 
 `doing` `medium` `filed 2026-11-25`
@@ -141,31 +144,6 @@ run on the 1080 Ti.
 transcript's segments.
 
 ## Tests
-
-### T-M-6 · a recording is transcribed on the Pi
-
-`todo` `playtest` `filed 2026-11-26`
-
-**Last:** 2026-11-26 at `8810fbb`, on 0.15.0~ynh1, partly: a 17-minute `.m4a` in
-Nextcloud in 4.5 minutes and one in Syncthing in 4.6 (whisper small, about
-16 s a minute of audio), French found, the text usable; progress on each
-call; a restart after the first part carried on from it; inside the
-server's namespace only `transcripts` is writable. Not yet: the agent's
-write and move, the page through the portal, large-v3-turbo, the fake
-`.mp3`.
-
-**Check:** ask first, then upgrade to 0.15.0~ynh1. With the gateway token,
-`transcribe_file` on an hour-long `.m4a` in a Syncthing folder: the first
-call says how far it is, later calls too, then the text with its times,
-the language right; time it. The same on a recording in Nextcloud (64 MB at
-most). An agent cleans the text, saves it with `write_file` and moves the
-recording with `move_file`. `systemctl restart cheruby-docs-mcp` during a
-transcription: the next call carries on after the parts done. On the page,
-Transcribe from a folder and from an upload through the portal, the text
-copied and downloaded. Switch the panel to large-v3-turbo and back. A
-`.pdf` renamed `.mp3` fails with ffmpeg's message and no real path.
-Inside the server's namespace, `<data dir>/transcripts` is writable and
-the rest of the data dir is not.
 
 ### T-M-7 · a recording is transcribed on the desktop
 
@@ -286,6 +264,8 @@ there after restore, gone after remove; a backup made after it restores
 
 ## Closed
 
+- `T-M-6` done `playtest` 2026-11-26 at `8810fbb` · on 0.15.0~ynh1: a 17-minute `.m4a` in Nextcloud in 4.5 min and one in Syncthing in 4.6 (whisper small, about 16 s a minute of audio), French found; progress on each call; a restart carried on after the part done; only `transcripts` writable in the server's namespace; the page's Transcribe from a Nextcloud folder and from an upload through the portal, copied and downloaded; an agent saved the cleaned text with `write_file` and moved the `.m4a` with `move_file`; a non-audio `.mp3` failed with ffmpeg's message, no real path; the panel to large-v3-turbo (a 16:50 `.oga` upload transcribed, French found) and back to small. Found B-M-4 and B-M-5
+- `F-M-20` done `large` 2026-11-26 · `transcribe_file` and the page's Transcribe tab on whisper.cpp's `whisper-server` on the Pi (small by default, large-v3-turbo as the choice, Silero VAD), in 10-minute parts from a cache (0.15.0~ynh1, installed 2026-11-26)
 - `F-P-9` done `medium` 2026-11-26 · a pokestyle page for the docs user behind the portal, on its own loopback port: Status and Search, then Config (F-P-10) and Transcribe (F-M-20)
 - `F-P-10` done `large` 2026-11-26 · the schedule, the quiet hours and the filters on the page's Config tab, in `/var/lib/cheruby-docs-mcp/settings.json`, applied live; the tool server runs the schedule, no timer; healthchecks.io gets every failure and the success of scheduled and Run now runs; the upgrade moved the panel's values, checked (0.14.0~ynh1, installed 2026-11-26)
 
