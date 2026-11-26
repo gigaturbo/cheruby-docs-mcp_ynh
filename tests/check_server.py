@@ -9,12 +9,13 @@ than the copy unpacked in cheruby-docs/target/pdfium/.
 Builds two users' folders in a temporary directory, one of alice's served by
 a stand-in Nextcloud, indexes them without filters against a stand-in
 embedding server, starts the tool server, with a stand-in reranker, with filters on a loopback port,
+and a second one whose token opens Notes only,
 then calls each tool and re-runs the indexer with the filters, then after a
 move, an edit and a deletion, then with Nextcloud changed, down and refusing,
-then embeds through a stand-in Whoopy, then writes in the writable folders,
+then embeds through a stand-in remote server, then writes in the writable folders,
 on disk and in Nextcloud, then asks for index runs as an agent would, the
 check starting each run as the path unit would, then transcribes recordings
-with a stand-in whisper-server and Whoopy's speech route.
+with a stand-in whisper-server and the remote server's speech route.
 The stand-in embedder hashes words into vectors: it checks the wiring, not
 the quality of the search. Needs httpx only; what the binary does inside a run
 (the pause at the quiet hours, the halving of a text too long, one refusal
@@ -41,8 +42,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import httpx
 
-ALICE, BOB, GATEWAY = "b" * 40, "j" * 40, "g" * 40
+TOKEN, SCOPED = "b" * 40, "g" * 40
 PORT = 18770
+# A second server, its token opening Notes only.
+SCOPED_PORT = 18782
 EMBED_PORT = 18771
 RERANK_PORT = 18774
 RERANK = {"favour": None, "down": False, "docs": []}
@@ -50,19 +53,18 @@ DAV_PORT = 18773
 DAV_PASSWORD = "n" * 72
 DAV_LOG = []
 DAV = {"root": "", "down": False, "fail": None, "locked": set(), "bob": ""}
-URL = f"http://127.0.0.1:{PORT}/mcp"
 BIN = os.environ.get("DOCS_BIN", "cheruby-docs/target/release/cheruby-docs")
 PDFIUM = os.environ.get("DOCS_PDFIUM", "cheruby-docs/target/pdfium/lib/libpdfium.so")
 EMBEDDED = []
-WHOOPY_PORT = 18776
-WHOOPY_KEY = "w" * 40
-WHOOPY = {"calls": 0, "left": -1, "skew": False, "gone": 503}
+REMOTE_PORT = 18776
+REMOTE_KEY = "w" * 40
+REMOTE = {"calls": 0, "left": -1, "skew": False, "gone": 503}
 SPEECH_PORT = 18778
 SPEECH = {"languages": [], "parts": 0, "fail": False}
-WHOOPY_SPEECH = {"calls": 0, "busy": 0, "refuse": False}
+REMOTE_SPEECH = {"calls": 0, "busy": 0, "refuse": False}
 PAGE_PORT = 18779
 PANEL_TOKEN = "p" * 48
-PAGE_ENV = {"DOCS_PAGE_PORT": str(PAGE_PORT), "DOCS_PANEL_TOKEN": PANEL_TOKEN, "DOCS_PAGE_USER": "alice"}
+PAGE_ENV = {"DOCS_PAGE_PORT": str(PAGE_PORT), "DOCS_PANEL_TOKEN": PANEL_TOKEN}
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
 
 
@@ -250,8 +252,8 @@ class FakeWhisper(BaseHTTPRequestHandler):
         pass
 
 
-class FakeWhoopy(FakeEmbedder):
-    """Whoopy: 401 without its key and model, then the stand-in embedder's vectors,
+class FakeRemote(FakeEmbedder):
+    """The remote OpenAI-compatible server: 401 without its key and model, then the stand-in embedder's vectors,
     or those of each text reversed when skewed, and "gone" (503, or 500 as LiteLLM
     answers for a desktop out of reach) once "left" batches are spent.
     Its speech route answers 503 while "busy" lasts, as while the desktop
@@ -259,28 +261,28 @@ class FakeWhoopy(FakeEmbedder):
 
     def do_POST(self):
         if self.path == "/v1/audio/transcriptions":
-            WHOOPY_SPEECH["calls"] += 1
-            if WHOOPY_SPEECH["refuse"] or self.headers.get("Authorization") != f"Bearer {WHOOPY_KEY}":
+            REMOTE_SPEECH["calls"] += 1
+            if REMOTE_SPEECH["refuse"] or self.headers.get("Authorization") != f"Bearer {REMOTE_KEY}":
                 self.send_response(401)
                 self.end_headers()
                 return
-            if WHOOPY_SPEECH["busy"] > 0:
-                WHOOPY_SPEECH["busy"] -= 1
+            if REMOTE_SPEECH["busy"] > 0:
+                REMOTE_SPEECH["busy"] -= 1
                 self.send_response(503)
                 self.end_headers()
                 return
             transcribed(self, "french", " Bureau.")
             return
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
-        WHOOPY["calls"] += 1
-        refused = 401 if self.headers.get("Authorization") != f"Bearer {WHOOPY_KEY}" \
-            or body.get("model") != "ollama/fake" else WHOOPY["gone"] if WHOOPY["left"] == 0 else None
+        REMOTE["calls"] += 1
+        refused = 401 if self.headers.get("Authorization") != f"Bearer {REMOTE_KEY}" \
+            or body.get("model") != "ollama/fake" else REMOTE["gone"] if REMOTE["left"] == 0 else None
         if refused:
             self.send_response(refused)
             self.end_headers()
             return
-        WHOOPY["left"] -= 1
-        self.answer([t[::-1] for t in body["input"]] if WHOOPY["skew"] else body["input"])
+        REMOTE["left"] -= 1
+        self.answer([t[::-1] for t in body["input"]] if REMOTE["skew"] else body["input"])
 
 
 class FakeReranker(BaseHTTPRequestHandler):
@@ -557,28 +559,26 @@ def build(base):
         "DOCS_RERANK_URL": f"http://127.0.0.1:{RERANK_PORT}",
         "DOCS_FOLDERS_FILE": f"{base}/folders.json",
         "DOCS_SETTINGS_FILE": f"{base}/settings.json",
-        "DOCS_TOKEN_alice": ALICE,
-        "DOCS_TOKEN_ju": BOB,
-        "DOCS_GATEWAY_TOKEN": GATEWAY,
-        "DOCS_GATEWAY_USER": "alice",
-        "DOCS_GATEWAY_FOLDERS": "Notes",
+        "DOCS_TOKEN": TOKEN,
+        "DOCS_USER": "alice",
+        "DOCS_TOKEN_FOLDERS": "Documents:Notes:Cloud",
         "DOCS_NEXTCLOUD_URL": f"http://127.0.0.1:{DAV_PORT}/dav/files/alice",
         "DOCS_NEXTCLOUD_USER": "alice",
         "DOCS_NEXTCLOUD_PASSWORD": DAV_PASSWORD,
         "DOCS_SPEECH_URL": f"http://127.0.0.1:{SPEECH_PORT}",
         "DOCS_SPEECH_MODEL": "fake-small",
         "DOCS_SPEECH_ENGINE": "demand",
-        "DOCS_SPEECH_REMOTE_URL": f"http://127.0.0.1:{WHOOPY_PORT}",
+        "DOCS_SPEECH_REMOTE_URL": f"http://127.0.0.1:{REMOTE_PORT}",
         "DOCS_SPEECH_REMOTE_MODEL": "speaches/fake",
-        "DOCS_SPEECH_REMOTE_KEY": WHOOPY_KEY,
+        "DOCS_SPEECH_REMOTE_KEY": REMOTE_KEY,
     }
 
 
-def call(method, params=None, token=ALICE):
+def call(method, params=None, token=TOKEN, port=PORT):
     headers = {"Accept": "application/json, text/event-stream"}
     if token:
         headers["Authorization"] = f"Bearer {token}"
-    resp = httpx.post(URL, headers=headers, timeout=60,
+    resp = httpx.post(f"http://127.0.0.1:{port}/mcp", headers=headers, timeout=60,
                       json={"jsonrpc": "2.0", "id": 1, "method": method, "params": params or {}})
     if resp.status_code != 200:
         return resp.status_code, ""
@@ -590,8 +590,13 @@ def call(method, params=None, token=ALICE):
     return status, content.get("text") or content.get("mimeType", "")
 
 
-def tool(name, token=ALICE, **arguments):
-    return call("tools/call", {"name": name, "arguments": arguments}, token=token)
+def tool(name, token=TOKEN, port=PORT, **arguments):
+    return call("tools/call", {"name": name, "arguments": arguments}, token=token, port=port)
+
+
+def scoped(name, **arguments):
+    """A tool called on the second server, with its token."""
+    return tool(name, token=SCOPED, port=SCOPED_PORT, **arguments)
 
 
 def ok_with(*needles):
@@ -610,8 +615,6 @@ CHECKS = [
                                               "move_file run_index transcribe_file".split())),
     ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
      lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
-    ("bob sees only his", lambda: tool("list_folder", token=BOB), lambda r: r == ("ok", "dir  Papiers/")),
-    ("bob cannot reach alice's", lambda: tool("read_file", token=BOB, path="Notes/courses.md"), error_with("no folder named")),
     ("alice cannot reach bob's", lambda: tool("read_file", path="Papiers/bob.md"), error_with("no folder named")),
     ("folder listed, hidden left out", lambda: tool("list_folder", path="Documents"),
      lambda r: r[0] == "ok" and "Documents/Factures/" in r[1] and "bail.pdf" in r[1] and ".st" not in r[1] and ".hidden" not in r[1]),
@@ -695,7 +698,7 @@ CHECKS = [
     ("the reranker gets each candidate's file name and start", lambda: reranked(query="loyer augmente"),
      lambda r: r[2] and any(d.startswith("bail.pdf\nLoyer augmente") for d in r[2])
      and all(len(d) <= 360 for d in r[2])),
-    ("the reranker sees only the token's folders", lambda: reranked(token=GATEWAY, query="loyer augmente tomates"),
+    ("the reranker sees only the token's folders", lambda: reranked(token=SCOPED, port=SCOPED_PORT, query="loyer augmente tomates"),
      lambda r: r[2] and not any(d.startswith(("bail.pdf", "lettre.docx")) or "Loyer augmente" in d for d in r[2])),
     ("search goes on without the reranker", lambda: reranked(down=True, query="loyer augmente"),
      ok_with("ranking by relevance is unavailable", "--- Documents/bail.pdf")),
@@ -703,14 +706,14 @@ CHECKS = [
      lambda r: r[0] == "ok" and ".st" not in r[1] and ".hidden" not in r[1]),
     ("search refuses ..", lambda: tool("search_documents", query="x", path="Notes/.."), error_with("not allowed")),
     ("search bad date refused", lambda: tool("search_documents", query="x", after="hier"), error_with("not a date")),
-    ("bob's search sees only his", lambda: tool("search_documents", token=BOB, query="loyer bob"),
-     lambda r: r[0] == "ok" and "Papiers/bob.md" in r[1] and "Documents" not in r[1]),
-    ("gateway sees only the folders it opens", lambda: tool("list_folder", token=GATEWAY), lambda r: r == ("ok", "dir  Notes/ (writable)")),
-    ("gateway cannot read the others", lambda: tool("read_file", token=GATEWAY, path="Documents/bail.pdf"),
+    ("search keeps out another user's folders", lambda: tool("search_documents", query="loyer bob"),
+     lambda r: r[0] == "ok" and "Papiers/" not in r[1]),
+    ("a scoped token sees only the folders it opens", lambda: scoped("list_folder"), lambda r: r == ("ok", "dir  Notes/ (writable)")),
+    ("a scoped token cannot read the others", lambda: scoped("read_file", path="Documents/bail.pdf"),
      error_with("no folder named")),
-    ("gateway search uses the user's index, its folders only", lambda: tool("search_documents", token=GATEWAY, query="loyer tomates"),
+    ("a scoped search uses the user's index, its folders only", lambda: scoped("search_documents", query="loyer tomates"),
      lambda r: r[0] == "ok" and "Notes/long.md" in r[1] and "Documents/" not in r[1]),
-    ("gateway search refuses the others", lambda: tool("search_documents", token=GATEWAY, query="loyer", path="Documents"),
+    ("a scoped search refuses the others", lambda: scoped("search_documents", query="loyer", path="Documents"),
      error_with("no folder named")),
     ("search falls back on keywords", lambda: tool("search_documents", query="panne loyer"),
      ok_with("keyword matches only", "Documents/bail.pdf")),
@@ -728,9 +731,29 @@ CHECKS = [
      lambda r: r[0] == "ok" and "Vieux" not in r[1]),
     ("search finds a Nextcloud passage", lambda: tool("search_documents", query="conseil syndical"),
      ok_with("Cloud/compte-rendu.md")),
-    ("the gateway does not see Nextcloud", lambda: tool("read_file", token=GATEWAY, path="Cloud/compte-rendu.md"),
+    ("a scoped token does not see Nextcloud", lambda: scoped("read_file", path="Cloud/compte-rendu.md"),
      error_with("no folder named")),
 ]
+
+
+def empty_scope_checks(env):
+    """A token whose labels have all gone opens nothing, never every folder."""
+    other = subprocess.Popen([BIN, "serve"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                             env={**env, "DOCS_TOKEN_FOLDERS": "", "DOCS_PORT": "18783"})
+    try:
+        for _ in range(50):
+            try:
+                result = tool("list_folder", port=18783)
+                break
+            except httpx.TransportError:
+                time.sleep(0.2)
+        found = tool("read_file", port=18783, path="Notes/courses.md")
+    finally:
+        other.terminate()
+        other.wait()
+    yield "an empty folder list opens no folder", result, result[0] == "ok" and "dir " not in result[1]
+    yield "and reads nothing", found, error_with("no folder named")(found)
+    yield "the main token gets 401 from the scoped server", None, call("tools/list", port=SCOPED_PORT)[0] == 401
 
 
 def page(path, token=PANEL_TOKEN, body=None, site="same-origin", user="alice"):
@@ -800,7 +823,7 @@ def wav_bytes(seconds, quiet=()):
 
 
 def speech_checks(base):
-    """transcribe_file and the Transcribe tab, against the stand-in whisper-server and Whoopy."""
+    """transcribe_file and the Transcribe tab, against the stand-in whisper-server and the remote server."""
     rec = f"{base}/docs/Dictées"
     os.makedirs(rec)
     with open(f"{rec}/réunion.wav", "wb") as f:
@@ -837,8 +860,8 @@ def speech_checks(base):
         error_with("not allowed")(tool("transcribe_file", path="Documents/../notes/memo.wav"))
     yield "speech: an unknown engine is refused", None, \
         error_with("is not pi or desktop")(tool("transcribe_file", path="Documents/Dictées/court.wav", engine="gpu"))
-    yield "speech: bob cannot reach alice's", None, \
-        error_with("no folder named")(tool("transcribe_file", token=BOB, path="Documents/Dictées/court.wav"))
+    yield "speech: a scoped token cannot reach the others", None, \
+        error_with("no folder named")(scoped("transcribe_file", path="Documents/Dictées/court.wav"))
     SPEECH["fail"] = True
     result = tool("transcribe_file", path="Documents/Dictées/panne.wav")
     SPEECH["fail"] = False
@@ -850,22 +873,22 @@ def speech_checks(base):
         result[0] == "error" and "retry true" in result[1] and SPEECH["parts"] == parts
     result = tool("transcribe_file", path="Documents/Dictées/panne.wav", retry=True)
     yield "speech: retry tries again", result, result[0] == "ok" and "[0:00] Partie." in result[1]
-    WHOOPY_SPEECH.update(busy=2, calls=0)
+    REMOTE_SPEECH.update(busy=2, calls=0)
     result = tool("transcribe_file", path="Documents/Dictées/bureau.wav", engine="desktop")
-    yield "speech: the desktop is retried while it wakes", (result, WHOOPY_SPEECH), \
-        result[0] == "ok" and WHOOPY_SPEECH["calls"] == 3 \
+    yield "speech: the desktop is retried while it wakes", (result, REMOTE_SPEECH), \
+        result[0] == "ok" and REMOTE_SPEECH["calls"] == 3 \
         and "language fr, transcribed on the desktop (speaches/fake)." in result[1] and "[0:00] Bureau." in result[1]
-    WHOOPY_SPEECH.update(refuse=True, calls=0)
+    REMOTE_SPEECH.update(refuse=True, calls=0)
     parts = SPEECH["parts"]
     result = tool("transcribe_file", path="Documents/Dictées/court.wav", engine="desktop")
-    WHOOPY_SPEECH.update(refuse=False)
+    REMOTE_SPEECH.update(refuse=False)
     yield "speech: a desktop that refuses leaves the rest to the Pi", result, \
-        result[0] == "ok" and WHOOPY_SPEECH["calls"] == 1 and SPEECH["parts"] == parts + 1 \
-        and "The desktop failed (Whoopy answered 401)" in result[1] and "[0:00] Partie." in result[1]
-    WHOOPY_SPEECH.update(calls=0)
+        result[0] == "ok" and REMOTE_SPEECH["calls"] == 1 and SPEECH["parts"] == parts + 1 \
+        and "The desktop failed (the remote server answered 401)" in result[1] and "[0:00] Partie." in result[1]
+    REMOTE_SPEECH.update(calls=0)
     result = tool("transcribe_file", path="Documents/Dictées/réunion.wav", engine="desktop")
-    yield "speech: another model transcribes again, not from the Pi's cache", (result, WHOOPY_SPEECH), \
-        result[0] == "ok" and WHOOPY_SPEECH["calls"] == 3 \
+    yield "speech: another model transcribes again, not from the Pi's cache", (result, REMOTE_SPEECH), \
+        result[0] == "ok" and REMOTE_SPEECH["calls"] == 3 \
         and "transcribed on the desktop (speaches/fake)." in result[1] and "Partie." not in result[1]
     s = page("api/status").json()
     yield "page: Status shows the speech server and both engines", s, \
@@ -1119,7 +1142,7 @@ def index_checks(base, env, first):
         for _ in range(50):
             try:
                 found = httpx.post("http://127.0.0.1:18775/mcp", timeout=60, headers={
-                    "Accept": "application/json, text/event-stream", "Authorization": f"Bearer {ALICE}"}, json={
+                    "Accept": "application/json, text/event-stream", "Authorization": f"Bearer {TOKEN}"}, json={
                     "jsonrpc": "2.0", "id": 1, "method": "tools/call",
                     "params": {"name": "search_documents", "arguments": {"query": "loyer augmente"}}}).json()
                 break
@@ -1135,15 +1158,15 @@ def index_checks(base, env, first):
 
 
 def remote_checks(base, env):
-    """Run now on the desktop, each run on a fresh index against the stand-in Whoopy."""
-    def run(name, run_now, key=WHOOPY_KEY, left=-1, skew=False, gone=503):
+    """Run now on the desktop, each run on a fresh index against the stand-in remote server."""
+    def run(name, run_now, key=REMOTE_KEY, left=-1, skew=False, gone=503):
         index = f"{base}/remote-{name}"
         os.makedirs(index)
         if run_now is not None:
             with open(f"{index}/run-now", "w") as f:
                 f.write(run_now)
-        WHOOPY.update(calls=0, left=left, skew=skew, gone=gone)
-        out = run_indexer({**env, "DOCS_INDEX_DIR": index, "DOCS_REMOTE_URL": f"http://127.0.0.1:{WHOOPY_PORT}",
+        REMOTE.update(calls=0, left=left, skew=skew, gone=gone)
+        out = run_indexer({**env, "DOCS_INDEX_DIR": index, "DOCS_REMOTE_URL": f"http://127.0.0.1:{REMOTE_PORT}",
                            "DOCS_REMOTE_MODEL": "ollama/fake", "DOCS_REMOTE_KEY": key})
         with open(f"{index}/alice.status.json") as f:
             status = json.load(f)
@@ -1151,12 +1174,12 @@ def remote_checks(base, env):
         rows = sorted(db.execute("SELECT f.path, f.status, p.text, p.vector FROM files f "
                                  "LEFT JOIN passages p ON p.file = f.id"))
         db.close()
-        return out, status, rows, WHOOPY["calls"]
+        return out, status, rows, REMOTE["calls"]
 
     _, local, rows, calls = run("timer", None)
-    yield "the timer never calls Whoopy", calls, calls == 0 and local["embedded_on"] == ["pi"]
+    yield "the timer never calls the remote server", calls, calls == 0 and local["embedded_on"] == ["pi"]
     _, status, _, calls = run("now", "")
-    yield "Run now never calls Whoopy", calls, calls == 0 and status["embedded_on"] == ["pi"]
+    yield "Run now never calls the remote server", calls, calls == 0 and status["embedded_on"] == ["pi"]
     out, status, remote, calls = run("desktop", "remote")
     yield "Run now on the desktop embeds there, the same vectors", (out[-300:], status), \
         status["embedded_on"] == ["desktop"] and calls > 1 and remote == rows and status["result"] == "done"
@@ -1167,7 +1190,7 @@ def remote_checks(base, env):
     yield "a refused key keeps the run on this server", status, \
         status["embedded_on"] == ["pi"] and "401" in status["remote_note"] and remote == rows
     _, status, remote, _ = run("drop", "remote", left=3)
-    yield "Whoopy gone midway: the run ends on this server, no file failed for it", status, \
+    yield "The remote server gone midway: the run ends on this server, no file failed for it", status, \
         status["embedded_on"] == ["desktop", "pi"] and "stopped answering" in status["remote_note"] \
         and status["result"] == "done" and remote == rows
     _, status, remote, calls = run("asleep", "remote", left=3, gone=500)
@@ -1218,8 +1241,8 @@ def write_checks(base):
     result = tool("write_file", path="Notes/Jardin/2026/semis.md", content="mars")
     yield "missing folders are made", result, ok_with("Created Notes/Jardin/2026/semis.md")(result) \
         and oct(os.stat(f"{notes}/Jardin").st_mode & 0o777) == "0o770"
-    result = tool("write_file", token=GATEWAY, path="Notes/passerelle.md", content="ok")
-    yield "the gateway writes in the folders it opens", result, ok_with("Created")(result)
+    result = scoped("write_file", path="Notes/passerelle.md", content="ok")
+    yield "a scoped token writes in the folders it opens", result, ok_with("Created")(result)
     for name, path, needle in [("a read-only folder refuses", "Documents/x.md", "Documents is read-only"),
                                ("another user's folder refuses", "Papiers/x.md", "no folder named"),
                                ("only text is written", "Notes/x.pdf", "only text files"),
@@ -1233,8 +1256,6 @@ def write_checks(base):
                                ("a folder is not replaced", "Notes/Jardin", "only text files")]:
         result = tool("write_file", path=path, content="x")
         yield name, result, error_with(needle)(result)
-    result = tool("write_file", token=BOB, path="Papiers/x.md", content="x")
-    yield "bob's folder is read-only", result, error_with("Papiers is read-only")(result)
     with open(f"{base}/secret.md") as f:
         secret = f.read()
     yield "nothing landed outside", secret, secret == "outside every folder" and not os.path.exists(f"{base}/x.md") \
@@ -1413,8 +1434,8 @@ def main():
     threading.Thread(target=embedder.serve_forever, daemon=True).start()
     reranker = ThreadingHTTPServer(("127.0.0.1", RERANK_PORT), FakeReranker)
     threading.Thread(target=reranker.serve_forever, daemon=True).start()
-    whoopy = ThreadingHTTPServer(("127.0.0.1", WHOOPY_PORT), FakeWhoopy)
-    threading.Thread(target=whoopy.serve_forever, daemon=True).start()
+    remote = ThreadingHTTPServer(("127.0.0.1", REMOTE_PORT), FakeRemote)
+    threading.Thread(target=remote.serve_forever, daemon=True).start()
     whisper = ThreadingHTTPServer(("127.0.0.1", SPEECH_PORT), FakeWhisper)
     threading.Thread(target=whisper.serve_forever, daemon=True).start()
     nextcloud = ThreadingHTTPServer(("127.0.0.1", DAV_PORT), FakeNextcloud)
@@ -1425,12 +1446,23 @@ def main():
         # The unit's UMask.
         server = subprocess.Popen([BIN, "serve"], env={**env, **PAGE_ENV}, umask=0o007,
                                   stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+        second = subprocess.Popen([BIN, "serve"], umask=0o007, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                                  env={**env, "DOCS_TOKEN": SCOPED, "DOCS_TOKEN_FOLDERS": "Notes",
+                                       "DOCS_PORT": str(SCOPED_PORT)})
         try:
             for _ in range(50):
                 if server.poll() is not None:
                     sys.exit(f"the server stopped: {server.communicate()[1].decode()[-2000:]}")
                 try:
                     httpx.get(f"http://127.0.0.1:{PORT}/", timeout=1)
+                    break
+                except httpx.TransportError:
+                    time.sleep(0.2)
+            for _ in range(50):
+                if second.poll() is not None:
+                    sys.exit(f"the scoped server stopped: {second.communicate()[1].decode()[-2000:]}")
+                try:
+                    httpx.get(f"http://127.0.0.1:{SCOPED_PORT}/", timeout=1)
                     break
                 except httpx.TransportError:
                     time.sleep(0.2)
@@ -1444,10 +1476,17 @@ def main():
             results += list(page_checks(base))
             results += list(settings_checks(base, env))
             refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
-                                     env={**env, "DOCS_GATEWAY_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
-            results.append(("gateway refused a folder its user lacks", refused.stderr[-200:],
-                            refused.returncode != 0 and "does not have" in refused.stderr))
+                                     env={**env, "DOCS_TOKEN_FOLDERS": "Notes:Papiers", "DOCS_PORT": "18772"})
+            results.append(("a token on a folder its user lacks is refused", refused.stderr[-200:],
+                            refused.returncode != 0 and "has no folder 'Papiers'" in refused.stderr))
+            refused = subprocess.run([BIN, "serve"], capture_output=True, text=True,
+                                     env={**env, "DOCS_TOKEN": "x" * 31, "DOCS_PORT": "18772"})
+            results.append(("a token under 32 characters is refused", refused.stderr[-200:],
+                            refused.returncode != 0 and "shorter than 32" in refused.stderr))
+            results += list(empty_scope_checks(env))
         finally:
+            second.terminate()
+            second.wait()
             server.terminate()
             err = server.communicate()[1].decode()
         failed = 0

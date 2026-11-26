@@ -6,7 +6,7 @@
 //!
 //!     DOCS_PAGE_PORT      where nginx sends the page; unset, no page
 //!     DOCS_PANEL_TOKEN    the X-Panel-Token nginx adds to every request
-//!     DOCS_PAGE_USER      whose folders and index the page shows
+//!     DOCS_USER           whose folders and index the page shows
 //!
 //! The portal decides who reaches nginx (the docs user only); the token
 //! proves a request came through nginx, so another local process cannot
@@ -84,13 +84,13 @@ pub async fn bind(docs: Arc<Docs>) -> Result<Option<Serving>, String> {
             "DOCS_PANEL_TOKEN is shorter than {MIN_TOKEN_LEN} characters."
         ));
     }
-    let user = var("DOCS_PAGE_USER");
+    let user = var("DOCS_USER");
     let folders = docs
         .live()
         .users
         .get(&user)
         .map(|u| u.roots.clone())
-        .ok_or_else(|| format!("DOCS_PAGE_USER: no folders for {user:?}."))?;
+        .ok_or_else(|| format!("DOCS_USER: no folders for {user:?}."))?;
     let page = Page {
         docs,
         grant: Arc::new(Grant { user, folders }),

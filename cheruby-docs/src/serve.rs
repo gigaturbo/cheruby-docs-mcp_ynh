@@ -4,12 +4,11 @@
 //!
 //!     DOCS_BIND               address to listen on, default 127.0.0.1
 //!     DOCS_PORT               default 8770
-//!     DOCS_TOKEN_<user>       a request carrying "Authorization: Bearer <it>" acts as <user>
+//!     DOCS_TOKEN              a request must carry "Authorization: Bearer <it>"
+//!     DOCS_USER               whose folders and index these are
+//!     DOCS_TOKEN_FOLDERS      the folders the token opens, labels joined by ":", empty for none
 //!     DOCS_FOLDERS_FILE       each user's folders and their sources (folders::load_folders)
 //!     DOCS_SETTINGS_FILE      the schedule, quiet hours and filters (settings::Settings)
-//!     DOCS_GATEWAY_TOKEN      optional: a token for the AI gateway, acting as
-//!     DOCS_GATEWAY_USER       this user, on
-//!     DOCS_GATEWAY_FOLDERS    these of the user's folders, labels joined by ":"
 //!     DOCS_INDEX_DIR          where the indexer keeps <user>.sqlite, read here only
 //!     DOCS_EMBED_URL          the embedding server, e.g. http://127.0.0.1:8771
 //!     DOCS_EMBED_MODEL        the model's identity, as the indexer stores it
@@ -18,8 +17,8 @@
 //!     DOCS_NEXTCLOUD_*        when a folder is in Nextcloud (nextcloud::Nextcloud)
 //!     DOCS_SPEECH_*           optional: the speech servers (speech::Speech)
 //!
-//! A token is one user's, with all or some of that user's folders; the
-//! gateway token searches that user's index. The unit adds the outer wall:
+//! One token, one user, all or some of that user's folders; search keeps to
+//! them in that user's index. The unit adds the outer wall:
 //! the process sees only these folders on disk and the index, read-only but
 //! for the writable folders.
 
@@ -56,77 +55,48 @@ use crate::{
     tools::{self, Ctx, Docs, Grant, Live, Reply},
 };
 
-/// Each token, and what it opens.
-type Tokens = Arc<Vec<(String, Arc<Grant>)>>;
+/// The token, and what it opens.
+type Token = Arc<(String, Arc<Grant>)>;
 
 /// Refused below this: a token is the only thing guarding the server.
 const MIN_TOKEN_LEN: usize = 32;
 
-/// {token: what it opens} from the DOCS_TOKEN_* and DOCS_GATEWAY_* settings.
-pub fn load_users(
+/// The token and what it opens, from DOCS_TOKEN, DOCS_USER and DOCS_TOKEN_FOLDERS.
+pub fn load_grant(
     env: &BTreeMap<String, String>,
     users: &BTreeMap<String, UserFolders>,
-) -> Result<Vec<(String, Grant)>, String> {
-    let mut tokens: Vec<(String, String, Grant)> = Vec::new();
-    for (key, token) in env {
-        if let Some(name) = key.strip_prefix("DOCS_TOKEN_") {
-            let folders = users.get(name).map(|u| u.roots.clone()).unwrap_or_default();
-            tokens.push((
-                key.clone(),
-                token.clone(),
-                Grant {
-                    user: name.to_string(),
-                    folders,
-                },
-            ));
-        }
-    }
-    if let Some(token) = env.get("DOCS_GATEWAY_TOKEN").filter(|t| !t.is_empty()) {
-        let name = env.get("DOCS_GATEWAY_USER").cloned().unwrap_or_default();
-        let own = users
-            .get(&name)
-            .map(|u| u.roots.clone())
-            .unwrap_or_default();
-        let labels: Vec<&str> = env
-            .get("DOCS_GATEWAY_FOLDERS")
-            .map(String::as_str)
-            .unwrap_or("")
-            .split(':')
-            .filter(|l| !l.is_empty())
-            .collect();
-        if !labels.iter().all(|l| own.iter().any(|(o, _)| o == l)) {
-            return Err(format!(
-                "DOCS_GATEWAY_FOLDERS names folders {} does not have.",
-                py_repr(&name)
-            ));
-        }
-        let folders = own
-            .into_iter()
-            .filter(|(l, _)| labels.contains(&l.as_str()))
-            .collect();
-        tokens.push((
-            "DOCS_GATEWAY_TOKEN".into(),
-            token.clone(),
-            Grant {
-                user: name,
-                folders,
-            },
+) -> Result<(String, Grant), String> {
+    let token = env.get("DOCS_TOKEN").cloned().unwrap_or_default();
+    if token.chars().count() < MIN_TOKEN_LEN {
+        return Err(format!(
+            "DOCS_TOKEN is shorter than {MIN_TOKEN_LEN} characters."
         ));
     }
-    let mut out: Vec<(String, Grant)> = Vec::new();
-    for (key, token, grant) in tokens {
-        if token.chars().count() < MIN_TOKEN_LEN {
-            return Err(format!("{key} is shorter than {MIN_TOKEN_LEN} characters."));
-        }
-        if out.iter().any(|(t, _)| *t == token) {
-            return Err(format!("{key} repeats another token."));
-        }
-        out.push((token, grant));
+    let user = env.get("DOCS_USER").cloned().unwrap_or_default();
+    let own = users
+        .get(&user)
+        .map(|u| u.roots.clone())
+        .ok_or_else(|| format!("DOCS_USER: no folders for {}.", py_repr(&user)))?;
+    let labels: Vec<&str> = env
+        .get("DOCS_TOKEN_FOLDERS")
+        .map(String::as_str)
+        .unwrap_or("")
+        .split(':')
+        .filter(|l| !l.is_empty())
+        .collect();
+    if let Some(l) = labels.iter().find(|l| !own.iter().any(|(o, _)| o == *l)) {
+        return Err(format!(
+            "DOCS_TOKEN_FOLDERS: {} has no folder {}.",
+            py_repr(&user),
+            py_repr(l)
+        ));
     }
-    if out.is_empty() {
-        return Err("No DOCS_TOKEN_<user> is set.".into());
-    }
-    Ok(out)
+    // Empty opens nothing: configure lists every label when all are meant.
+    let folders = own
+        .into_iter()
+        .filter(|(l, _)| labels.contains(&l.as_str()))
+        .collect();
+    Ok((token, Grant { user, folders }))
 }
 
 /// What every command that reads the folders needs, from the environment.
@@ -498,29 +468,24 @@ fn same(a: &[u8], b: &[u8]) -> bool {
     a.len() == b.len() && a.iter().zip(b).fold(0u8, |acc, (x, y)| acc | (x ^ y)) == 0
 }
 
-/// The bearer token picks the user, or the request gets a 401. The grant
-/// goes on the request, where the tools find it.
-async fn require_token(State(tokens): State<Tokens>, mut req: Request, next: Next) -> Response {
+/// The bearer token, or the request gets a 401. The grant goes on the
+/// request, where the tools find it.
+async fn require_token(State(token): State<Token>, mut req: Request, next: Next) -> Response {
     let given = req
         .headers()
         .get("authorization")
         .map(|v| v.as_bytes().to_vec())
         .unwrap_or_default();
-    let mut grant = None;
-    for (token, candidate) in tokens.iter() {
-        if same(&given, format!("Bearer {token}").as_bytes()) {
-            grant = Some(Arc::clone(candidate));
-        }
-    }
-    let Some(grant) = grant else {
+    let (expected, grant) = &*token;
+    if !same(&given, format!("Bearer {expected}").as_bytes()) {
         return (
             StatusCode::UNAUTHORIZED,
             [("content-type", "text/plain")],
             "missing or wrong token\n",
         )
             .into_response();
-    };
-    req.extensions_mut().insert(grant);
+    }
+    req.extensions_mut().insert(Arc::clone(grant));
     next.run(req).await
 }
 
@@ -529,10 +494,7 @@ async fn require_token(State(tokens): State<Tokens>, mut req: Request, next: Nex
 pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
     let env: BTreeMap<String, String> = std::env::vars().collect();
     let live = docs.live();
-    let tokens: Vec<(String, Arc<Grant>)> = load_users(&env, &live.users)?
-        .into_iter()
-        .map(|(t, g)| (t, Arc::new(g)))
-        .collect();
+    let (token, grant) = load_grant(&env, &live.users)?;
     let writable = live.users.values().any(|u| !u.writable.is_empty());
     let mut instructions = "The user's own files. To find a document by what it says, \
         use search_documents; by its name, find_files; to browse, list_folder. Then read_file. \
@@ -572,7 +534,7 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
     let app = Router::new()
         .nest_service("/mcp", service)
         .layer(middleware::from_fn_with_state(
-            Arc::new(tokens),
+            Arc::new((token, Arc::new(grant))),
             require_token,
         ));
     let bind = std::env::var("DOCS_BIND").unwrap_or_else(|_| "127.0.0.1".into());

@@ -53,12 +53,12 @@ impl std::fmt::Display for EmbedError {
     }
 }
 
-/// An embedding server: llama-server on the Pi, or Whoopy, which needs a key
+/// An embedding server: llama-server on the Pi, or a remote OpenAI-compatible server, which needs a key
 /// and a model name. Waking the desktop takes up to two minutes, within the timeout.
 pub struct Embedder {
     client: reqwest::blocking::Client,
     url: String,
-    /// Whoopy's model; None for the Pi.
+    /// The remote server's model; None for the Pi.
     pub model: Option<String>,
     key: Option<String>,
     batch: usize,
@@ -104,7 +104,7 @@ impl Embedder {
 
     /// Raw vectors for texts, in order. A text the server refuses, as one past
     /// the model's 2048 tokens (music notation takes several a character), is
-    /// embedded by its first half, down to MIN_EMBED_CHARS. Whoopy gets the
+    /// embedded by its first half, down to MIN_EMBED_CHARS. The remote server gets the
     /// model's name; there a 500 means the desktop is out of reach, since
     /// Ollama cuts a long text itself.
     fn vectors(&self, texts: &[String]) -> Result<Vec<Vec<f32>>, EmbedError> {

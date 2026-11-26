@@ -244,7 +244,7 @@ ul.lines{margin:0;padding-left:var(--s-5)}
     <h2>In the config panel</h2>
     <p>Who and what the app reaches stay in the YunoHost webadmin, in this
     app's config panel: the user, the sources and their folders, which are
-    writable, Whoopy's folders, the Nextcloud login, the MCP token, the speech model and engine, the
+    writable, the MCP token's folders, the Nextcloud login, the MCP token, the speech model and engine, the
     embedding model, Run now and Rebuild, and the healthchecks.io ping.</p>
     <p><a href="/yunohost/admin/#/apps/cheruby-docs-mcp/config" target="_blank" rel="noopener">Open the config panel<svg class="ext-icon" viewBox="0 0 16 16" aria-hidden="true" fill="none"
       stroke="currentColor" stroke-width="2" stroke-linecap="square" stroke-linejoin="miter">
@@ -340,7 +340,7 @@ $("search-form").addEventListener("submit", async ev => {
 });
 
 // The Transcribe tab: a job is queued, then polled until its text comes.
-const ENGINE_NAMES = {pi: "This server", desktop: "The desktop's GPU, through Whoopy"};
+const ENGINE_NAMES = {pi: "This server", desktop: "The desktop's GPU, through the remote server"};
 let engines = null;
 function showEngines(list) {
   const key = list.join();

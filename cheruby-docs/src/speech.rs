@@ -3,7 +3,7 @@
 //! One recording at a time, on a thread of its own: ffmpeg decodes it to
 //! 16 kHz mono, the audio is cut in parts of about ten minutes at a quiet
 //! point, and each part goes to whisper-server on the Pi or to Speaches on
-//! the desktop through Whoopy. The language is detected on the first part,
+//! the desktop through an OpenAI-compatible server. The language is detected on the first part,
 //! then fixed. Each part done is saved in <index dir>/transcripts/<key>.json,
 //! so a restart resumes after it and a second call is answered from there.
 //! Settings, from docs.env:
@@ -11,9 +11,9 @@
 //!     DOCS_SPEECH_URL          whisper-server, e.g. http://127.0.0.1:8776; unset, no transcription
 //!     DOCS_SPEECH_MODEL        its model's name, shown with each transcript
 //!     DOCS_SPEECH_ENGINE       pi (default), demand or always: when the desktop is used
-//!     DOCS_SPEECH_REMOTE_URL   Whoopy, e.g. http://127.0.0.1:4000
-//!     DOCS_SPEECH_REMOTE_MODEL the Speaches model as Whoopy names it
-//!     DOCS_SPEECH_REMOTE_KEY   a Whoopy key allowed that model
+//!     DOCS_SPEECH_REMOTE_URL   an OpenAI-compatible server, e.g. http://127.0.0.1:4000
+//!     DOCS_SPEECH_REMOTE_MODEL the Speaches model as that server names it
+//!     DOCS_SPEECH_REMOTE_KEY   a key of that server allowed that model
 //!
 //! ffmpeg reads the recording from its stdin, opened as /proc/self/fd/0 so an
 //! .m4a with its index at the end can be seeked, and only through the file
@@ -52,7 +52,7 @@ pub const MAX_AUDIO_S: usize = 4 * 3600;
 pub const MAX_AUDIO_BYTES: i64 = 1 << 30;
 /// A transcript not asked for again within this is dropped.
 const KEEP_DAYS: u64 = 30;
-/// The desktop wakes within about two minutes: Whoopy answers 5xx meanwhile.
+/// The desktop wakes within about two minutes: the remote server answers 5xx meanwhile.
 const RETRY_EVERY: Duration = Duration::from_secs(10);
 const RETRY_FOR: Duration = Duration::from_secs(180);
 /// Recordings waiting or running at once: an agent sweeping a folder must
@@ -849,7 +849,7 @@ impl Speech {
         parse_answer(&data)
     }
 
-    /// One part on the desktop through Whoopy, retried while the desktop wakes.
+    /// One part on the desktop through the remote server, retried while the desktop wakes.
     fn desktop(
         &self,
         http: &reqwest::blocking::Client,
@@ -885,12 +885,14 @@ impl Speech {
                 Ok(resp) => {
                     let code = resp.status().as_u16();
                     if !matches!(code, 500 | 502..=504) {
-                        return Err(format!("Whoopy answered {code}"));
+                        return Err(format!("the remote server answered {code}"));
                     }
-                    format!("Whoopy answered {code}")
+                    format!("the remote server answered {code}")
                 }
-                Err(e) if e.is_connect() => format!("Whoopy cannot be reached: {}", short(&e)),
-                Err(e) => return Err(format!("Whoopy: {}", short(&e))),
+                Err(e) if e.is_connect() => {
+                    format!("the remote server cannot be reached: {}", short(&e))
+                }
+                Err(e) => return Err(format!("the remote server: {}", short(&e))),
             };
             if Instant::now() + RETRY_EVERY > until {
                 return Err(again);

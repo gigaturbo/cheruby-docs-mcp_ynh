@@ -45,13 +45,6 @@ struct Cli {
     command: Command,
 }
 
-#[derive(clap::Args)]
-struct As {
-    /// Act as the Whoopy token, on its folders only, not as the user's own.
-    #[arg(long)]
-    gateway: bool,
-}
-
 #[derive(Subcommand)]
 enum Command {
     /// Run the tool server.
@@ -74,16 +67,12 @@ enum Command {
     Ls {
         #[arg(default_value = "")]
         path: String,
-        #[command(flatten)]
-        r#as: As,
     },
     /// Find files by name, as find_files.
     Find {
         query: String,
         #[arg(long, default_value = "")]
         path: String,
-        #[command(flatten)]
-        r#as: As,
     },
     /// Read a file, as read_file.
     Read {
@@ -96,8 +85,6 @@ enum Command {
         offset: i64,
         #[arg(long, default_value_t = 8000)]
         max_chars: i64,
-        #[command(flatten)]
-        r#as: As,
     },
     /// Search by meaning and keywords, as search_documents.
     Search {
@@ -110,20 +97,14 @@ enum Command {
         before: String,
         #[arg(long, default_value_t = 8)]
         limit: i64,
-        #[command(flatten)]
-        r#as: As,
     },
     /// Ask the index unit for a run of these files, or of everything, as run_index.
-    RunIndex {
-        paths: Vec<String>,
-        #[command(flatten)]
-        r#as: As,
-    },
+    RunIndex { paths: Vec<String> },
     /// Check a settings file as the page would; print why it is refused.
     CheckSettings { file: PathBuf },
     /// Print Syncthing's folders from its config.xml, a tab-separated line each.
     SyncthingFolders { config: PathBuf },
-    /// Check that the desktop's vectors, through Whoopy, agree with this server's.
+    /// Check that the desktop's vectors, through the remote server, agree with this server's.
     CheckDesktop,
 }
 
@@ -199,28 +180,11 @@ fn drop_root(docs: &tools::Docs, user: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// The context of a shell tool: the user's own token's folders, or the gateway's.
-fn shell_ctx(gateway: bool) -> Result<tools::Ctx, String> {
+/// The context of a shell tool: the token's folders.
+fn shell_ctx() -> Result<tools::Ctx, String> {
     let docs = serve::load_docs()?;
     let env: std::collections::BTreeMap<String, String> = std::env::vars().collect();
-    let grants = serve::load_users(&env, &docs.live().users)?;
-    let gateway_user = env.get("DOCS_GATEWAY_USER").cloned().unwrap_or_default();
-    let grant = if gateway {
-        grants
-            .into_iter()
-            .map(|(_, g)| g)
-            .find(|g| g.user == gateway_user && env.contains_key("DOCS_GATEWAY_TOKEN"))
-    } else {
-        let own = env
-            .keys()
-            .find_map(|k| k.strip_prefix("DOCS_TOKEN_"))
-            .map(String::from);
-        grants
-            .into_iter()
-            .map(|(_, g)| g)
-            .find(|g| Some(&g.user) == own.as_ref())
-    };
-    let grant = grant.ok_or("no such token is set.")?;
+    let (_, grant) = serve::load_grant(&env, &docs.live().users)?;
     drop_root(&docs, &grant.user)?;
     Ok(tools::Ctx {
         live: docs.live(),
@@ -296,14 +260,14 @@ fn run(cli: Cli) -> Result<(), String> {
             }
             Ok(())
         }
-        Command::Ls { path, r#as } => {
+        Command::Ls { path } => {
             load_env(given, Some("docs.env"))?;
-            let ctx = shell_ctx(r#as.gateway)?;
+            let ctx = shell_ctx()?;
             print(runtime()?.block_on(tools::list_folder(&ctx, path)))
         }
-        Command::Find { query, path, r#as } => {
+        Command::Find { query, path } => {
             load_env(given, Some("docs.env"))?;
-            let ctx = shell_ctx(r#as.gateway)?;
+            let ctx = shell_ctx()?;
             print(runtime()?.block_on(tools::find_files(&ctx, query, path)))
         }
         Command::Read {
@@ -312,10 +276,9 @@ fn run(cli: Cli) -> Result<(), String> {
             pages,
             offset,
             max_chars,
-            r#as,
         } => {
             load_env(given, Some("docs.env"))?;
-            let ctx = shell_ctx(r#as.gateway)?;
+            let ctx = shell_ctx()?;
             match runtime()?
                 .block_on(tools::read_file(&ctx, path, page, pages, offset, max_chars))?
             {
@@ -332,17 +295,16 @@ fn run(cli: Cli) -> Result<(), String> {
             after,
             before,
             limit,
-            r#as,
         } => {
             load_env(given, Some("docs.env"))?;
-            let ctx = shell_ctx(r#as.gateway)?;
+            let ctx = shell_ctx()?;
             print(runtime()?.block_on(tools::search_documents(
                 &ctx, query, path, after, before, limit,
             )))
         }
-        Command::RunIndex { paths, r#as } => {
+        Command::RunIndex { paths } => {
             load_env(given, Some("docs.env"))?;
-            let ctx = shell_ctx(r#as.gateway)?;
+            let ctx = shell_ctx()?;
             print(runtime()?.block_on(tools::run_index(&ctx, paths)))
         }
         Command::CheckSettings { file } => settings::Settings::load(&file).map(|_| ()),
@@ -361,7 +323,7 @@ fn run(cli: Cli) -> Result<(), String> {
             load_env(given, Some("index.env"))?;
             let s = index::Settings::from_env()?;
             if s.remote_key.is_empty() || s.remote_model.is_empty() {
-                return Err("no Whoopy key or model is saved in the panel.".into());
+                return Err("no remote key or model is saved in the panel.".into());
             }
             let local = embed::Embedder::local(&s.embed_url);
             match index::desktop_check(&local, &s.remote(), &s.family)

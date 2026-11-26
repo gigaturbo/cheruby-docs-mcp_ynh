@@ -13,17 +13,17 @@
 //!                         when they begin. A file run-now in
 //!                         the index folder, left by the panel's Run now, lifts
 //!                         this for one run.
-//!     DOCS_REMOTE_URL     optional: Whoopy on loopback, e.g. http://127.0.0.1:4000
-//!     DOCS_REMOTE_MODEL   the model there, as Whoopy names it
-//!     DOCS_REMOTE_KEY     a Whoopy key allowed that model only
+//!     DOCS_REMOTE_URL     optional: an OpenAI-compatible server on loopback, e.g. http://127.0.0.1:4000
+//!     DOCS_REMOTE_MODEL   the model there, as that server names it
+//!     DOCS_REMOTE_KEY     a key of that server allowed that model only
 //!
 //! A run-now file holding "remote", left by the panel's "Run now on the
-//! desktop", sends the passages to Whoopy instead of the embedding server on
+//! desktop", sends the passages to the remote server instead of the embedding server on
 //! the Pi. The vectors are stored under the Pi's model id, since search
 //! embeds queries on the Pi: so the run first embeds CHECK_PASSAGES on both
-//! and keeps to the Pi unless every pair agrees to MIN_COSINE. When Whoopy
+//! and keeps to the Pi unless every pair agrees to MIN_COSINE. When the remote server
 //! stops answering, the run goes on on the Pi. The timer never leaves the
-//! file, so it never uses Whoopy.
+//! file, so it never uses the remote server.
 //!
 //! Each run walks the folders and redoes only the files whose size or dates
 //! changed; a moved file keeps its passages, a deleted one loses them, and so
@@ -72,7 +72,7 @@ use crate::{
 const MAX_FILE_CHARS: usize = 300_000;
 const MAX_FETCH_BYTES: u64 = 64_000_000;
 pub const MIN_COSINE: f32 = 0.995;
-/// The server or the gateway refuses, is down, or holds requests back: not the
+/// The server refuses, is down, or holds requests back: not the
 /// file's fault, so the run stops instead of marking every file failed.
 const SERVER_REFUSED: &[u16] = &[401, 403, 429, 502, 503, 504];
 const PUBLISH_EVERY_S: u64 = 600;
@@ -803,8 +803,8 @@ fn one_file(
     run.index_file(item, f, &digest)
 }
 
-/// The lowest cosine between the Pi's and Whoopy's vectors of the check
-/// passages, or why Whoopy gave none. An error from the Pi is the run's.
+/// The lowest cosine between the Pi's and the remote server's vectors of the check
+/// passages, or why the remote server gave none. An error from the Pi is the run's.
 pub fn desktop_check(
     local: &Embedder,
     remote: &Embedder,
@@ -827,10 +827,10 @@ pub fn desktop_check(
                 .fold(f32::INFINITY, f32::min))
         }
         Ok(_) => Err(
-            "Whoopy's vectors are not the size of this server's: embedded on this server.".into(),
+            "The remote server's vectors are not the size of this server's: embedded on this server.".into(),
         ),
         Err(EmbedError::Status(code)) => Err(format!(
-            "Whoopy answered {code} to the check passages: embedded on this server."
+            "The remote server answered {code} to the check passages: embedded on this server."
         )),
         Err(e) => {
             let kind = match e {
@@ -838,7 +838,7 @@ pub fn desktop_check(
                 _ => "ValueError",
             };
             Err(format!(
-                "Whoopy did not embed the check passages ({kind}): embedded on this server."
+                "The remote server did not embed the check passages ({kind}): embedded on this server."
             ))
         }
     })
@@ -1005,7 +1005,7 @@ fn run_all(
     if wanted == Some("remote") {
         if s.remote_key.is_empty() || s.remote_model.is_empty() {
             note = Some(
-                "No Whoopy key or model is saved in the panel: embedded on this server.".into(),
+                "No remote key or model is saved in the panel: embedded on this server.".into(),
             );
         } else {
             match desktop_check(&local, &remote, &s.family).map_err(|e| e.to_string())? {
@@ -1021,7 +1021,7 @@ fn run_all(
     }
     if use_remote {
         println!(
-            "Embedding on the desktop through Whoopy, {}.",
+            "Embedding on the desktop through the remote server, {}.",
             s.remote_model
         );
     } else if let Some(note) = &note {
@@ -1075,7 +1075,9 @@ fn run_all(
                 EmbedError::Transport(_) => "TransportError",
                 _ => "HTTPStatusError",
             };
-            let why = format!("Whoopy stopped answering ({kind}): the run went on on this server.");
+            let why = format!(
+                "The remote server stopped answering ({kind}): the run went on on this server."
+            );
             eprintln!("{user}: {why}");
             write_status(
                 &base,

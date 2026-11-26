@@ -2,7 +2,7 @@
 //! each source's filters. Kept in a JSON file the app owns
 //! (DOCS_SETTINGS_FILE, /var/lib/cheruby-docs-mcp/settings.json), backed up.
 //!
-//! Nothing here confines the app: the user, the folders, writable, Whoopy's
+//! Nothing here confines the app: the user, the folders, writable, the MCP token's
 //! folders, the Nextcloud login, the tokens and the network stay in the
 //! YunoHost panel, root's. A filter hides files from the agents, but the
 //! process that changes it reads those folders anyway.
