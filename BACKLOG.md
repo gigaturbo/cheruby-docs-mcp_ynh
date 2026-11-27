@@ -13,6 +13,19 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
+### B-P-9 · the config panel and README name Whoopy's route `speaches/`
+
+`open` `small` `filed 2026-11-27`
+
+Whoopy's route to Speaches on the desktop is now `froaky-speaches/*`:
+under `speaches/*` it listed Kokoro and Piper without the prefix, as
+LiteLLM drops a prefix any model id already starts with as plain text.
+
+**Fix:** `config_panel.toml` (the `speech_remote_model` example and help)
+and `README.md` name `froaky-speaches/`; `tests/check_server.py` may follow
+with its `speaches/fake`. Close when no file names `speaches/` as the
+route.
+
 ### B-M-3 · a file once opened in Nextcloud's Text refuses writes for days
 
 `open` `medium` `filed 2026-11-25`
