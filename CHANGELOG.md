@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.17.0~ynh2
+
+- The page can be moved to another domain or path with `yunohost app change-url` or the webadmin, without a reinstall.
+
 ## 0.17.0~ynh1
 
 - `edit_file`: an agent changes one passage of a text file and keeps the rest; `write_file` takes `append` to add at the end.

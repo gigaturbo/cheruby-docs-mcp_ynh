@@ -119,16 +119,6 @@ demand, its key never shown back. Its URL resolves to loopback unless the
 panel's "Allowed remote host" opens another, which configure adds to the
 units' `IPAddressAllow` and the nftables table. The cosine check stays.
 
-### F-P-11 · move the page with change_url
-
-`todo` `small` `filed 2026-11-25`
-
-Since F-P-9 the app has a domain and a path, but no `scripts/change_url`:
-`yunohost app change-url` refuses it, and the page can be moved only by a
-remove and an install.
-
-**Do:** `scripts/change_url` from the family's, re-rendering nginx.
-
 ### F-M-22 · speaker labels in transcripts
 
 `todo` `medium` `filed 2026-11-25`
@@ -156,6 +146,16 @@ and the cache key holds the model.
 and without times. Switch the panel to large-v3-turbo: the same recording
 is transcribed again and the header names turbo; back to small, it comes
 from the cache at once.
+
+### T-P-8 · the page moves with change-url
+
+`todo` `playtest` `filed 2026-11-27`
+
+**Check:** upgrade to 0.17.0~ynh2, then `sudo yunohost app change-url
+cheruby-docs-mcp -d <domain> -p /docs-test`. Through the portal the new
+path asks for the login and the old one is gone; as the docs user the page
+opens, Search finds the electricity bills and a Config save holds; the
+panel token is in no log of the operation. Move back to `/docs`.
 
 ### T-P-7 · the page opens for the docs user only
 
@@ -255,6 +255,7 @@ binary did.
 
 ## Closed
 
+- `F-P-11` done `small` 2026-11-27 · `scripts/change_url` re-renders nginx with the panel token untraced: the page moves to another domain or path without a reinstall (0.17.0~ynh2)
 - `F-M-25` done `small` 2026-11-27 · `list_folder` and `find_files` give each file's time beside its date, and mark a recording "(transcribing)" or "(transcribed)", so an agent sees work already going before asking again
 - `F-M-24` done `small` 2026-11-27 · `edit_file` changes one exact passage of a text file, refused when found twice or not at all, and `write_file` takes `append`: an agent adding a line no longer rewrites the whole file
 - `F-M-23` done `small` 2026-11-27 · `transcribe_file` takes `save_to`, a new text file in a writable folder: the transcript is saved there and only its start comes back, so a small model does not copy it through its context

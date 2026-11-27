@@ -1,0 +1,14 @@
+#!/bin/bash
+
+source _common.sh
+source /usr/share/yunohost/helpers
+
+ynh_script_progression "Updating the web server configuration..."
+# nginx sends the panel token, read untraced, as in docs_configure.
+set +o xtrace
+panel_token=$(ynh_app_setting_get --key=panel_token)
+ynh_config_change_url_nginx
+panel_token=""
+set -o xtrace
+
+ynh_script_progression "Change of URL completed for $app"
