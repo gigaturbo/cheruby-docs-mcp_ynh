@@ -36,20 +36,28 @@ more), then a `write_file` of `INDEX.md`'s own text passed. The 423 message
 was seen on it before. A manual lock of 2026-09-22 on a file since deleted
 (id 1718) is kept: not Text's.
 
-### B-M-8 · voice detection takes minutes per part after a reboot
+### B-M-8 · voice detection once took minutes per part
 
 `open` `medium` `filed 2026-11-27`
 
-whisper-server's Silero voice detection took about 5 s per ten-minute part
-before a reboot of the host, and 150 to 275 s per part after it, with the
-same binary, models and unit. A 10-minute recording then took about 14
-minutes on whisper small, three times what T-M-6 measured. The CPU clock
-was at its maximum and the host idle afterwards; the cause is unknown.
+whisper-server's Silero voice detection takes about 5 s per ten-minute
+part, but took 150 to 275 s per part for one evening, with the same binary,
+models and unit. A 10-minute recording then took about 14 minutes on
+whisper small, three times what T-M-6 measured, and an agent's calls gave
+up long before.
 
-**Check:** time voice detection on one part (`vad time` in the speech
-unit's journal is a running total per process): after a restart of the
-speech unit only, then with `--vad` off. If the restart alone fixes it,
-look at what the reboot changed (thread placement, memory, swap).
+2026-11-27, on 0.17.0~ynh1: back to normal without a cause found. A
+synthetic ten-minute part took 8 s of voice detection on the same process,
+an hour after the slow runs and before any restart; after the upgrade, the
+same 10-minute recording took 2.7 s of detection and 2.6 minutes in all.
+No throttling since boot, nothing else busy on the CPU; swap was in use.
+The slowness lasted about 20 minutes, from the first request to the speech
+server after seven hours idle.
+
+**Check:** when a transcription on the Pi is slow, compare successive
+`vad time` lines in the speech unit's journal (a running total per process)
+with `free -m`, swap activity and `top` at that moment. Close after a few
+weeks without a part taking more than its own length.
 
 ## Features
 
