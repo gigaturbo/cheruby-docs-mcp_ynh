@@ -60,7 +60,7 @@ REMOTE_PORT = 18776
 REMOTE_KEY = "w" * 40
 REMOTE = {"calls": 0, "left": -1, "skew": False, "gone": 503}
 SPEECH_PORT = 18778
-SPEECH = {"languages": [], "parts": 0, "fail": False}
+SPEECH = {"languages": [], "parts": 0, "fail": False, "delay": 0}
 REMOTE_SPEECH = {"calls": 0, "busy": 0, "refuse": False}
 PAGE_PORT = 18779
 PANEL_TOKEN = "p" * 48
@@ -245,6 +245,7 @@ class FakeWhisper(BaseHTTPRequestHandler):
             self.send_response(500)
             self.end_headers()
             return
+        time.sleep(SPEECH["delay"])
         body = transcribed(self, "fr", " Partie.")
         SPEECH["languages"].append(form(body, "language"))
 
@@ -828,7 +829,7 @@ def speech_checks(base):
     os.makedirs(rec)
     with open(f"{rec}/réunion.wav", "wb") as f:
         f.write(wav_bytes(21 * 60, quiet=(570, 1155)))
-    for name in ("court.wav", "bureau.wav", "allemand.wav", "panne.wav"):
+    for name in ("court.wav", "bureau.wav", "allemand.wav", "panne.wav", "lent.wav"):
         with open(f"{rec}/{name}", "wb") as f:
             f.write(wav_bytes(5))
     with open(f"{base}/notes/memo.wav", "wb") as f:
@@ -890,6 +891,18 @@ def speech_checks(base):
     yield "speech: another model transcribes again, not from the Pi's cache", (result, REMOTE_SPEECH), \
         result[0] == "ok" and REMOTE_SPEECH["calls"] == 3 \
         and "transcribed on the desktop (speaches/fake)." in result[1] and "Partie." not in result[1]
+    SPEECH["delay"] = 27
+    REMOTE_SPEECH.update(calls=0)
+    start = time.time()
+    result = tool("transcribe_file", path="Documents/Dictées/lent.wav")
+    yield "speech: a long one says how far it is within 25 s, and that it is not an error", result, \
+        result[0] == "ok" and "This is not an error" in result[1] and time.time() - start < 28
+    parts = SPEECH["parts"]
+    result = tool("transcribe_file", path="Documents/Dictées/lent.wav", engine="desktop")
+    SPEECH["delay"] = 0
+    yield "speech: another engine follows the job going, not a second one", (result, REMOTE_SPEECH), \
+        result[0] == "ok" and "transcribed on the Pi" in result[1] and REMOTE_SPEECH["calls"] == 0 \
+        and SPEECH["parts"] == parts
     s = page("api/status").json()
     yield "page: Status shows the speech server and both engines", s, \
         s["speech"] is True and s["engines"] == ["pi", "desktop"]

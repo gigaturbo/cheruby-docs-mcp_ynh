@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.17.0~ynh1
+
+- `transcribe_file` and `run_index` answer within 25 seconds, under the minute some MCP clients allow a call, and say that a task still going is not an error.
+- Asking `transcribe_file` for another engine while a recording is being transcribed follows that job instead of starting it again.
+
 ## 0.16.0~ynh1
 
 - One token opens the tools, on all the user's folders or the ones chosen under "MCP access" (formerly "Whoopy access"). The user's second token, on all the folders, is gone: the upgrade deletes it. The token shown in the panel is unchanged.

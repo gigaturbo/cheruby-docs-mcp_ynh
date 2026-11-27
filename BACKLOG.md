@@ -36,6 +36,21 @@ more), then a `write_file` of `INDEX.md`'s own text passed. The 423 message
 was seen on it before. A manual lock of 2026-09-22 on a file since deleted
 (id 1718) is kept: not Text's.
 
+### B-M-8 · voice detection takes minutes per part after a reboot
+
+`open` `medium` `filed 2026-11-27`
+
+whisper-server's Silero voice detection took about 5 s per ten-minute part
+before a reboot of the host, and 150 to 275 s per part after it, with the
+same binary, models and unit. A 10-minute recording then took about 14
+minutes on whisper small, three times what T-M-6 measured. The CPU clock
+was at its maximum and the host idle afterwards; the cause is unknown.
+
+**Check:** time voice detection on one part (`vad time` in the speech
+unit's journal is a running total per process): after a restart of the
+speech unit only, then with `--vad` off. If the restart alone fixes it,
+look at what the reboot changed (thread placement, memory, swap).
+
 ## Features
 
 ### F-M-6 · read scans and images into the search index
@@ -219,6 +234,8 @@ binary did.
 
 ## Closed
 
+- `B-M-7` closed 2026-11-27 · asking `transcribe_file` for another engine while a recording was being transcribed started it a second time; a call now follows the job going under any engine
+- `B-M-6` closed 2026-11-27 · `transcribe_file` and `run_index` waited 60 s, as long as some MCP clients allow a call, so the client gave up before the progress answer and the agent saw only a timeout; they now wait 25 s and say the task going is not an error
 - `T-M-7` done `playtest` 2026-11-26 at `2075972` · on 0.16.0~ynh1, desktop on request: the 17:26 Bouygues call from asleep in 56 s on `speaches/deepdml/faster-whisper-large-v3-turbo-ct2` (4.5 min on the Pi), the header naming it; a 403 from Whoopy and, with the desktop unplugged, a 503 after 35 s each left the whole recording to the Pi, the header saying why; the key in neither `yunohost-cli.log`, the 31 operation logs since nor the journals. Whoopy refuses a personal key whose owner has no default models, `speaches/*` or not: the key must belong to a team allowed the model
 - `F-M-21` done `medium` 2026-11-26 · the speech engine's remote, never, on request or always, through Whoopy's `speaches/*` route (Whoopy F-W-1), which wakes the desktop; a desktop that fails leaves the rest to the Pi; `engine` on `transcribe_file` (0.15.0~ynh1, checked on 0.16.0~ynh1)
 - `B-P-7` closed 2026-11-26 · the panel's example speech model was not installed on the desktop; it is now `speaches/deepdml/faster-whisper-large-v3-turbo-ct2`, and the help says to take an installed one

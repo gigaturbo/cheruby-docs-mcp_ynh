@@ -51,8 +51,9 @@ const RERANK_CHARS: usize = 360;
 const MAX_RUN_FILES: usize = 50;
 /// Requests waiting for the index unit; past this, run_index says so.
 const MAX_REQUESTS: usize = 20;
-/// How long run_index waits for a run of files to end.
-const RUN_WAIT_S: u64 = 60;
+/// How long run_index and transcribe_file wait before saying how far it is:
+/// well under the 60 s some MCP clients give a call (B-M-6).
+const RUN_WAIT_S: u64 = 25;
 /// A request older than this means the index unit takes none.
 const STALE_REQUEST_S: u64 = 300;
 /// Between two runs of everything an agent asks for.
@@ -529,14 +530,17 @@ pub async fn transcribe(
             if cloud { "Nextcloud" } else { "a folder" }
         ));
     }
-    let key = speech::key(&[
-        &ctx.grant.user,
-        &item.shown,
-        &item.size.to_string(),
-        &item.mtime_ns.to_string(),
-        &language,
-        &speech.name(engine),
-    ]);
+    let key_of = |engine| {
+        speech::key(&[
+            &ctx.grant.user,
+            &item.shown,
+            &item.size.to_string(),
+            &item.mtime_ns.to_string(),
+            &language,
+            &speech.name(engine),
+        ])
+    };
+    let key = key_of(engine);
     match speech.look(&key) {
         speech::Look::Done(_) => return Ok(key),
         speech::Look::Failed { error, at } if !retry => {
@@ -546,6 +550,14 @@ pub async fn transcribe(
             ));
         }
         _ => {}
+    }
+    // One recording, one job (B-M-7): one going under another engine is the
+    // one followed. A finished one is not: another engine gives another text.
+    for other in speech.engines() {
+        let other = key_of(speech.engine(other)?);
+        if other != key && matches!(speech.look(&other), speech::Look::Busy { .. }) {
+            return Ok(other);
+        }
     }
     let c = ctx.clone();
     let shown = item.shown.clone();
@@ -671,7 +683,8 @@ pub async fn transcribe_file(ctx: &Ctx, a: Transcription) -> ToolResult<String> 
                 format!("waiting behind {ahead} other recording(s)")
             };
             Ok(format!(
-                "{path}: {state}. Call transcribe_file again later: what is done is kept."
+                "{path}: {state}. This is not an error. Do the other steps now, then call \
+                 transcribe_file again with the same path: what is done is kept."
             ))
         }
         speech::Look::Failed { error, at } => Err(format!(
@@ -1156,7 +1169,7 @@ pub async fn run_index(ctx: &Ctx, files: Vec<String>) -> ToolResult<String> {
     }
     Ok(format!(
         "The run is asked for, and has not ended within {RUN_WAIT_S} s: another run may be going. \
-         Search finds the files once it ends."
+         This is not an error: search finds the files once it ends."
     ))
 }
 

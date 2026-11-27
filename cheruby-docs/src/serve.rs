@@ -407,7 +407,7 @@ impl Tools {
         description = "Ask for an index run, so search_documents finds what changed: of some\n\
         files, such as one just written, or of all the folders.\n\n\
         files: up to 50 paths such as \"Notes/Recettes/pain.md\"; empty asks for all the\n\
-        folders, which redoes only what changed. With files, waits up to a minute and\n\
+        folders, which redoes only what changed. With files, waits up to 25 seconds and\n\
         says how each went. Refused in the index's quiet hours. Changes no file."
     )]
     async fn run_index(
@@ -421,10 +421,11 @@ impl Tools {
     #[tool(
         description = "Transcribe a recording into text: mp3, m4a, aac, wav, ogg, opus, flac, webm,\n\
         mka, amr, 3gp or mp4. Takes minutes; an hour of audio may take most of an hour.\n\n\
-        Waits up to a minute, then says how far it is: call again later with the same\n\
-        path, what is done is kept. Once done, the text comes back at once, read by\n\
+        Waits up to 25 seconds, then says how far it is. That is not an error: do\n\
+        other steps, then call again with the same path; what is done is kept. Once done, the text comes back at once, read by\n\
         character like read_file (offset, max_chars up to 20000).\n\
-        engine: \"pi\" or \"desktop\" (the desktop's GPU, when set up); empty, the default.\n\
+        engine: leave empty for the default; \"pi\" or \"desktop\" (the desktop's GPU, when\n\
+        set up) only when the user asks for one.\n\
         language: such as \"fr\"; empty detects it on the first minutes.\n\
         timestamps: each line starts with its time, [1:02:05]; false gives paragraphs.\n\
         retry: try again a recording that failed; otherwise the failure is said again.\n\
@@ -498,7 +499,9 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
     let writable = live.users.values().any(|u| !u.writable.is_empty());
     let mut instructions = "The user's own files. To find a document by what it says, \
         use search_documents; by its name, find_files; to browse, list_folder. Then read_file. \
-        Paths start with a folder name such as Documents/. Cite the paths you used."
+        Paths start with a folder name such as Documents/. Cite the paths you used. \
+        A tool that says a task is still going has not failed: carry on with the other steps \
+        and call it again later."
         .to_string();
     let mut tool_router = Tools::tool_router();
     if writable {

@@ -137,7 +137,7 @@ account. Search finds it under its new name after the next index run.
 
 Asks for an index run, so `search_documents` finds what changed: of some
 files, such as one just written, or of all the folders, which redoes only
-what changed. With files, it waits up to a minute and says how each went.
+what changed. With files, it waits up to 25 seconds and says how each went.
 Changes no file.
 
 | Argument | Default | Effect |
@@ -155,8 +155,11 @@ language is detected on the first part and kept for the rest.
 
 An hour of audio takes about 15 minutes on the server with whisper small,
 about an hour with large-v3-turbo.
-The tool waits up to a minute, then says how far it is: call it again with
-the same path later. What is done is kept, through a restart too. Once
+The tool waits up to 25 seconds, well under the minute some MCP clients
+allow a call, then says how far it is and that this is not an error: call it
+again with the same path later. A call asking for another engine while the
+recording is being transcribed follows that job rather than starting a
+second one. What is done is kept, through a restart too. Once
 done, the text comes back at once, read by character like `read_file`. A
 recording changed since, or asked for in another language, is transcribed
 again; one changed before its turn comes is refused, to be asked again. It changes no file: save the cleaned text with `write_file`, then
@@ -165,7 +168,7 @@ move the recording with `move_file`.
 | Argument | Default | Effect |
 |---|---|---|
 | `path` | | Such as `Notes/Dictaphone/réunion.m4a`. |
-| `engine` | the panel's | `pi` for this server, `desktop` for the desktop's GPU when set up. A desktop that does not answer within three minutes leaves the rest to the server. |
+| `engine` | the panel's | Best left empty. `pi` for this server, `desktop` for the desktop's GPU when set up. A desktop that does not answer within three minutes leaves the rest to the server. |
 | `language` | detected | Such as `fr` or `french`. |
 | `timestamps` | true | Each line starts with its time, `[1:02:05]`; false gives paragraphs split at pauses. |
 | `retry` | false | Try again a recording that failed. Without it, the failure is said again, with where it happened. |
