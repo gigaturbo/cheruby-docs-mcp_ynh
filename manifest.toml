@@ -7,7 +7,7 @@ name = "Cheruby Docs"
 description.en = "MCP tools that let a user's AI agents list, find, read and search that user's folders, and write where allowed"
 description.fr = "Outils MCP : les agents IA d'un utilisateur listent, cherchent, lisent et fouillent ses dossiers, et écrivent là où c'est permis"
 
-version = "0.16.0~ynh1"
+version = "0.17.0~ynh1"
 
 maintainers = ["gigaturbo"]
 
@@ -52,8 +52,8 @@ ram.runtime = "4000M"
     # The tool server, the indexer and their commands, built from cheruby-docs/
     # on the Pi and published as a release of this repository.
     [resources.sources.cheruby_docs]
-    url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/cheruby-docs-0.16.0/cheruby-docs-aarch64-linux"
-    sha256 = "c67c18c022df9cde38f7b83c43c793479472aff3e6e5b18c7b383b5f21ab02a4"
+    url = "https://github.com/gigaturbo/cheruby-docs-mcp_ynh/releases/download/cheruby-docs-0.17.0/cheruby-docs-aarch64-linux"
+    sha256 = "b91300ba94a8b4176fff40fbd81bf5b48858967f86905cc724c3b2f73d8443fa"
     extract = false
     rename = "cheruby-docs"
 
