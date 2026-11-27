@@ -885,7 +885,7 @@ def speech_checks(base):
     REMOTE_SPEECH.update(refuse=False)
     yield "speech: a desktop that refuses leaves the rest to the Pi", result, \
         result[0] == "ok" and REMOTE_SPEECH["calls"] == 1 and SPEECH["parts"] == parts + 1 \
-        and "The desktop failed (the remote server answered 401)" in result[1] and "[0:00] Partie." in result[1]
+        and "The desktop failed (the remote server answered 401: it refused the key, or the key is not allowed the model 'speaches/fake'" in result[1] and "[0:00] Partie." in result[1]
     REMOTE_SPEECH.update(calls=0)
     result = tool("transcribe_file", path="Documents/Dictées/réunion.wav", engine="desktop")
     yield "speech: another model transcribes again, not from the Pi's cache", (result, REMOTE_SPEECH), \

@@ -234,6 +234,7 @@ binary did.
 
 ## Closed
 
+- `B-P-8` closed 2026-11-27 · a speech model named without Whoopy's `speaches/` prefix got a bare "answered 403" and every recording went to the Pi; a 401 or 403 now says the key or its model was refused and names the model, without the server's body, and the panel's help names the 403
 - `B-M-7` closed 2026-11-27 · asking `transcribe_file` for another engine while a recording was being transcribed started it a second time; a call now follows the job going under any engine
 - `B-M-6` closed 2026-11-27 · `transcribe_file` and `run_index` waited 60 s, as long as some MCP clients allow a call, so the client gave up before the progress answer and the agent saw only a timeout; they now wait 25 s and say the task going is not an error
 - `T-M-7` done `playtest` 2026-11-26 at `2075972` · on 0.16.0~ynh1, desktop on request: the 17:26 Bouygues call from asleep in 56 s on `speaches/deepdml/faster-whisper-large-v3-turbo-ct2` (4.5 min on the Pi), the header naming it; a 403 from Whoopy and, with the desktop unplugged, a 503 after 35 s each left the whole recording to the Pi, the header saying why; the key in neither `yunohost-cli.log`, the 31 operation logs since nor the journals. Whoopy refuses a personal key whose owner has no default models, `speaches/*` or not: the key must belong to a team allowed the model

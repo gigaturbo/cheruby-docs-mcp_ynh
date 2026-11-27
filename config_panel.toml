@@ -257,7 +257,7 @@ name = "Cheruby Docs"
         type = "string"
         optional = true
         example = "speaches/deepdml/faster-whisper-large-v3-turbo-ct2"
-        help = "As the server under Desktop embedding names it. In Whoopy: speaches/ then the name of a model installed in Speaches on the desktop, from its model list. A model not installed there answers 404 after waking the desktop."
+        help = "As the server under Desktop embedding names it. In Whoopy: speaches/ then the name of a model installed in Speaches on the desktop, from its model list; without speaches/ Whoopy answers 403. A model not installed there answers 404 after waking the desktop."
         bind = "settings"
 
         # Never shown and never traced: stored by set__speech_remote_key with the trace off.

@@ -884,6 +884,14 @@ impl Speech {
                 }
                 Ok(resp) => {
                     let code = resp.status().as_u16();
+                    // The body is not repeated: a gateway's refusal may quote the key.
+                    if matches!(code, 401 | 403) {
+                        return Err(format!(
+                            "the remote server answered {code}: it refused the key, or the key \
+                             is not allowed the model {}; check both in the config panel",
+                            crate::folders::py_repr(&remote.model)
+                        ));
+                    }
                     if !matches!(code, 500 | 502..=504) {
                         return Err(format!("the remote server answered {code}"));
                     }

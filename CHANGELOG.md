@@ -3,6 +3,7 @@
 ## 0.17.0~ynh1
 
 - `transcribe_file` and `run_index` answer within 25 seconds, under the minute some MCP clients allow a call, and say that a task still going is not an error.
+- A desktop that refuses the speech key or model now says so and names the model, instead of a bare 403.
 - Asking `transcribe_file` for another engine while a recording is being transcribed follows that job instead of starting it again.
 
 ## 0.16.0~ynh1
