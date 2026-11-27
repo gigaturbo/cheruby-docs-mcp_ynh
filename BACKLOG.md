@@ -234,6 +234,7 @@ binary did.
 
 ## Closed
 
+- `F-M-25` done `small` 2026-11-27 · `list_folder` and `find_files` give each file's time beside its date, and mark a recording "(transcribing)" or "(transcribed)", so an agent sees work already going before asking again
 - `F-M-24` done `small` 2026-11-27 · `edit_file` changes one exact passage of a text file, refused when found twice or not at all, and `write_file` takes `append`: an agent adding a line no longer rewrites the whole file
 - `F-M-23` done `small` 2026-11-27 · `transcribe_file` takes `save_to`, a new text file in a writable folder: the transcript is saved there and only its start comes back, so a small model does not copy it through its context
 - `B-P-8` closed 2026-11-27 · a speech model named without Whoopy's `speaches/` prefix got a bare "answered 403" and every recording went to the Pi; a 401 or 403 now says the key or its model was refused and names the model, without the server's body, and the panel's help names the 403

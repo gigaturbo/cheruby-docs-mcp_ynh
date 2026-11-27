@@ -54,7 +54,9 @@ Paths start with a folder's label, such as `Documents/Factures`.
 
 ## list_folder
 
-A folder's subfolders, then its files with size and date.
+A folder's subfolders, then its files with size, date and time. A
+recording says "(transcribing)" while `transcribe_file` works on it and
+"(transcribed)" once its text is ready, so an agent sees work already going.
 
 | Argument | Default | Effect |
 |---|---|---|

@@ -199,17 +199,54 @@ fn date(ns: i64) -> String {
     Local.timestamp_nanos(ns).format("%Y-%m-%d").to_string()
 }
 
-/// One listing line: kind, size, date, path.
-fn describe(item: &Item) -> String {
+/// One listing line: kind, size, date and time, path, and for a recording
+/// whether it is transcribed.
+fn describe(ctx: &Ctx, item: &Item) -> String {
+    let when = Local
+        .timestamp_nanos(item.mtime_ns)
+        .format("%Y-%m-%d %H:%M");
     if item.is_dir {
-        return format!("dir             {}  {}/", date(item.mtime_ns), item.shown);
+        return format!("dir             {when}  {}/", item.shown);
     }
+    let state = transcript_state(ctx, item)
+        .map(|s| format!("  ({s})"))
+        .unwrap_or_default();
     format!(
-        "file {:>9}  {}  {}",
+        "file {:>9}  {when}  {}{state}",
         human(item.size as f64),
-        date(item.mtime_ns),
         item.shown
     )
+}
+
+/// The speech cache's key for a recording of the folders, by engine name.
+fn recording_key(ctx: &Ctx, item: &Item, language: &str, engine: String) -> String {
+    speech::key(&[
+        &ctx.grant.user,
+        &item.shown,
+        &item.size.to_string(),
+        &item.mtime_ns.to_string(),
+        language,
+        &engine,
+    ])
+}
+
+/// Whether a recording is being transcribed, or done, on any engine with
+/// the language detected, so an agent listing a folder sees work going.
+fn transcript_state(ctx: &Ctx, item: &Item) -> Option<&'static str> {
+    let speech = ctx.docs.speech.as_ref()?;
+    if !speech::AUDIO_SUFFIXES.contains(&suffix(&item.shown).as_str()) {
+        return None;
+    }
+    let mut done = false;
+    for name in speech.engines() {
+        let key = recording_key(ctx, item, "", speech.name(speech.engine(name).ok()?));
+        match speech.look(&key) {
+            speech::Look::Busy { .. } => return Some("transcribing"),
+            speech::Look::Done(_) => done = true,
+            _ => {}
+        }
+    }
+    done.then_some("transcribed")
 }
 
 pub fn human(mut size: f64) -> String {
@@ -269,7 +306,11 @@ pub async fn list_folder(ctx: &Ctx, path: String) -> ToolResult<String> {
             .children(&folder)
             .map_err(|e| format!("{path}: {e}"))?;
         items.sort_by_key(|i| (!i.is_dir, i.shown.to_lowercase()));
-        let mut lines: Vec<String> = items.iter().take(MAX_LIST).map(describe).collect();
+        let mut lines: Vec<String> = items
+            .iter()
+            .take(MAX_LIST)
+            .map(|i| describe(&c, i))
+            .collect();
         if items.len() > MAX_LIST {
             lines.push(format!(
                 "[{} more not shown; use find_files]",
@@ -319,7 +360,7 @@ pub async fn find_files(ctx: &Ctx, query: String, path: String) -> ToolResult<St
             for item in items {
                 let name = words_of(&item.shown);
                 if words.iter().all(|w| name.contains(w.as_str())) {
-                    found.push(describe(&item));
+                    found.push(describe(&c, &item));
                     if found.len() > MAX_FOUND {
                         return Ok(
                             found[..MAX_FOUND].join("\n") + "\n[more matches; narrow the query]"
@@ -532,16 +573,7 @@ pub async fn transcribe(
             if cloud { "Nextcloud" } else { "a folder" }
         ));
     }
-    let key_of = |engine| {
-        speech::key(&[
-            &ctx.grant.user,
-            &item.shown,
-            &item.size.to_string(),
-            &item.mtime_ns.to_string(),
-            &language,
-            &speech.name(engine),
-        ])
-    };
+    let key_of = |engine| recording_key(ctx, &item, &language, speech.name(engine));
     let key = key_of(engine);
     match speech.look(&key) {
         speech::Look::Done(_) => return Ok(key),

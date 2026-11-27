@@ -286,7 +286,8 @@ impl Tools {
 #[tool_router]
 impl Tools {
     #[tool(
-        description = "List one folder: its subfolders, then its files with size and date.\n\n\
+        description = "List one folder: its subfolders, then its files with size, date and time;\n\
+        a recording says (transcribing) or (transcribed).\n\n\
         path: a folder such as \"Documents/Factures\"; empty lists the top folders."
     )]
     async fn list_folder(

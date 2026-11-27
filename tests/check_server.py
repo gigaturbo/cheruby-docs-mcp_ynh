@@ -901,12 +901,18 @@ def speech_checks(base):
     result = tool("transcribe_file", path="Documents/Dictées/lent.wav", save_to="Documents/x.md")
     yield "speech: save_to in a read-only folder is refused before any work", result, \
         error_with("Documents is read-only")(result) and SPEECH["parts"] == parts
-    SPEECH["delay"] = 27
+    SPEECH["delay"] = 30
     REMOTE_SPEECH.update(calls=0)
     start = time.time()
     result = tool("transcribe_file", path="Documents/Dictées/lent.wav")
     yield "speech: a long one says how far it is within 25 s, and that it is not an error", result, \
         result[0] == "ok" and "This is not an error" in result[1] and time.time() - start < 28
+    listed = tool("list_folder", path="Documents/Dictées")
+    yield "speech: the listing says which recordings are transcribed or going, with times", listed, \
+        listed[0] == "ok" and re.search(r"\d{4}-\d\d-\d\d \d\d:\d\d  Documents/Dictées/lent\.wav  \(transcribing\)$",
+                                        listed[1], re.M) \
+        and re.search(r"réunion\.wav  \(transcribed\)$", listed[1], re.M) \
+        and re.search(r"allemand\.wav$", listed[1], re.M) is not None
     parts = SPEECH["parts"]
     result = tool("transcribe_file", path="Documents/Dictées/lent.wav", engine="desktop")
     SPEECH["delay"] = 0

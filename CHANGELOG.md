@@ -4,6 +4,7 @@
 
 - `edit_file`: an agent changes one passage of a text file and keeps the rest; `write_file` takes `append` to add at the end.
 - `transcribe_file` takes `save_to`: the transcript is saved to a new text file, and only its start comes back to the agent.
+- `list_folder` and `find_files` show each file's time, and whether a recording is being transcribed or done.
 - `transcribe_file` and `run_index` answer within 25 seconds, under the minute some MCP clients allow a call, and say that a task still going is not an error.
 - A desktop that refuses the speech key or model now says so and names the model, instead of a bare 403.
 - Asking `transcribe_file` for another engine while a recording is being transcribed follows that job instead of starting it again.
