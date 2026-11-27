@@ -119,20 +119,6 @@ transcript's segments.
 
 ## Tests
 
-### T-M-7 · a recording is transcribed on the desktop, and a failing desktop leaves it to the Pi
-
-`todo` `playtest` `filed 2026-11-26`
-
-**Last:** 2026-11-28 at `32f5771`, on 0.17.0~ynh2, partial: engine `always` on Whoopy's new `froaky-speaches/*` route (B-P-9), the 17:26 Bouygues call asked for on the desktop came back in 71 s, French, the header naming `froaky-speaches/guillaumekln/faster-whisper-medium`; the key in neither `yunohost-cli.log`'s new lines, the operation logs nor the journal. Not known whether the desktop was asleep. Before: 2026-11-26 at `2075972`, on 0.16.0~ynh1, every step passed (from asleep in 56 s on large-v3-turbo; a 403 and an unplugged desktop each left the recording to the Pi, the header saying why).
-
-Reopened by B-P-9: Whoopy's speech route is now `froaky-speaches/*`.
-
-**Check:** ask first, then set the speech model to one the key is not
-allowed (the old `speaches/...` name): Whoopy answers 403, the whole
-recording goes to the Pi and the header names the model; set it back. With
-the desktop unplugged: a 503 after about three minutes, the rest to the Pi.
-Once from a desktop known to be asleep.
-
 ### T-M-6 · a recording is transcribed on the Pi
 
 `todo` `playtest` `filed 2026-11-26`
@@ -256,6 +242,7 @@ binary did.
 
 ## Closed
 
+- `T-M-7` done `playtest` 2026-11-28 at `32f5771` · on 0.17.0~ynh2, on Whoopy's `froaky-speaches/*` route (B-P-9), faster-whisper-medium: the 17:26 Bouygues call in 71 s, then from asleep (`froaky suspend`) in 60 s, the header naming the model; the model set to the old `speaches/...` name got a 403 and left the whole 16:50 ZOOM0001 to the Pi (3 min 40 s), the header naming the model, then set back; with the desktop unplugged a 503 left it to the Pi in 8 min; the key in neither `yunohost-cli.log`'s new lines, the 5 operation logs since nor the journal. The forced-language runs left `en` transcripts of both recordings in the cache
 - `B-P-9` closed 2026-11-28 · the panel's speech model example and help, the README and the offline check name Whoopy's `froaky-speaches/` route, no longer `speaches/`, which listed Kokoro and Piper without the prefix (0.17.0~ynh2)
 - `F-P-11` done `small` 2026-11-27 · `scripts/change_url` re-renders nginx with the panel token untraced: the page moves to another domain or path without a reinstall (0.17.0~ynh2)
 - `F-M-25` done `small` 2026-11-27 · `list_folder` and `find_files` give each file's time beside its date, and mark a recording "(transcribing)" or "(transcribed)", so an agent sees work already going before asking again
