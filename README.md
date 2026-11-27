@@ -113,7 +113,7 @@ from whisper.cpp, built for the Pi 5 by this repository, with Silero VAD to
 skip the silences; ffmpeg decodes the recordings. "The desktop" lets
 transcriptions go to the desktop's GPU through the same server, never, on
 request or always: give the speech model as it names it (in Whoopy,
-`speaches/...`) and a key allowed that model only. A desktop that does not wake
+`froaky-speaches/...`) and a key allowed that model only. A desktop that does not wake
 within three minutes leaves the rest to the server. The models take about
 0.6 GB of memory for small and 1.2 GB for large-v3-turbo.
 

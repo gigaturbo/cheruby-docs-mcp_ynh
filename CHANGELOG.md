@@ -3,6 +3,7 @@
 ## 0.17.0~ynh2
 
 - The page can be moved to another domain or path with `yunohost app change-url` or the webadmin, without a reinstall.
+- The config panel and README name Whoopy's speech route `froaky-speaches/`, no longer `speaches/`.
 
 ## 0.17.0~ynh1
 

@@ -13,19 +13,6 @@ folders, and write only where the user allows, without waking the desktop.
 
 ## Bugs
 
-### B-P-9 · the config panel and README name Whoopy's route `speaches/`
-
-`open` `small` `filed 2026-11-27`
-
-Whoopy's route to Speaches on the desktop is now `froaky-speaches/*`:
-under `speaches/*` it listed Kokoro and Piper without the prefix, as
-LiteLLM drops a prefix any model id already starts with as plain text.
-
-**Fix:** `config_panel.toml` (the `speech_remote_model` example and help)
-and `README.md` name `froaky-speaches/`; `tests/check_server.py` may follow
-with its `speaches/fake`. Close when no file names `speaches/` as the
-route.
-
 ### B-M-3 · a file once opened in Nextcloud's Text refuses writes for days
 
 `open` `medium` `filed 2026-11-25`
@@ -255,6 +242,7 @@ binary did.
 
 ## Closed
 
+- `B-P-9` closed 2026-11-28 · the panel's speech model example and help, the README and the offline check name Whoopy's `froaky-speaches/` route, no longer `speaches/`, which listed Kokoro and Piper without the prefix (0.17.0~ynh2)
 - `F-P-11` done `small` 2026-11-27 · `scripts/change_url` re-renders nginx with the panel token untraced: the page moves to another domain or path without a reinstall (0.17.0~ynh2)
 - `F-M-25` done `small` 2026-11-27 · `list_folder` and `find_files` give each file's time beside its date, and mark a recording "(transcribing)" or "(transcribed)", so an agent sees work already going before asking again
 - `F-M-24` done `small` 2026-11-27 · `edit_file` changes one exact passage of a text file, refused when found twice or not at all, and `write_file` takes `append`: an agent adding a line no longer rewrites the whole file

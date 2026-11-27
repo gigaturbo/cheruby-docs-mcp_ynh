@@ -570,7 +570,7 @@ def build(base):
         "DOCS_SPEECH_MODEL": "fake-small",
         "DOCS_SPEECH_ENGINE": "demand",
         "DOCS_SPEECH_REMOTE_URL": f"http://127.0.0.1:{REMOTE_PORT}",
-        "DOCS_SPEECH_REMOTE_MODEL": "speaches/fake",
+        "DOCS_SPEECH_REMOTE_MODEL": "froaky-speaches/fake",
         "DOCS_SPEECH_REMOTE_KEY": REMOTE_KEY,
     }
 
@@ -878,19 +878,19 @@ def speech_checks(base):
     result = tool("transcribe_file", path="Documents/Dictées/bureau.wav", engine="desktop")
     yield "speech: the desktop is retried while it wakes", (result, REMOTE_SPEECH), \
         result[0] == "ok" and REMOTE_SPEECH["calls"] == 3 \
-        and "language fr, transcribed on the desktop (speaches/fake)." in result[1] and "[0:00] Bureau." in result[1]
+        and "language fr, transcribed on the desktop (froaky-speaches/fake)." in result[1] and "[0:00] Bureau." in result[1]
     REMOTE_SPEECH.update(refuse=True, calls=0)
     parts = SPEECH["parts"]
     result = tool("transcribe_file", path="Documents/Dictées/court.wav", engine="desktop")
     REMOTE_SPEECH.update(refuse=False)
     yield "speech: a desktop that refuses leaves the rest to the Pi", result, \
         result[0] == "ok" and REMOTE_SPEECH["calls"] == 1 and SPEECH["parts"] == parts + 1 \
-        and "The desktop failed (the remote server answered 401: it refused the key, or the key is not allowed the model 'speaches/fake'" in result[1] and "[0:00] Partie." in result[1]
+        and "The desktop failed (the remote server answered 401: it refused the key, or the key is not allowed the model 'froaky-speaches/fake'" in result[1] and "[0:00] Partie." in result[1]
     REMOTE_SPEECH.update(calls=0)
     result = tool("transcribe_file", path="Documents/Dictées/réunion.wav", engine="desktop")
     yield "speech: another model transcribes again, not from the Pi's cache", (result, REMOTE_SPEECH), \
         result[0] == "ok" and REMOTE_SPEECH["calls"] == 3 \
-        and "transcribed on the desktop (speaches/fake)." in result[1] and "Partie." not in result[1]
+        and "transcribed on the desktop (froaky-speaches/fake)." in result[1] and "Partie." not in result[1]
     result = tool("transcribe_file", path="Documents/Dictées/court.wav", save_to="Notes/court.md")
     saved = open(f"{base}/notes/court.md").read() if os.path.exists(f"{base}/notes/court.md") else ""
     yield "speech: save_to writes the transcript and gives its start", (result, saved), \
