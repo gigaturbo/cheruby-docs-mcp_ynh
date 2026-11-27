@@ -42,6 +42,8 @@ const MAX_IMAGE_BYTES: u64 = 4_000_000;
 pub const MAX_FETCH_BYTES: u64 = 64_000_000;
 const MAX_RESULTS: usize = 10;
 const MAX_WRITE_BYTES: usize = 2_000_000;
+/// What transcribe_file shows of a transcript it saved to a file.
+const SAVED_PREVIEW: usize = 1500;
 const RRF_K: f64 = 60.0;
 /// Measured on the Pi (F-M-12): the 30 best of the fusion, each by its start,
 /// put the expected file in the top 5 for every test query in about 4 s. A
@@ -618,6 +620,8 @@ pub struct Transcription {
     pub retry: bool,
     pub offset: i64,
     pub max_chars: i64,
+    /// A new text file in a writable folder to save the transcript to; empty, none.
+    pub save_to: String,
 }
 
 /// Transcribes a recording, waiting up to RUN_WAIT_S; the text once done,
@@ -631,7 +635,11 @@ pub async fn transcribe_file(ctx: &Ctx, a: Transcription) -> ToolResult<String> 
         retry,
         offset,
         max_chars,
+        save_to,
     } = a;
+    if !save_to.is_empty() {
+        writable_parts(ctx, &save_to)?;
+    }
     let key = transcribe(ctx, path.clone(), engine, language, retry).await?;
     let speech = ctx.docs.speech.clone().ok_or("no speech server.")?;
     let mut look = speech.look(&key);
@@ -659,6 +667,19 @@ pub async fn transcribe_file(ctx: &Ctx, a: Transcription) -> ToolResult<String> 
                 head += &format!(" {}", t.note);
             }
             let text = speech::render(&t, timestamps);
+            if !save_to.is_empty() {
+                if current_text(ctx, &save_to).await?.is_some() {
+                    return Err(format!(
+                        "{save_to}: exists already; choose another name. The transcript is kept: \
+                         calling again gives it at once."
+                    ));
+                }
+                let saved = write(ctx, save_to, Some(format!("{head}\n\n{text}\n"))).await?;
+                return Ok(format!(
+                    "{head}\n{saved} Read it with read_file. Its start:\n\n{}",
+                    cut(&text, 0, SAVED_PREVIEW)
+                ));
+            }
             let offset = offset.max(0) as usize;
             let max_chars = max_chars.clamp(1, MAX_CHARS as i64) as usize;
             Ok(format!("{head}\n\n{}", cut(&text, offset, max_chars)))
@@ -1254,6 +1275,78 @@ pub async fn write(ctx: &Ctx, path: String, content: Option<String>) -> ToolResu
             format!("{word} {shown}, {}.", human(size as f64))
         }
     })
+}
+
+/// The text of a file in a writable folder, for edit_file, append and
+/// save_to; None when there is no file there yet. It is read, then written
+/// whole: two agents changing one file at once may lose one change.
+async fn current_text(ctx: &Ctx, path: &str) -> ToolResult<Option<String>> {
+    let parts = writable_parts(ctx, path)?;
+    let c = ctx.clone();
+    let path = path.to_string();
+    blocking(move || {
+        let item = match c.tree().item(&parts[0], &parts[1..]) {
+            Ok(Some(item)) => item,
+            Ok(None) | Err(Error::NotFound) => return Ok(None),
+            Err(e) => return Err(format!("{path}: {e}")),
+        };
+        if item.is_dir {
+            return Err(format!("{path}: is a folder."));
+        }
+        if item.size as usize > MAX_WRITE_BYTES {
+            return Err(format!(
+                "{path}: larger than {}, the most that can be written.",
+                human(MAX_WRITE_BYTES as f64)
+            ));
+        }
+        let mut data = Vec::new();
+        use std::io::Read;
+        c.tree()
+            .open(&item, MAX_FETCH_BYTES)
+            .map_err(|e| format!("{path}: {e}"))?
+            .read_to_end(&mut data)
+            .map_err(|e| format!("{path}: {}", crate::folders::io_message(&e)))?;
+        String::from_utf8(data)
+            .map(Some)
+            .map_err(|_| format!("{path}: not UTF-8 text; rewrite it whole with write_file."))
+    })
+    .await?
+}
+
+/// What edit_file returns: the one place holding `old` now holds `new`.
+pub async fn edit_file(ctx: &Ctx, path: String, old: String, new: String) -> ToolResult<String> {
+    if old.is_empty() {
+        return Err("old is empty: give the exact text to replace.".into());
+    }
+    let Some(text) = current_text(ctx, &path).await? else {
+        return Err(format!("{path}: not found."));
+    };
+    match text.matches(old.as_str()).count() {
+        1 => write(ctx, path, Some(text.replacen(&old, &new, 1))).await,
+        0 => Err(format!(
+            "{path}: old is not in the file; read the file again and copy the text exactly."
+        )),
+        n => Err(format!(
+            "{path}: old is in the file {n} times; give more of the text around the one to change."
+        )),
+    }
+}
+
+/// What write_file returns with append: the content added at the end, on a
+/// line of its own; a new file when there is none.
+pub async fn append(ctx: &Ctx, path: String, content: String) -> ToolResult<String> {
+    let text = match current_text(ctx, &path).await? {
+        Some(mut text) => {
+            if !text.is_empty() && !text.ends_with('\n') {
+                text.push('\n');
+            }
+            text + &content
+        }
+        None => content,
+    };
+    Ok(write(ctx, path, Some(text))
+        .await?
+        .replacen("Replaced", "Added to", 1))
 }
 
 /// What move_file returns: from moved to to, both in one writable folder.

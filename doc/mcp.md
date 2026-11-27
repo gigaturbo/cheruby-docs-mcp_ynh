@@ -28,11 +28,11 @@ Paths start with a folder's label, such as `Documents/Factures`.
 
 ## What the tools cannot do
 
-- **No delete.** `write_file` creates or replaces a file whole,
-  `create_folder` creates folders and `move_file` moves or renames them;
+- **No delete.** `write_file` creates, replaces or adds to a file,
+  `edit_file` changes one part of it, `create_folder` creates folders and `move_file` moves or renames them;
   nothing removes a file or a folder, and a move never replaces one.
 - **Write only in the folders marked writable**, text files only, never
-  through a link, and never into the last 2 GB of the disk. The three write
+  through a link, and never into the last 2 GB of the disk. The four write
   tools are offered only when a folder is writable.
 - **A file open in Nextcloud's Text editor cannot be changed.** Text locks
   the file while it is open, and Nextcloud refuses every other write. Up
@@ -102,13 +102,28 @@ refreshed on the schedule chosen in the panel.
 
 ## write_file
 
-Creates a text file, with its missing folders, or replaces one whole, in a
-writable folder.
+Creates a text file, with its missing folders, replaces one whole, or adds
+to its end, in a writable folder.
 
 | Argument | Default | Effect |
 |---|---|---|
 | `path` | required | Such as `Notes/Recettes/pain.md`. Text files only (`.md`, `.txt`, `.csv`...). |
-| `content` | required | The whole new text of the file, UTF-8. |
+| `content` | required | The whole new text of the file, UTF-8, or with `append` the text to add. |
+| `append` | false | Adds `content` at the end, on a line of its own, and keeps the rest; creates the file when there is none. |
+
+## edit_file
+
+Changes one part of a text file in a writable folder and keeps the rest,
+so an agent adding a line to a long file does not have to write it all
+again, and cannot drop what it did not copy. The file is read, then
+written whole: two agents changing one file at the same moment may lose
+one change.
+
+| Argument | Default | Effect |
+|---|---|---|
+| `path` | required | Such as `Notes/Recettes/pain.md`. |
+| `old` | required | The exact text to replace, as `read_file` gave it. It must be in the file once; text found twice or not at all is refused, saying which. |
+| `new` | required | The text to put in its place; empty removes it. |
 
 ## create_folder
 
@@ -162,8 +177,9 @@ recording is being transcribed follows that job rather than starting a
 second one. What is done is kept, through a restart too. Once
 done, the text comes back at once, read by character like `read_file`. A
 recording changed since, or asked for in another language, is transcribed
-again; one changed before its turn comes is refused, to be asked again. It changes no file: save the cleaned text with `write_file`, then
-move the recording with `move_file`.
+again; one changed before its turn comes is refused, to be asked again. It
+changes no file unless `save_to` is given: save the cleaned text with
+`write_file`, then move the recording with `move_file`.
 
 | Argument | Default | Effect |
 |---|---|---|
@@ -173,6 +189,7 @@ move the recording with `move_file`.
 | `timestamps` | true | Each line starts with its time, `[1:02:05]`; false gives paragraphs split at pauses. |
 | `retry` | false | Try again a recording that failed. Without it, the failure is said again, with where it happened. |
 | `offset`, `max_chars` | 0, 8000 | Where to start reading the text and how much, up to 20,000 characters. |
+| `save_to` | empty | A new text file in a writable folder, such as `Notes/Dictaphone/réunion.md`. Once done, the transcript is saved there with its first line, and only its first 1,500 characters come back, so a small model does not have to copy it. An existing file is never replaced. A folder that is not writable is refused before any work. |
 
 The first line says how long the recording is, its language and where it
 was transcribed.

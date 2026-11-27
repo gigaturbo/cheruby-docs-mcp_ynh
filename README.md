@@ -14,8 +14,9 @@ through a gateway such as Whoopy or LiteLLM.
   PowerPoint, OpenDocument, EPUB and saved emails.
 - `search_documents`: the best passage of each matching file, by meaning
   and keywords, from an index refreshed on the schedule chosen in the panel.
-- `write_file`, `create_folder`, `move_file`: a text file or a folder, made,
-  replaced, moved or renamed in a folder marked writable, never a delete.
+- `write_file`, `edit_file`, `create_folder`, `move_file`: a text file or a
+  folder, made, replaced, added to, changed in one place, moved or renamed in
+  a folder marked writable, never a delete.
 - `run_index`: an index run of some files or of everything, so search finds
   what changed.
 - `transcribe_file`: the text of a recording, with its times, transcribed

@@ -611,9 +611,9 @@ def error_with(needle):
 CHECKS = [
     ("no token gets 401", lambda: call("tools/list", token=""), lambda r: r[0] == 401),
     ("wrong token gets 401", lambda: call("tools/list", token="x" * 40), lambda r: r[0] == 401),
-    ("nine tools listed", lambda: call("tools/list"),
-     lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file create_folder "
-                                              "move_file run_index transcribe_file".split())),
+    ("ten tools listed", lambda: call("tools/list"),
+     lambda r: sorted(r[1].split()) == sorted("list_folder find_files read_file search_documents write_file edit_file "
+                                              "create_folder move_file run_index transcribe_file".split())),
     ("alice sees her three folders, which are writable", lambda: tool("list_folder"),
      lambda r: r == ("ok", "dir  Documents/\ndir  Notes/ (writable)\ndir  Cloud/ (writable)")),
     ("alice cannot reach bob's", lambda: tool("read_file", path="Papiers/bob.md"), error_with("no folder named")),
@@ -891,6 +891,16 @@ def speech_checks(base):
     yield "speech: another model transcribes again, not from the Pi's cache", (result, REMOTE_SPEECH), \
         result[0] == "ok" and REMOTE_SPEECH["calls"] == 3 \
         and "transcribed on the desktop (speaches/fake)." in result[1] and "Partie." not in result[1]
+    result = tool("transcribe_file", path="Documents/Dictées/court.wav", save_to="Notes/court.md")
+    saved = open(f"{base}/notes/court.md").read() if os.path.exists(f"{base}/notes/court.md") else ""
+    yield "speech: save_to writes the transcript and gives its start", (result, saved), \
+        ok_with("Created Notes/court.md", "Read it with read_file")(result) and "[0:00] Partie." in saved
+    result = tool("transcribe_file", path="Documents/Dictées/court.wav", save_to="Notes/court.md")
+    yield "speech: save_to never replaces a file", result, error_with("exists already")(result)
+    parts = SPEECH["parts"]
+    result = tool("transcribe_file", path="Documents/Dictées/lent.wav", save_to="Documents/x.md")
+    yield "speech: save_to in a read-only folder is refused before any work", result, \
+        error_with("Documents is read-only")(result) and SPEECH["parts"] == parts
     SPEECH["delay"] = 27
     REMOTE_SPEECH.update(calls=0)
     start = time.time()
@@ -1299,6 +1309,34 @@ def write_checks(base):
     yield "a Nextcloud file is replaced", result, ok_with("Replaced Cloud/compte-rendu.md")(result)
     result = tool("write_file", path="Cloud/Vieux/x.md", content="x")
     yield "Nextcloud's filters refuse too", result, error_with("filters leave this name out")(result)
+    result = tool("edit_file", path="Notes/idees.md", old="fèves", new="pois")
+    with open(f"{notes}/idees.md") as f:
+        text = f.read()
+    yield "edit_file changes the one place", (result, text), ok_with("Notes/idees.md")(result) \
+        and text == "Planter des pois"
+    for name, args, needle in [("edit_file refuses text not there", dict(old="fèves", new="x"), "not in the file"),
+                               ("edit_file refuses an empty old", dict(old="", new="x"), "old is empty")]:
+        result = tool("edit_file", path="Notes/idees.md", **args)
+        yield name, result, error_with(needle)(result)
+    tool("write_file", path="Notes/deux.md", content="un\nun\n")
+    result = tool("edit_file", path="Notes/deux.md", old="un", new="x")
+    yield "edit_file refuses text there twice", result, error_with("2 times")(result)
+    result = tool("edit_file", path="Documents/bail.md", old="a", new="b")
+    yield "edit_file refuses a read-only folder", result, error_with("Documents is read-only")(result)
+    result = tool("edit_file", path="Notes/absent.md", old="a", new="b")
+    yield "edit_file refuses a missing file", result, error_with("not found")(result)
+    result = tool("write_file", path="Notes/idees.md", content="- arroser", append=True)
+    with open(f"{notes}/idees.md") as f:
+        text = f.read()
+    yield "append adds a line and keeps the rest", (result, text), ok_with("Added to Notes/idees.md")(result) \
+        and text == "Planter des pois\n- arroser"
+    result = tool("write_file", path="Notes/journal.md", content="début", append=True)
+    yield "append makes a missing file", result, ok_with("Created Notes/journal.md")(result) \
+        and open(f"{notes}/journal.md").read() == "début"
+    result = tool("edit_file", path="Cloud/compte-rendu.md", old="nouveau", new="ancien")
+    with open(f"{base}/nextcloud/Partage/compte-rendu.md") as f:
+        text = f.read()
+    yield "edit_file in Nextcloud", (result, text), result[0] == "ok" and text == "ancien texte"
     methods = {m for m, _, _ in DAV_LOG}
     yield "Nextcloud is never asked to delete or move", methods, methods <= {"PROPFIND", "GET", "PUT", "MKCOL"}
     yield from move_checks(base)

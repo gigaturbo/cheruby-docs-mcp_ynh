@@ -190,6 +190,15 @@ struct SearchArgs {
 struct WriteArgs {
     path: String,
     content: String,
+    #[serde(default)]
+    append: bool,
+}
+
+#[derive(Deserialize, schemars::JsonSchema)]
+struct EditArgs {
+    path: String,
+    old: String,
+    new: String,
 }
 
 #[derive(Deserialize, schemars::JsonSchema)]
@@ -224,6 +233,8 @@ struct TranscribeArgs {
     offset: i64,
     #[serde(default = "eight_thousand")]
     max_chars: i64,
+    #[serde(default)]
+    save_to: String,
 }
 
 fn one() -> i64 {
@@ -363,16 +374,38 @@ impl Tools {
 
     #[tool(
         description = "Write a text file in a folder listed as writable: create it, with any\n\
-        missing folders, or replace it whole. Nothing is ever deleted.\n\n\
+        missing folders, or replace it whole. Nothing is ever deleted. To change a\n\
+        part of a file, edit_file is safer.\n\n\
         path: such as \"Notes/Recettes/pain.md\". Text files only (.md, .txt, .csv...).\n\
-        content: the whole new text of the file, UTF-8."
+        content: the whole new text of the file, UTF-8.\n\
+        append: true adds content at the end, on a new line, and keeps the rest."
     )]
     async fn write_file(
         &self,
         Extension(parts): Extension<http::request::Parts>,
         Parameters(a): Parameters<WriteArgs>,
     ) -> Result<CallToolResult, ErrorData> {
-        answer(tools::write(&self.ctx(&parts)?, a.path, Some(a.content)).await)
+        let ctx = self.ctx(&parts)?;
+        if a.append {
+            return answer(tools::append(&ctx, a.path, a.content).await);
+        }
+        answer(tools::write(&ctx, a.path, Some(a.content)).await)
+    }
+
+    #[tool(
+        description = "Change one part of a text file in a folder listed as writable, and keep\n\
+        the rest as it is.\n\n\
+        path: such as \"Notes/Recettes/pain.md\".\n\
+        old: the exact text to replace, copied from read_file; it must be in the file\n\
+        once, so give a whole line or more.\n\
+        new: the text to put in its place; empty removes it."
+    )]
+    async fn edit_file(
+        &self,
+        Extension(parts): Extension<http::request::Parts>,
+        Parameters(a): Parameters<EditArgs>,
+    ) -> Result<CallToolResult, ErrorData> {
+        answer(tools::edit_file(&self.ctx(&parts)?, a.path, a.old, a.new).await)
     }
 
     #[tool(
@@ -430,6 +463,8 @@ impl Tools {
         timestamps: each line starts with its time, [1:02:05]; false gives paragraphs.\n\
         retry: try again a recording that failed; otherwise the failure is said again.\n\
         At most 5 recordings wait or run at once.\n\
+        save_to: a new text file in a writable folder, such as \"Notes/memo.md\": once\n\
+        done, the transcript is saved there and only its start comes back.\n\
         The text is raw speech: clean it before saving it with write_file."
     )]
     async fn transcribe_file(
@@ -448,6 +483,7 @@ impl Tools {
                     retry: a.retry,
                     offset: a.offset,
                     max_chars: a.max_chars,
+                    save_to: a.save_to,
                 },
             )
             .await,
@@ -505,10 +541,11 @@ pub async fn run(docs: Arc<Docs>) -> Result<(), String> {
         .to_string();
     let mut tool_router = Tools::tool_router();
     if writable {
-        instructions += " Folders listed as writable also take write_file, create_folder and move_file; the others are read-only.";
+        instructions += " Folders listed as writable also take write_file, edit_file, create_folder and move_file; the others are read-only.";
     } else {
         // Offered only where a folder takes them.
         tool_router.remove_route("write_file");
+        tool_router.remove_route("edit_file");
         tool_router.remove_route("create_folder");
         tool_router.remove_route("move_file");
     }
