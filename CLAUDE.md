@@ -93,8 +93,10 @@ for f in scripts/*; do bash -n "$f"; done
 The offline check loads PDFium from `cheruby-docs/target/pdfium/`: unpack
 the manifest's `pdfium` source there once.
 
-A new binary: bump `version` in `cheruby-docs/Cargo.toml`, `cargo build
---release`, publish `target/release/cheruby-docs` as the asset
+A new binary: bump `version` in `cheruby-docs/Cargo.toml`, build it with
+`RUSTFLAGS="--remap-path-prefix=$HOME=~" cargo build --release` (otherwise
+the source paths in panic messages name the home folder), check that
+`strings` finds no `/home/` in it, publish `target/release/cheruby-docs` as the asset
 `cheruby-docs-aarch64-linux` of a release `cheruby-docs-<version>`, then put
 its url and `sha256sum` in the manifest. The toolchain is rustup's, pinned
 by `cheruby-docs/rust-toolchain.toml`.
