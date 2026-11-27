@@ -119,6 +119,20 @@ transcript's segments.
 
 ## Tests
 
+### T-M-7 · a recording is transcribed on the desktop, and a failing desktop leaves it to the Pi
+
+`todo` `playtest` `filed 2026-11-26`
+
+**Last:** 2026-11-28 at `32f5771`, on 0.17.0~ynh2, partial: engine `always` on Whoopy's new `froaky-speaches/*` route (B-P-9), the 17:26 Bouygues call asked for on the desktop came back in 71 s, French, the header naming `froaky-speaches/guillaumekln/faster-whisper-medium`; the key in neither `yunohost-cli.log`'s new lines, the operation logs nor the journal. Not known whether the desktop was asleep. Before: 2026-11-26 at `2075972`, on 0.16.0~ynh1, every step passed (from asleep in 56 s on large-v3-turbo; a 403 and an unplugged desktop each left the recording to the Pi, the header saying why).
+
+Reopened by B-P-9: Whoopy's speech route is now `froaky-speaches/*`.
+
+**Check:** ask first, then set the speech model to one the key is not
+allowed (the old `speaches/...` name): Whoopy answers 403, the whole
+recording goes to the Pi and the header names the model; set it back. With
+the desktop unplugged: a 503 after about three minutes, the rest to the Pi.
+Once from a desktop known to be asleep.
+
 ### T-M-6 · a recording is transcribed on the Pi
 
 `todo` `playtest` `filed 2026-11-26`
@@ -250,7 +264,6 @@ binary did.
 - `B-P-8` closed 2026-11-27 · a speech model named without Whoopy's `speaches/` prefix got a bare "answered 403" and every recording went to the Pi; a 401 or 403 now says the key or its model was refused and names the model, without the server's body, and the panel's help names the 403
 - `B-M-7` closed 2026-11-27 · asking `transcribe_file` for another engine while a recording was being transcribed started it a second time; a call now follows the job going under any engine
 - `B-M-6` closed 2026-11-27 · `transcribe_file` and `run_index` waited 60 s, as long as some MCP clients allow a call, so the client gave up before the progress answer and the agent saw only a timeout; they now wait 25 s and say the task going is not an error
-- `T-M-7` done `playtest` 2026-11-26 at `2075972` · on 0.16.0~ynh1, desktop on request: the 17:26 Bouygues call from asleep in 56 s on `speaches/deepdml/faster-whisper-large-v3-turbo-ct2` (4.5 min on the Pi), the header naming it; a 403 from Whoopy and, with the desktop unplugged, a 503 after 35 s each left the whole recording to the Pi, the header saying why; the key in neither `yunohost-cli.log`, the 31 operation logs since nor the journals. Whoopy refuses a personal key whose owner has no default models, `speaches/*` or not: the key must belong to a team allowed the model
 - `F-M-21` done `medium` 2026-11-26 · the speech engine's remote, never, on request or always, through Whoopy's `speaches/*` route (Whoopy F-W-1), which wakes the desktop; a desktop that fails leaves the rest to the Pi; `engine` on `transcribe_file` (0.15.0~ynh1, checked on 0.16.0~ynh1)
 - `B-P-7` closed 2026-11-26 · the panel's example speech model was not installed on the desktop; it is now `speaches/deepdml/faster-whisper-large-v3-turbo-ct2`, and the help says to take an installed one
 - `F-P-14` done `medium` 2026-11-26 · one MCP token (`DOCS_TOKEN`, `DOCS_USER`, `DOCS_TOKEN_FOLDERS`, empty opens none) for any client on the server; `whoopy_folders` moved to `mcp_folders`, `token_<user>` deleted; the panel's "MCP access" and the docs name Whoopy and LiteLLM as examples; the remote embedding and speech server named generically (0.16.0~ynh1, installed 2026-11-26)
